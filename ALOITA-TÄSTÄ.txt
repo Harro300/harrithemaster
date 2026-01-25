@@ -1,0 +1,178 @@
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║         🚪 HARRIN TERÄSOVI MITTALASKURI 🚪                    ║
+║                                                               ║
+║                   KÄYTTÖVALMIS SOVELLUS                       ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  🚀 ALOITA TÄSTÄ:                                             │
+│                                                               │
+│  1. Kaksoisklikkaa: index.html                                │
+│  2. Kirjaudu: Soma<3 tai Harri10K                            │
+│  3. Valitse laskuri ja täytä mitat                           │
+│  4. Tulokset näkyvät automaattisesti!                        │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  📁 TIEDOSTOT:                                                │
+│                                                               │
+│  ✅ index.html        → AVAA TÄMÄ SELAIMESSA!                 │
+│  ✅ app.js            → Laskentalogiikka (automaattinen)      │
+│                                                               │
+│  📖 PIKA-ALOITUS.md   → Nopeat ohjeet (SUOSITELTU!)          │
+│  📖 README.md         → Täydelliset ohjeet                    │
+│  📖 TESTIT.md         → Testitapaukset ja esimerkit          │
+│  📖 YHTEENVETO.md     → Projektin tila ja yhteenveto         │
+│  📖 ALOITA-TÄSTÄ.txt  → Tämä tiedosto                        │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  🎯 LASKURIT:                                                 │
+│                                                               │
+│  • Janisol Pariovi     (kaksoisovi, Janisol-sarja)          │
+│  • Janisol Käyntiovi   (yksittäinen ovi, Janisol-sarja)     │
+│  • Economy Pariovi     (kaksoisovi, Economy-sarja)           │
+│  • Economy Käyntiovi   (yksittäinen ovi, Economy-sarja)      │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  📐 LASKETUT KOMPONENTIT:                                     │
+│                                                               │
+│  ✓ Lasilistat      (pysty- ja vaakalistat)                   │
+│  ✓ Uretaanipalat   (eristysmateriaalit)                      │
+│  ✓ Potkupellit     (sisä- ja ulkopuoli)                      │
+│  ✓ Harjalistat     (tiivisteet)                              │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  ⚙️ OMINAISUUDET:                                             │
+│                                                               │
+│  🔒 Salasanasuojaus                                           │
+│  ⚡ Reaaliaikainen laskenta                                   │
+│  🎚️ Asetukset (rako 8/10/15 mm, ruudut 1-5)                 │
+│  💾 Tallenna/lataa esiasetukset                              │
+│  📄 Vie tulokset PDF:ksi                                      │
+│  📱 Responsiivinen (mobiili + desktop)                       │
+│  ✅ Automaattinen validointi                                  │
+│  🌐 Toimii offline                                            │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  🔑 SALASANAT:                                                │
+│                                                               │
+│  • Soma<3                                                     │
+│  • Harri10K                                                   │
+│                                                               │
+│  (Kumpi tahansa toimii!)                                     │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  💡 PIKALINKIT OHJEISIIN:                                     │
+│                                                               │
+│  1. ALOITTELIJA?    → Lue: PIKA-ALOITUS.md                   │
+│  2. HALUAT TIETÄÄ?  → Lue: README.md                         │
+│  3. TESTAA LASKUJA? → Katso: TESTIT.md                       │
+│  4. PROJEKTIN TILA? → Katso: YHTEENVETO.md                   │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  ❓ PIKA-UKK:                                                 │
+│                                                               │
+│  Q: Miten aloitan?                                            │
+│  A: Kaksoisklikkaa index.html!                               │
+│                                                               │
+│  Q: Tarvitseeko asentaa jotain?                              │
+│  A: Ei! Vain selain tarvitaan.                               │
+│                                                               │
+│  Q: Toimiiko ilman nettiä?                                   │
+│  A: Kyllä (paitsi ensimmäisellä kerralla CSS/JS lataus).     │
+│                                                               │
+│  Q: Miten tallennan mitat?                                   │
+│  A: Klikkaa "Tallenna" -painiketta sovelluksessa!            │
+│                                                               │
+│  Q: Voinko viedä tulokset PDF:ksi?                           │
+│  A: Kyllä! "Vie PDF:ksi" -painike.                           │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  🎓 KÄYTTÖESIMERKKI:                                          │
+│                                                               │
+│  1. Avaa index.html                                           │
+│  2. Kirjaudu: Soma<3                                          │
+│  3. Valitse: Economy Käyntiovi                                │
+│  4. Syötä:                                                    │
+│     - Leveys: 800 mm                                          │
+│     - Potkupellin korkeus: 300 mm                            │
+│     - Ruudun korkeus: 2000 mm                                │
+│  5. Tulokset näkyvät automaattisesti!                        │
+│  6. Klikkaa "Vie PDF:ksi" tallentaaksesi                     │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  ⚠️ TÄRKEÄÄ:                                                  │
+│                                                               │
+│  • Tarkista aina lasketut mitat ennen käyttöä               │
+│  • Sovellus on työkalu - lopullinen vastuu käyttäjällä      │
+│  • Tallenna tärkeät laskelmat PDF:ksi                        │
+│  • Käytä esiasetuksia usein toistuville mitoille             │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  ✅ JÄRJESTELMÄVAATIMUKSET:                                   │
+│                                                               │
+│  ✓ Selain: Chrome, Firefox, Safari, Edge (2020+)            │
+│  ✓ JavaScript: Päällä                                         │
+│  ✓ Näyttö: Mikä tahansa (mobiili OK)                        │
+│  ✓ Internet: Vain 1. kerran (CDN-lataus)                    │
+│  ✗ Palvelin: EI tarvita                                      │
+│  ✗ Asennus: EI tarvita                                       │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  📊 TILASTOT:                                                 │
+│                                                               │
+│  • 4 laskuria                                                 │
+│  • 4 komponenttityyppiä                                       │
+│  • 3 rako-vaihtoehtoa                                         │
+│  • 5 ruutua maksimi                                           │
+│  • 2 salasanaa                                                │
+│  • 100% toimintavalmis                                        │
+└───────────────────────────────────────────────────────────────┘
+
+
+┌───────────────────────────────────────────────────────────────┐
+│  🎉 STATUS: VALMIS JA TESTATTU!                              │
+│                                                               │
+│  Versio: 1.0                                                  │
+│  Päivitetty: 29.12.2025                                       │
+│  Kehittäjä: Cursor AI                                         │
+│  Lisenssi: Vapaa käyttö                                       │
+└───────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════
+
+            🚀 ALOITA NYT: Avaa index.html! 🚀
+
+═══════════════════════════════════════════════════════════════
+
+
+        Hyvää laskemista ja menestystä projekteihin! 🎊
+
+
+═══════════════════════════════════════════════════════════════
+
