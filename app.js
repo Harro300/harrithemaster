@@ -617,10 +617,9 @@ function loadPreset(name) {
     
     if (!preset) return;
     
-    // Check if calculator matches
+    // If calculator doesn't match, switch to the correct one automatically
     if (preset.calculator !== currentCalculator) {
-        alert('Tämä esiasetus on eri laskurille. Vaihda oikeaan laskuriin ensin.');
-        return;
+        selectCalculator(preset.calculator);
     }
     
     // Load values
@@ -769,8 +768,31 @@ function copyResults(event) {
     });
 }
 
-// Export to PDF
+// Export to PDF - Show modal first
 function exportToPDF() {
+    const resultsDiv = document.getElementById('results');
+    const sections = resultsDiv.querySelectorAll('.result-section');
+    
+    if (sections.length === 0) {
+        alert('Ei tuloksia vietäväksi. Syötä ensin mitat.');
+        return;
+    }
+    
+    // Clear previous input and show modal
+    document.getElementById('pdfFileName').value = '';
+    const modal = new bootstrap.Modal(document.getElementById('pdfExportModal'));
+    modal.show();
+}
+
+// Confirm and create PDF
+function confirmExportToPDF() {
+    const fileName = document.getElementById('pdfFileName').value.trim();
+    
+    if (!fileName) {
+        alert('Anna nimi tiedostolle.');
+        return;
+    }
+    
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     
@@ -788,9 +810,13 @@ function exportToPDF() {
     doc.setFontSize(14);
     doc.text(titles[currentCalculator], 105, 30, { align: 'center' });
     
+    // Add user-provided name
+    doc.setFontSize(12);
+    doc.text(fileName, 105, 38, { align: 'center' });
+    
     // Inputs
     doc.setFontSize(12);
-    let yPos = 45;
+    let yPos = 50;
     
     doc.text('Syötteet:', 20, yPos);
     yPos += 10;
@@ -850,7 +876,13 @@ function exportToPDF() {
         yPos += 5;
     });
     
-    // Save
+    // Save with user-provided name
     const date = new Date().toLocaleDateString('fi-FI');
-    doc.save(`${titles[currentCalculator]}_${date}.pdf`);
+    // Clean filename (remove special characters)
+    const cleanFileName = fileName.replace(/[^a-zA-Z0-9åäöÅÄÖ\s-]/g, '').replace(/\s+/g, '_');
+    doc.save(`${cleanFileName}_${date}.pdf`);
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('pdfExportModal'));
+    modal.hide();
 }

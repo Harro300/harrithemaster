@@ -1,145 +1,180 @@
 :root {
-    --bg-primary: #f5f7fa;
+    --bg-primary: #e8f0ed;
     --bg-secondary: #ffffff;
-    --bg-tertiary: #f7fafc;
-    --text-primary: #2d3748;
-    --text-secondary: #4a5568;
-    --border-color: #e1e8ed;
-    --border-light: #cbd5e0;
-    --card-shadow: rgba(0, 0, 0, 0.08);
-    --accent-color: #2c5282;
-    --accent-hover: #2a4365;
-    --result-bg: #f7fafc;
-    --result-border: #e2e8f0;
+    --bg-tertiary: #dce6e3;
+    --text-primary: #1a3834;
+    --text-secondary: #4a5f5a;
+    --border-color: #d1ddd9;
+    --border-light: #c2d0cc;
+    --card-shadow: rgba(26, 56, 52, 0.1);
+    --accent-color: #2f5d50;
+    --accent-hover: #234539;
+    --result-bg: #f4f8f6;
+    --result-border: #d1ddd9;
+    --success-color: #2f5d50;
+    --warning-color: #d69e2e;
+    --danger-color: #c05046;
 }
 
 body.dark-mode {
-    --bg-primary: #1a202c;
-    --bg-secondary: #2d3748;
-    --bg-tertiary: #374151;
-    --text-primary: #f7fafc;
-    --text-secondary: #cbd5e0;
-    --border-color: #4a5568;
-    --border-light: #4a5568;
-    --card-shadow: rgba(0, 0, 0, 0.3);
-    --accent-color: #4299e1;
-    --accent-hover: #3182ce;
-    --result-bg: #374151;
-    --result-border: #4a5568;
+    --bg-primary: #0f1c1a;
+    --bg-secondary: #1a3834;
+    --bg-tertiary: #234539;
+    --text-primary: #f8faf9;
+    --text-secondary: #c7d3cf;
+    --border-color: #2f5d50;
+    --border-light: #2f5d50;
+    --card-shadow: rgba(0, 0, 0, 0.4);
+    --accent-color: #5a9a88;
+    --accent-hover: #4a8070;
+    --result-bg: #234539;
+    --result-border: #2f5d50;
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg-primary);
     min-height: 100vh;
     transition: background-color 0.3s ease;
+    color: var(--text-primary);
+    letter-spacing: -0.011em;
 }
 
 .card {
-    border-radius: 8px;
+    border-radius: 16px;
     border: 1px solid var(--border-color);
-    box-shadow: 0 2px 4px var(--card-shadow);
+    box-shadow: 0 1px 3px var(--card-shadow);
     background: var(--bg-secondary);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
+    transition: all 0.3s ease;
 }
 
 .btn {
-    border-radius: 6px;
-    padding: 10px 20px;
+    border-radius: 10px;
+    padding: 8px 18px;
     font-weight: 500;
+    font-size: 14px;
     transition: all 0.2s ease;
     border: 1px solid transparent;
+    letter-spacing: -0.01em;
 }
 
 .btn:hover {
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(47, 93, 80, 0.2);
 }
 
 .btn-primary {
-    background: #2c5282;
-    border-color: #2c5282;
+    background: var(--accent-color);
+    border-color: var(--accent-color);
     color: white;
 }
 
 .btn-primary:hover {
-    background: #2a4365;
-    border-color: #2a4365;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
     color: white;
 }
 
+.btn-sm {
+    padding: 6px 14px;
+    font-size: 13px;
+}
+
 .form-control, .form-select {
-    border-radius: 6px;
+    border-radius: 10px;
     border: 1px solid var(--border-light);
-    padding: 10px 15px;
-    transition: border-color 0.2s ease, background-color 0.3s ease;
+    padding: 12px 16px;
+    font-size: 14px;
+    transition: all 0.2s ease;
     background: var(--bg-secondary);
     color: var(--text-primary);
 }
 
 .form-control:focus, .form-select:focus {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 0.2rem rgba(44, 82, 130, 0.1);
+    box-shadow: 0 0 0 3px rgba(47, 93, 80, 0.08);
     outline: none;
     background: var(--bg-secondary);
 }
 
 .form-label {
-    color: var(--text-primary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
 }
 
 .results-container {
-    background: var(--bg-secondary);
-    border-radius: 6px;
-    padding: 20px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 24px;
     min-height: 200px;
-    border: 1px solid var(--border-color);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
+    border: none;
+    transition: all 0.3s ease;
 }
 
 .result-section {
     margin-bottom: 0;
     height: 100%;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
 }
 
 .result-section h5 {
     color: var(--text-primary);
     font-weight: 600;
-    margin-bottom: 15px;
+    margin-bottom: 16px;
     border-bottom: 2px solid var(--accent-color);
-    padding-bottom: 8px;
+    padding-bottom: 10px;
     text-align: center;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .result-item {
-    padding: 8px 15px;
+    padding: 10px 16px;
     background: var(--result-bg);
-    border-radius: 4px;
-    margin-bottom: 5px;
-    font-size: 16px;
-    font-family: 'Courier New', monospace;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
     border: 1px solid var(--result-border);
     color: var(--text-primary);
-    transition: background-color 0.3s ease, border-color 0.3s ease;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.result-item:hover {
+    background: var(--bg-secondary);
+    border-color: var(--accent-color);
 }
 
 .btn-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
 }
 
 .btn-group .btn-outline-primary {
-    border-color: var(--border-light);
-    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
     background: var(--bg-secondary);
     transition: all 0.2s ease;
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 10px;
+    font-weight: 500;
 }
 
 .btn-group .btn-outline-primary:hover {
     background-color: var(--bg-tertiary);
-    border-color: var(--border-light);
-    color: var(--text-primary);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    transform: translateY(-1px);
 }
 
 .btn-group .btn-outline-primary.active {
@@ -147,6 +182,7 @@ body {
     border-color: var(--accent-color);
     color: white;
     font-weight: 600;
+    box-shadow: 0 2px 8px rgba(47, 93, 80, 0.25);
 }
 
 .d-none {
@@ -155,12 +191,22 @@ body {
 
 #calculatorTitle {
     color: var(--text-primary);
-    font-weight: 700;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.02em;
 }
 
 h4 {
     color: var(--text-primary);
     font-weight: 600;
+    font-size: 18px;
+    letter-spacing: -0.02em;
+}
+
+h5 {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
 }
 
 .text-muted {
@@ -168,26 +214,31 @@ h4 {
 }
 
 .modal-content {
-    border-radius: 8px;
+    border-radius: 16px;
     border: 1px solid var(--border-color);
     background: var(--bg-secondary);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 .modal-body {
     background: var(--bg-secondary);
     color: var(--text-primary);
+    padding: 24px;
 }
 
 .modal-footer {
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
+    padding: 20px 24px;
+    border-radius: 0 0 16px 16px;
 }
 
 .modal-header {
     background: var(--accent-color);
     color: white;
-    border-radius: 8px 8px 0 0;
+    border-radius: 16px 16px 0 0;
     border-bottom: none;
+    padding: 20px 24px;
 }
 
 .modal-header .btn-close {
@@ -196,6 +247,9 @@ h4 {
 
 .modal-header .modal-title {
     color: white;
+    font-weight: 600;
+    font-size: 18px;
+    letter-spacing: -0.02em;
 }
 
 .list-group-item {
@@ -230,7 +284,7 @@ h4 {
     }
     
     h2, h4 {
-        font-size: 1.3rem;
+        font-size: 1.2rem;
     }
     
     .btn-group {
@@ -239,7 +293,12 @@ h4 {
     
     .btn-group .btn {
         flex: 1 1 calc(50% - 5px);
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        padding: 8px 12px;
+    }
+    
+    .result-section {
+        margin-bottom: 16px;
     }
 }
 
@@ -301,20 +360,64 @@ body.dark-mode hr {
     opacity: 0.3;
 }
 
+/* Container improvements */
+.container {
+    max-width: 1200px;
+}
+
+/* Card body padding adjustments */
+.card-body {
+    padding: 28px;
+}
+
+/* Improved spacing */
+.mb-4 {
+    margin-bottom: 1.75rem !important;
+}
+
+.mt-3 {
+    margin-top: 1.25rem !important;
+}
+
+.me-2 {
+    margin-right: 0.75rem !important;
+}
+
+/* List group improvements */
+.list-group-item {
+    border-radius: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border-color);
+}
+
+/* Form text */
+.form-text {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+/* HR styling */
+hr {
+    border-color: var(--border-color);
+    opacity: 0.5;
+    margin: 1.5rem 0;
+}
+
 /* Additional professional styling */
 .btn-success {
-    background: #38a169;
-    border-color: #38a169;
+    background: var(--success-color);
+    border-color: var(--success-color);
 }
 
 .btn-success:hover {
-    background: #2f855a;
-    border-color: #2f855a;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 
 .btn-warning {
-    background: #d69e2e;
-    border-color: #d69e2e;
+    background: var(--warning-color);
+    border-color: var(--warning-color);
     color: white;
 }
 
@@ -325,32 +428,33 @@ body.dark-mode hr {
 }
 
 .btn-danger {
-    background: #e53e3e;
-    border-color: #e53e3e;
+    background: var(--danger-color);
+    border-color: var(--danger-color);
 }
 
 .btn-danger:hover {
-    background: #c53030;
-    border-color: #c53030;
+    background: #a03d35;
+    border-color: #a03d35;
 }
 
 .btn-secondary {
-    background: #718096;
-    border-color: #718096;
+    background: #6b7b77;
+    border-color: #6b7b77;
+    color: white;
 }
 
 .btn-secondary:hover {
-    background: #4a5568;
-    border-color: #4a5568;
+    background: #556560;
+    border-color: #556560;
 }
 
 .btn-info {
-    background: #3182ce;
-    border-color: #3182ce;
+    background: var(--accent-color);
+    border-color: var(--accent-color);
 }
 
 .btn-info:hover {
-    background: #2c5282;
-    border-color: #2c5282;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
 }
 

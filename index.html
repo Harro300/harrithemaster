@@ -35,7 +35,10 @@
         <div class="card shadow-lg mb-4">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <h4 class="mb-0">Harrin Teräsovi Mittalaskuri</h4>
+                    <div>
+                        <h4 class="mb-0">Harrin Teräsovi Mittalaskuri</h4>
+                        <p class="text-muted mb-0 mt-1" style="font-size: 13px;">Ammattimainen mittatyökalu</p>
+                    </div>
                     <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
                 </div>
                 <hr class="my-3">
@@ -193,6 +196,29 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Sulje</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PDF Export Modal -->
+    <div class="modal fade" id="pdfExportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Vie PDF:ksi</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="pdfFileName" class="form-label">Anna nimi tiedostolle</label>
+                        <input type="text" class="form-control" id="pdfFileName" placeholder="esim. Projekti A, Kohde 123">
+                        <div class="form-text">Tämä nimi näkyy PDF-tiedostossa ja tiedostonimessä.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmExportToPDF()">Luo PDF</button>
                 </div>
             </div>
         </div>
