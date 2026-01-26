@@ -22,7 +22,7 @@ todos:
       - init-repo
   - id: initial-commit
     content: Tee ensimmäinen commit kaikista projektin tiedostoista
-    status: in_progress
+    status: completed
     dependencies:
       - create-gitignore
 ---
@@ -50,6 +50,8 @@ git config --global user.name "Harro300"
 git config --global user.email "harri.vaisanen@icloud.com"
 ```
 
+
+
 ### 3. Repositorion alustus
 
 - Alustetaan Git-repositorio projektikansiossa: `git init`
@@ -72,5 +74,3 @@ git config --global user.email "harri.vaisanen@icloud.com"
 ## Huomiot
 
 - ✅ Git version 2.52.0 on asennettu onnistuneesti
-- Käyttäjätiedot: Harro300 (harri.vaisanen@icloud.com)
-- Cursor käynnistetty uudelleen PATH-ympäristömuuttujien päivittämiseksi

@@ -39,7 +39,10 @@
                         <h4 class="mb-0">Harrin Teräsovi Mittalaskuri</h4>
                         <p class="text-muted mb-0 mt-1" style="font-size: 13px;">Ammattimainen mittatyökalu</p>
                     </div>
-                    <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn-admin-lock" onclick="openAdminPanel()" title="Kaavahallinta">🔒</button>
+                        <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
+                    </div>
                 </div>
                 <hr class="my-3">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -201,6 +204,75 @@
         </div>
     </div>
 
+    <!-- Save Name Modal -->
+    <div class="modal fade" id="saveNameModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">💾 Tallenna kaavamuutokset</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="formulaSetName" class="form-label">Anna nimi kaavasetille</label>
+                        <input type="text" class="form-control" id="formulaSetName" placeholder="esim. Harrin Mukautetut">
+                        <div class="form-text">Syötä uusi nimi luodaksesi uuden kaavaosetin, tai jätä tyhjäksi päivittääksesi nykyistä.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
+                    <button type="button" class="btn btn-primary" onclick="askSavePassword()">Jatka</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Password Modal -->
+    <div class="modal fade" id="savePasswordModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🔐 Vahvista tallennus</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="backToNameModal()"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="savePassword" class="form-label">Tallennussalasana</label>
+                        <input type="password" class="form-control" id="savePassword" placeholder="Syötä tallennussalasana">
+                        <div id="savePasswordError" class="invalid-feedback d-block" style="display: none !important;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="backToNameModal()">Takaisin</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmSaveFormulas()">Tallenna</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Password Modal -->
+    <div class="modal fade" id="adminPasswordModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🔒 Admin-kirjautuminen</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="adminPassword" class="form-label">Salasana</label>
+                        <input type="password" class="form-control" id="adminPassword" placeholder="Syötä admin-salasana">
+                        <div id="adminPasswordError" class="invalid-feedback d-block" style="display: none !important;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmAdminPassword()">Kirjaudu</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- PDF Export Modal -->
     <div class="modal fade" id="pdfExportModal" tabindex="-1">
         <div class="modal-dialog">
@@ -220,6 +292,306 @@
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
                     <button type="button" class="btn btn-danger" onclick="confirmExportToPDF()">Luo PDF</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Overlay -->
+    <div id="adminPanelOverlay" class="admin-panel-overlay d-none">
+        <div class="admin-panel-container">
+            <div class="admin-panel-header">
+                <h3>🔒 Kaavahallinta</h3>
+                <button class="btn-admin-close" onclick="closeAdminPanel()">×</button>
+            </div>
+            
+            <div class="admin-panel-body">
+                <!-- Kaavasetti Selection -->
+                <div class="admin-section">
+                    <div class="mb-3">
+                        <label class="form-label">Aktiivinen kaavasetti</label>
+                        <select class="form-select" id="activeFormulaSet" onchange="switchFormulaSet()">
+                            <option value="default">Default Kaavat</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Janisol Pariovi -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                        <span>📊 JANISOL PARIOVI</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content active">
+                        <div class="formula-group">
+                            <h6>Lasilistat</h6>
+                            <div class="formula-row">
+                                <label>Pystylista:</label>
+                                <span>Ruudun korkeus +</span>
+                                <input type="number" id="janisol_pariovi_lasilista_pysty" class="formula-input" value="41">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Vaakalista:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_lasilista_vaaka" class="formula-input" value="3">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Uretaanipalat</h6>
+                            <div class="formula-row">
+                                <label>Korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_uretaani_korkeus" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_uretaani_leveys" class="formula-input" value="46">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Potkupellit - Käyntiovi</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_potku_kaynti_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_potku_kaynti_sisa_leveys" class="formula-input" value="115">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_potku_kaynti_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="165">
+                                <span>mm (-5 jos >310)</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Potkupellit - Lisäovi</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_potku_lisa_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_potku_lisa_sisa_leveys" class="formula-input" value="140">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_potku_lisa_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
+                                <span>mm (-5 jos >310)</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Harjalistat</h6>
+                            <div class="formula-row">
+                                <label>Pituus:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_harjalista" class="formula-input" value="141">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Janisol Käyntiovi -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                        <span>📊 JANISOL KÄYNTIOVI</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <p class="text-muted">Samat kaavat kuin Pariovi, ilman lisäovea</p>
+                    </div>
+                </div>
+
+                <!-- Economy Pariovi -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                        <span>📊 ECONOMY PARIOVI</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <div class="formula-group">
+                            <h6>Lasilistat</h6>
+                            <div class="formula-row">
+                                <label>Pystylista:</label>
+                                <span>Ruudun korkeus +</span>
+                                <input type="number" id="economy_pariovi_lasilista_pysty" class="formula-input" value="38">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Vaakalista:</label>
+                                <span>Oven leveys</span>
+                                <input type="number" id="economy_pariovi_lasilista_vaaka" class="formula-input" value="-2">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Uretaanipalat</h6>
+                            <div class="formula-row">
+                                <label>Korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_uretaani_korkeus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_uretaani_leveys" class="formula-input" value="41">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Potkupellit - Käyntiovi</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_potku_kaynti_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_potku_kaynti_sisa_leveys" class="formula-input" value="110">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_potku_kaynti_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="160">
+                                <span>mm (-5 jos >310)</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Potkupellit - Lisäovi</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_potku_lisa_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_potku_lisa_sisa_leveys" class="formula-input" value="135">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_potku_lisa_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm + Rako</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
+                                <span>mm (-5 jos >310)</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>Harjalistat</h6>
+                            <div class="formula-row">
+                                <label>Pituus:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_harjalista" class="formula-input" value="141">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Economy Käyntiovi -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                        <span>📊 ECONOMY KÄYNTIOVI</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <p class="text-muted">Samat kaavat kuin Economy Pariovi, ilman lisäovea</p>
+                    </div>
+                </div>
+
+                <!-- Rako-asetukset -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                        <span>⚙️ RAKO-ASETUKSET</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <div class="formula-group">
+                            <h6>10 mm rako</h6>
+                            <div class="formula-row">
+                                <label>Sisäpelti korjaus:</label>
+                                <input type="number" id="rako_10_inner" class="formula-input" value="32">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulkopelti korjaus:</label>
+                                <input type="number" id="rako_10_outer" class="formula-input" value="7">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>15 mm rako</h6>
+                            <div class="formula-row">
+                                <label>Sisäpelti korjaus:</label>
+                                <input type="number" id="rako_15_inner" class="formula-input" value="27">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulkopelti korjaus:</label>
+                                <input type="number" id="rako_15_outer" class="formula-input" value="2">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="admin-panel-footer">
+                <button class="btn btn-secondary" onclick="resetToDefaults()">↺ Palauta oletukset</button>
+                <button class="btn btn-primary" onclick="saveFormulaChanges()">💾 Tallenna kaavamuutokset</button>
             </div>
         </div>
     </div>
