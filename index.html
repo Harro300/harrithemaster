@@ -16,11 +16,11 @@
                     <div class="card-body p-5">
                         <h2 class="text-center mb-4">Harrin Teräsovi Mittalaskuri</h2>
                         <form id="loginForm">
-                            <div class="mb-3">
+        <div class="mb-3">
                                 <label for="password" class="form-label">Salasana</label>
                                 <input type="password" class="form-control" id="password" required>
                                 <div id="loginError" class="invalid-feedback d-block" style="display: none !important;"></div>
-                            </div>
+        </div>
                             <button type="submit" class="btn btn-primary w-100">Kirjaudu sisään</button>
                         </form>
                     </div>
@@ -55,10 +55,10 @@
                         </button>
                         <button class="btn btn-outline-primary" onclick="selectCalculator('economy-pariovi')" id="btn-economy-pariovi">
                             Economy Pariovi
-                        </button>
+        </button>
                         <button class="btn btn-outline-primary" onclick="selectCalculator('economy-kayntiovi')" id="btn-economy-kayntiovi">
                             Economy Käyntiovi
-                        </button>
+        </button>
                     </div>
                     <button class="btn btn-info" onclick="openSettings()">⚙️ Asetukset</button>
                 </div>
@@ -71,35 +71,35 @@
                 <h4 class="mb-4">Syötteet</h4>
                 <div class="row">
                     <div class="col-md-6 col-lg-3">
-                        <div class="mb-3">
+            <div class="mb-3">
                             <label for="mainDoorWidth" class="form-label">Käyntioven leveys (mm)</label>
                             <input type="number" class="form-control" id="mainDoorWidth" min="500" value="795" oninput="calculate()">
-                        </div>
-                    </div>
+                </div>
+            </div>
                     <div class="col-md-6 col-lg-3" id="sideDoorWidthContainer" style="display: none;">
                         <div class="mb-3">
                             <label for="sideDoorWidth" class="form-label">Lisäoven leveys (mm)</label>
                             <input type="number" class="form-control" id="sideDoorWidth" min="500" value="625" oninput="calculate()">
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-lg-3">
-                        <div class="mb-3">
-                            <label for="kickPlateHeight" class="form-label">Potkupellin oletuskorkeus (mm)</label>
-                            <input type="number" class="form-control" id="kickPlateHeight" min="100" value="300" oninput="calculate()">
-                        </div>
-                    </div>
-                    <div class="col-md-6 col-lg-3" id="paneHeightInputs">
-                        <div class="mb-3">
-                            <label for="paneHeight1" class="form-label">Ruudun korkeus (mm)</label>
-                            <input type="number" class="form-control" id="paneHeight1" min="100" value="800" oninput="calculate()">
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <button class="btn btn-success me-2" onclick="savePreset()">💾 Tallenna</button>
-                    <button class="btn btn-warning" onclick="loadPresetDialog()">📂 Lataa</button>
                 </div>
             </div>
+                    <div class="col-md-6 col-lg-3">
+            <div class="mb-3">
+                            <label for="kickPlateHeight" class="form-label">Potkupellin oletuskorkeus (mm)</label>
+                            <input type="number" class="form-control" id="kickPlateHeight" min="100" value="300" oninput="calculate()">
+                </div>
+            </div>
+                    <div class="col-md-6 col-lg-3" id="paneHeightInputs">
+                <div class="mb-3">
+                            <label for="paneHeight1" class="form-label">Ruudun korkeus (mm)</label>
+                            <input type="number" class="form-control" id="paneHeight1" min="100" value="800" oninput="calculate()">
+                    </div>
+                </div>
+            </div>
+                <div class="mt-3">
+                    <button class="btn btn-success me-2" onclick="savePreset()">💾 Tallenna</button>
+                    <button class="btn btn-warning" onclick="loadPresetDialog()">📂 Tallennetut</button>
+            </div>
+        </div>
         </div>
 
         <!-- Results Section -->
@@ -134,6 +134,7 @@
                             <option value="8">8 mm rako</option>
                             <option value="10">10 mm rako</option>
                             <option value="15">15 mm rako</option>
+                            <option value="saneeraus">Saneerauskynnys</option>
                         </select>
                     </div>
                     <div class="mb-3">
@@ -189,16 +190,13 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Lataa esiasetus</h5>
+                    <h5 class="modal-title">Tallennetut esiasetukset</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div id="presetList" class="list-group">
                         <!-- Presets will be listed here -->
                     </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Sulje</button>
                 </div>
             </div>
         </div>
@@ -419,6 +417,40 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset</h6>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_10_inner" class="formula-input" value="32">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_10_outer" class="formula-input" value="7">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_15_inner" class="formula-input" value="27">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_15_outer" class="formula-input" value="2">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_saneeraus_inner" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_rako_saneeraus_outer" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -429,7 +461,41 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
-                        <p class="text-muted">Samat kaavat kuin Pariovi, ilman lisäovea</p>
+                        <p class="text-muted mb-3">Samat peruskaavat kuin Pariovi, ilman lisäovea</p>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset</h6>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_10_inner" class="formula-input" value="32">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_10_outer" class="formula-input" value="7">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_15_inner" class="formula-input" value="27">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_15_outer" class="formula-input" value="2">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_saneeraus_inner" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_rako_saneeraus_outer" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -537,6 +603,40 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset</h6>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_rako_10_inner" class="formula-input" value="32">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_rako_10_outer" class="formula-input" value="7">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_rako_15_inner" class="formula-input" value="27">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_rako_15_outer" class="formula-input" value="2">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_rako_saneeraus_inner" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_rako_saneeraus_outer" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -547,41 +647,38 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
-                        <p class="text-muted">Samat kaavat kuin Economy Pariovi, ilman lisäovea</p>
-                    </div>
-                </div>
-
-                <!-- Rako-asetukset -->
-                <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
-                        <span>⚙️ RAKO-ASETUKSET</span>
-                        <span class="admin-accordion-icon">▼</span>
-                    </div>
-                    <div class="admin-accordion-content">
-                        <div class="formula-group">
-                            <h6>10 mm rako</h6>
-                            <div class="formula-row">
-                                <label>Sisäpelti korjaus:</label>
-                                <input type="number" id="rako_10_inner" class="formula-input" value="32">
-                                <span>mm</span>
-                            </div>
-                            <div class="formula-row">
-                                <label>Ulkopelti korjaus:</label>
-                                <input type="number" id="rako_10_outer" class="formula-input" value="7">
-                                <span>mm</span>
-                            </div>
-                        </div>
+                        <p class="text-muted mb-3">Samat peruskaavat kuin Economy Pariovi, ilman lisäovea</p>
                         
                         <div class="formula-group">
-                            <h6>15 mm rako</h6>
+                            <h6>⚙️ Rako-asetukset</h6>
                             <div class="formula-row">
-                                <label>Sisäpelti korjaus:</label>
-                                <input type="number" id="rako_15_inner" class="formula-input" value="27">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_10_inner" class="formula-input" value="32">
                                 <span>mm</span>
                             </div>
                             <div class="formula-row">
-                                <label>Ulkopelti korjaus:</label>
-                                <input type="number" id="rako_15_outer" class="formula-input" value="2">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_10_outer" class="formula-input" value="7">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_15_inner" class="formula-input" value="27">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_15_outer" class="formula-input" value="2">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_saneeraus_inner" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_rako_saneeraus_outer" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
                         </div>

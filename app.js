@@ -17,8 +17,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Valid passwords
-const VALID_PASSWORDS = ['Soma<3', 'Harri10K'];
-const ADMIN_PASSWORD = 'HarriTheMaster';
+const VALID_PASSWORDS = ['Soma<3', '1234'];
+const ADMIN_PASSWORDS = ['HarriTheMaster', '4321'];
 const SAVE_PASSWORD = '0303';
 
 // Login handling
@@ -103,7 +103,8 @@ function toggleDarkMode() {
 
 // Apply settings
 function applySettings() {
-    settings.gapOption = parseInt(document.getElementById('gapOption').value);
+    const gapValue = document.getElementById('gapOption').value;
+    settings.gapOption = gapValue === 'saneeraus' ? 'saneeraus' : parseInt(gapValue);
     settings.paneCount = parseInt(document.getElementById('paneCount').value);
     updatePaneInputs();
     calculate();
@@ -228,11 +229,11 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     let outerHeightAdjust = 0;
     
     if (settings.gapOption === 10) {
-        innerHeightAdjust = formulas.rako["10"].inner;
-        outerHeightAdjust = formulas.rako["10"].outer;
+        innerHeightAdjust = jf.rako_10_inner || 32;
+        outerHeightAdjust = jf.rako_10_outer || 7;
     } else if (settings.gapOption === 15) {
-        innerHeightAdjust = formulas.rako["15"].inner;
-        outerHeightAdjust = formulas.rako["15"].outer;
+        innerHeightAdjust = jf.rako_15_inner || 27;
+        outerHeightAdjust = jf.rako_15_outer || 2;
     }
     
     // Lasilistat (Glass strips) - Use dynamic formulas
@@ -270,25 +271,39 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
     
     // Potkupellit - Käyntiovi (Kick plates - Main door)
-    const mainInnerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+    let mainInnerHeight, mainOuterHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        mainInnerHeight = kickHeight + (jf.rako_saneeraus_inner || -25);
+        mainOuterHeight = kickHeight + (jf.rako_saneeraus_outer || 0);
+    } else {
+        mainInnerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+        mainOuterHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+    }
     const mainInnerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    const mainOuterHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
     let mainOuterWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
-    if (mainOuterHeight > 310) {
+    if (kickHeight > 310) {
         mainOuterWidth -= 5;
     }
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi (Kick plates - Side door)
-    const sideInnerHeight = kickHeight + jf.potku_lisa_sisa_korkeus + innerHeightAdjust;
+    let sideInnerHeight, sideOuterHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        sideInnerHeight = kickHeight + (jf.rako_saneeraus_inner || -25);
+        sideOuterHeight = kickHeight + (jf.rako_saneeraus_outer || 0);
+    } else {
+        sideInnerHeight = kickHeight + jf.potku_lisa_sisa_korkeus + innerHeightAdjust;
+        sideOuterHeight = kickHeight + jf.potku_lisa_ulko_korkeus + outerHeightAdjust;
+    }
     const sideInnerWidth = sideWidth + jf.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    const sideOuterHeight = kickHeight + jf.potku_lisa_ulko_korkeus + outerHeightAdjust;
     let sideOuterWidth = sideWidth + jf.potku_lisa_ulko_leveys;
-    if (sideOuterHeight > 310) {
+    if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
     results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
@@ -311,18 +326,19 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
     
     // Get formulas
     const formulas = getActiveFormulas();
-    const jf = formulas.janisol_pariovi; // Use same as pariovi
+    const jf = formulas.janisol_pariovi; // Use same base formulas as pariovi
+    const jkf = formulas.janisol_kayntiovi; // But use own rako settings
     
     // Gap adjustments
     let innerHeightAdjust = 0;
     let outerHeightAdjust = 0;
     
     if (settings.gapOption === 10) {
-        innerHeightAdjust = formulas.rako["10"].inner;
-        outerHeightAdjust = formulas.rako["10"].outer;
+        innerHeightAdjust = jkf.rako_10_inner || 32;
+        outerHeightAdjust = jkf.rako_10_outer || 7;
     } else if (settings.gapOption === 15) {
-        innerHeightAdjust = formulas.rako["15"].inner;
-        outerHeightAdjust = formulas.rako["15"].outer;
+        innerHeightAdjust = jkf.rako_15_inner || 27;
+        outerHeightAdjust = jkf.rako_15_outer || 2;
     }
     
     // Lasilistat - Use dynamic formulas
@@ -343,13 +359,20 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
     
     // Potkupellit
-    const innerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+    let innerHeight, outerHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        innerHeight = kickHeight + (jkf.rako_saneeraus_inner || -25);
+        outerHeight = kickHeight + (jkf.rako_saneeraus_outer || 0);
+    } else {
+        innerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+        outerHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+    }
     const innerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
     
-    const outerHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
     let outerWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
-    if (outerHeight > 310) {
+    if (kickHeight > 310) {
         outerWidth -= 5;
     }
     results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
@@ -378,11 +401,11 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     let outerHeightAdjust = 0;
     
     if (settings.gapOption === 10) {
-        innerHeightAdjust = formulas.rako["10"].inner;
-        outerHeightAdjust = formulas.rako["10"].outer;
+        innerHeightAdjust = ef.rako_10_inner || 32;
+        outerHeightAdjust = ef.rako_10_outer || 7;
     } else if (settings.gapOption === 15) {
-        innerHeightAdjust = formulas.rako["15"].inner;
-        outerHeightAdjust = formulas.rako["15"].outer;
+        innerHeightAdjust = ef.rako_15_inner || 27;
+        outerHeightAdjust = ef.rako_15_outer || 2;
     }
     
     // Lasilistat - Use dynamic formulas
@@ -420,25 +443,39 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
     
     // Potkupellit - Käyntiovi
-    const mainInnerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+    let mainInnerHeight, mainOuterHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        mainInnerHeight = kickHeight + (ef.rako_saneeraus_inner || -25);
+        mainOuterHeight = kickHeight + (ef.rako_saneeraus_outer || 0);
+    } else {
+        mainInnerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+        mainOuterHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+    }
     const mainInnerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    const mainOuterHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
     let mainOuterWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
-    if (mainOuterHeight > 310) {
+    if (kickHeight > 310) {
         mainOuterWidth -= 5;
     }
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi
-    const sideInnerHeight = kickHeight + ef.potku_lisa_sisa_korkeus + innerHeightAdjust;
+    let sideInnerHeight, sideOuterHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        sideInnerHeight = kickHeight + (ef.rako_saneeraus_inner || -25);
+        sideOuterHeight = kickHeight + (ef.rako_saneeraus_outer || 0);
+    } else {
+        sideInnerHeight = kickHeight + ef.potku_lisa_sisa_korkeus + innerHeightAdjust;
+        sideOuterHeight = kickHeight + ef.potku_lisa_ulko_korkeus + outerHeightAdjust;
+    }
     const sideInnerWidth = sideWidth + ef.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    const sideOuterHeight = kickHeight + ef.potku_lisa_ulko_korkeus + outerHeightAdjust;
     let sideOuterWidth = sideWidth + ef.potku_lisa_ulko_leveys;
-    if (sideOuterHeight > 310) {
+    if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
     results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
@@ -461,18 +498,19 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     
     // Get formulas
     const formulas = getActiveFormulas();
-    const ef = formulas.economy_pariovi; // Use same as pariovi
+    const ef = formulas.economy_pariovi; // Use same base formulas as pariovi
+    const ekf = formulas.economy_kayntiovi; // But use own rako settings
     
     // Gap adjustments
     let innerHeightAdjust = 0;
     let outerHeightAdjust = 0;
     
     if (settings.gapOption === 10) {
-        innerHeightAdjust = formulas.rako["10"].inner;
-        outerHeightAdjust = formulas.rako["10"].outer;
+        innerHeightAdjust = ekf.rako_10_inner || 32;
+        outerHeightAdjust = ekf.rako_10_outer || 7;
     } else if (settings.gapOption === 15) {
-        innerHeightAdjust = formulas.rako["15"].inner;
-        outerHeightAdjust = formulas.rako["15"].outer;
+        innerHeightAdjust = ekf.rako_15_inner || 27;
+        outerHeightAdjust = ekf.rako_15_outer || 2;
     }
     
     // Lasilistat - Use dynamic formulas
@@ -493,13 +531,20 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
     
     // Potkupellit
-    const innerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+    let innerHeight, outerHeight;
+    if (settings.gapOption === 'saneeraus') {
+        // Saneerauskynnys: Use values from admin panel
+        innerHeight = kickHeight + (ekf.rako_saneeraus_inner || -25);
+        outerHeight = kickHeight + (ekf.rako_saneeraus_outer || 0);
+    } else {
+        innerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+        outerHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+    }
     const innerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
     
-    const outerHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
     let outerWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
-    if (outerHeight > 310) {
+    if (kickHeight > 310) {
         outerWidth -= 5;
     }
     results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
@@ -601,7 +646,26 @@ function confirmSavePreset() {
 
 // Load preset dialog
 function loadPresetDialog() {
+    refreshPresetList();
+    const modal = new bootstrap.Modal(document.getElementById('loadPresetModal'));
+    modal.show();
+}
+
+function loadPresetFromList(name) {
+    loadPreset(name);
+}
+
+function togglePresetCheck(name, event) {
+    event.stopPropagation();
+    const checkedPresets = JSON.parse(localStorage.getItem('checkedPresets') || '{}');
+    checkedPresets[name] = !checkedPresets[name];
+    localStorage.setItem('checkedPresets', JSON.stringify(checkedPresets));
+    refreshPresetList(); // Refresh only the list, not the modal
+}
+
+function refreshPresetList() {
     const presets = JSON.parse(localStorage.getItem('doorPresets') || '{}');
+    const checkedPresets = JSON.parse(localStorage.getItem('checkedPresets') || '{}');
     const listDiv = document.getElementById('presetList');
     
     if (Object.keys(presets).length === 0) {
@@ -609,24 +673,24 @@ function loadPresetDialog() {
     } else {
         listDiv.innerHTML = '';
         Object.keys(presets).forEach(name => {
-            const item = document.createElement('a');
-            item.href = '#';
-            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            
+            const isChecked = checkedPresets[name] || false;
+            const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            
             item.innerHTML = `
-                <span>${name}</span>
+                <div class="d-flex align-items-center gap-2 flex-grow-1">
+                    <div class="${checkboxClass}" onclick="togglePresetCheck('${name}', event)">
+                        ${isChecked ? '✓' : ''}
+                </div>
+                    <span class="preset-name" onclick="loadPresetFromList('${name}')" style="cursor: pointer; flex-grow: 1;">${name}</span>
+                </div>
                 <button class="btn btn-sm btn-danger" onclick="deletePreset('${name}', event)">🗑️</button>
             `;
-            item.onclick = (e) => {
-                if (!e.target.classList.contains('btn-danger')) {
-                    loadPreset(name);
-                }
-            };
             listDiv.appendChild(item);
         });
     }
-    
-    const modal = new bootstrap.Modal(document.getElementById('loadPresetModal'));
-    modal.show();
 }
 
 function loadPreset(name) {
@@ -674,7 +738,12 @@ function deletePreset(name, event) {
     delete presets[name];
     localStorage.setItem('doorPresets', JSON.stringify(presets));
     
-    loadPresetDialog();
+    // Also remove from checked presets
+    const checkedPresets = JSON.parse(localStorage.getItem('checkedPresets') || '{}');
+    delete checkedPresets[name];
+    localStorage.setItem('checkedPresets', JSON.stringify(checkedPresets));
+    
+    refreshPresetList();
 }
 
 // Copy results to clipboard
@@ -716,7 +785,8 @@ function copyResults(event) {
         }
     }
     
-    text += `Rako: ${settings.gapOption} mm\n`;
+    const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
+    text += `Rako: ${rakoText}\n`;
     text += `Ruutujen määrä: ${settings.paneCount}\n`;
     text += '\n';
     
@@ -822,7 +892,7 @@ function confirmAdminPassword() {
     const password = document.getElementById('adminPassword').value;
     const errorDiv = document.getElementById('adminPasswordError');
     
-    if (password === ADMIN_PASSWORD) {
+    if (ADMIN_PASSWORDS.includes(password)) {
         // Correct password - close modal and show admin panel
         const modal = bootstrap.Modal.getInstance(document.getElementById('adminPasswordModal'));
         modal.hide();
@@ -874,7 +944,21 @@ function getDefaultFormulas() {
             potku_lisa_sisa_leveys: 140,
             potku_lisa_ulko_korkeus: -18,
             potku_lisa_ulko_leveys: 140,
-            harjalista: 141
+            harjalista: 141,
+            rako_10_inner: 32,
+            rako_10_outer: 7,
+            rako_15_inner: 27,
+            rako_15_outer: 2,
+            rako_saneeraus_inner: -25,
+            rako_saneeraus_outer: 0
+        },
+        janisol_kayntiovi: {
+            rako_10_inner: 32,
+            rako_10_outer: 7,
+            rako_15_inner: 27,
+            rako_15_outer: 2,
+            rako_saneeraus_inner: -25,
+            rako_saneeraus_outer: 0
         },
         economy_pariovi: {
             lasilista_pysty: 38,
@@ -889,11 +973,21 @@ function getDefaultFormulas() {
             potku_lisa_sisa_leveys: 135,
             potku_lisa_ulko_korkeus: -20,
             potku_lisa_ulko_leveys: 135,
-            harjalista: 141
+            harjalista: 141,
+            rako_10_inner: 32,
+            rako_10_outer: 7,
+            rako_15_inner: 27,
+            rako_15_outer: 2,
+            rako_saneeraus_inner: -25,
+            rako_saneeraus_outer: 0
         },
-        rako: {
-            "10": { inner: 32, outer: 7 },
-            "15": { inner: 27, outer: 2 }
+        economy_kayntiovi: {
+            rako_10_inner: 32,
+            rako_10_outer: 7,
+            rako_15_inner: 27,
+            rako_15_outer: 2,
+            rako_saneeraus_inner: -25,
+            rako_saneeraus_outer: 0
         }
     };
 }
@@ -925,6 +1019,14 @@ function loadFormulasToPanel() {
         });
     }
     
+    // Janisol Käyntiovi
+    if (formulas.janisol_kayntiovi) {
+        Object.keys(formulas.janisol_kayntiovi).forEach(key => {
+            const input = document.getElementById(`janisol_kayntiovi_${key}`);
+            if (input) input.value = formulas.janisol_kayntiovi[key];
+        });
+    }
+    
     // Economy Pariovi
     if (formulas.economy_pariovi) {
         Object.keys(formulas.economy_pariovi).forEach(key => {
@@ -933,12 +1035,12 @@ function loadFormulasToPanel() {
         });
     }
     
-    // Rako settings
-    if (formulas.rako) {
-        document.getElementById('rako_10_inner').value = formulas.rako["10"].inner;
-        document.getElementById('rako_10_outer').value = formulas.rako["10"].outer;
-        document.getElementById('rako_15_inner').value = formulas.rako["15"].inner;
-        document.getElementById('rako_15_outer').value = formulas.rako["15"].outer;
+    // Economy Käyntiovi
+    if (formulas.economy_kayntiovi) {
+        Object.keys(formulas.economy_kayntiovi).forEach(key => {
+            const input = document.getElementById(`economy_kayntiovi_${key}`);
+            if (input) input.value = formulas.economy_kayntiovi[key];
+        });
     }
     
     // Load available formula sets
@@ -1081,7 +1183,21 @@ function collectFormulasFromPanel() {
             potku_lisa_sisa_leveys: parseFloat(document.getElementById('janisol_pariovi_potku_lisa_sisa_leveys').value),
             potku_lisa_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_potku_lisa_ulko_korkeus').value),
             potku_lisa_ulko_leveys: parseFloat(document.getElementById('janisol_pariovi_potku_lisa_ulko_leveys').value),
-            harjalista: parseFloat(document.getElementById('janisol_pariovi_harjalista').value)
+            harjalista: parseFloat(document.getElementById('janisol_pariovi_harjalista').value),
+            rako_10_inner: parseFloat(document.getElementById('janisol_pariovi_rako_10_inner').value),
+            rako_10_outer: parseFloat(document.getElementById('janisol_pariovi_rako_10_outer').value),
+            rako_15_inner: parseFloat(document.getElementById('janisol_pariovi_rako_15_inner').value),
+            rako_15_outer: parseFloat(document.getElementById('janisol_pariovi_rako_15_outer').value),
+            rako_saneeraus_inner: parseFloat(document.getElementById('janisol_pariovi_rako_saneeraus_inner').value),
+            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_pariovi_rako_saneeraus_outer').value)
+        },
+        janisol_kayntiovi: {
+            rako_10_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_inner').value),
+            rako_10_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_outer').value),
+            rako_15_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_15_inner').value),
+            rako_15_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_15_outer').value),
+            rako_saneeraus_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_saneeraus_inner').value),
+            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_saneeraus_outer').value)
         },
         economy_pariovi: {
             lasilista_pysty: parseFloat(document.getElementById('economy_pariovi_lasilista_pysty').value),
@@ -1096,17 +1212,21 @@ function collectFormulasFromPanel() {
             potku_lisa_sisa_leveys: parseFloat(document.getElementById('economy_pariovi_potku_lisa_sisa_leveys').value),
             potku_lisa_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_potku_lisa_ulko_korkeus').value),
             potku_lisa_ulko_leveys: parseFloat(document.getElementById('economy_pariovi_potku_lisa_ulko_leveys').value),
-            harjalista: parseFloat(document.getElementById('economy_pariovi_harjalista').value)
+            harjalista: parseFloat(document.getElementById('economy_pariovi_harjalista').value),
+            rako_10_inner: parseFloat(document.getElementById('economy_pariovi_rako_10_inner').value),
+            rako_10_outer: parseFloat(document.getElementById('economy_pariovi_rako_10_outer').value),
+            rako_15_inner: parseFloat(document.getElementById('economy_pariovi_rako_15_inner').value),
+            rako_15_outer: parseFloat(document.getElementById('economy_pariovi_rako_15_outer').value),
+            rako_saneeraus_inner: parseFloat(document.getElementById('economy_pariovi_rako_saneeraus_inner').value),
+            rako_saneeraus_outer: parseFloat(document.getElementById('economy_pariovi_rako_saneeraus_outer').value)
         },
-        rako: {
-            "10": {
-                inner: parseFloat(document.getElementById('rako_10_inner').value),
-                outer: parseFloat(document.getElementById('rako_10_outer').value)
-            },
-            "15": {
-                inner: parseFloat(document.getElementById('rako_15_inner').value),
-                outer: parseFloat(document.getElementById('rako_15_outer').value)
-            }
+        economy_kayntiovi: {
+            rako_10_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_10_inner').value),
+            rako_10_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_10_outer').value),
+            rako_15_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_15_inner').value),
+            rako_15_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_15_outer').value),
+            rako_saneeraus_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_saneeraus_inner').value),
+            rako_saneeraus_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_saneeraus_outer').value)
         }
     };
 }
@@ -1180,7 +1300,8 @@ function confirmExportToPDF() {
         }
     }
     
-    doc.text(`Rako: ${settings.gapOption} mm`, 25, yPos);
+    const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
+    doc.text(`Rako: ${rakoText}`, 25, yPos);
     yPos += 7;
     doc.text(`Ruutujen määrä: ${settings.paneCount}`, 25, yPos);
     yPos += 12;
