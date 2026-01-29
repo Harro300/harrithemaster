@@ -5,6 +5,226 @@ let settings = {
     paneCount: 1
 };
 
+// Firebase state
+let firebaseInitialized = false;
+let currentUser = null;
+let isAdmin = false;
+let presetsUnsubscribe = null;
+let checkedStatesUnsubscribe = null;
+
+// Admin email addresses
+const ADMIN_EMAILS = ['admin@terasovi.local'];
+
+// Password to email mapping for backwards compatibility
+const PASSWORD_TO_EMAIL = {
+    'Soma<3': 'soma@terasovi.local',
+    '1234': 'soma@terasovi.local',
+    'HarriTheMaster': 'admin@terasovi.local',
+    '4321': 'admin@terasovi.local'
+};
+
+// Default passwords for Firebase users
+const DEFAULT_PASSWORDS = {
+    'soma@terasovi.local': 'Soma<3',
+    'admin@terasovi.local': 'HarriTheMaster'
+};
+
+// ========== UTILITY FUNCTIONS ==========
+
+// Show toast notification
+function showToast(message, type = 'info', title = null) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    
+    const icons = {
+        success: '✅',
+        error: '❌',
+        warning: '⚠️',
+        info: 'ℹ️'
+    };
+    
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    
+    toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || icons.info}</span>
+        <div class="toast-content">
+            ${title ? `<div class="toast-title">${title}</div>` : ''}
+            <div class="toast-message">${message}</div>
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto remove after 4 seconds
+    setTimeout(() => {
+        toast.classList.add('hiding');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+// Update sync status indicator
+function updateSyncStatus(online) {
+    const statusEl = document.getElementById('syncStatus');
+    if (!statusEl) return;
+    
+    const indicator = statusEl.querySelector('.sync-indicator');
+    const text = statusEl.querySelector('.sync-text');
+    
+    if (online) {
+        statusEl.classList.remove('offline');
+        statusEl.classList.add('online');
+        indicator.textContent = '🟢';
+        text.textContent = 'Online';
+    } else {
+        statusEl.classList.remove('online');
+        statusEl.classList.add('offline');
+        indicator.textContent = '🔴';
+        text.textContent = 'Offline';
+    }
+}
+
+// Check if user is admin
+function checkIsAdmin(email) {
+    return ADMIN_EMAILS.includes(email);
+}
+
+// Wait for Firebase to be ready
+function waitForFirebase() {
+    return new Promise((resolve) => {
+        if (window.firebaseReady) {
+            resolve();
+        } else {
+            window.addEventListener('firebaseReady', () => resolve(), { once: true });
+        }
+    });
+}
+
+// Firebase Auth State Listener
+async function initializeFirebaseAuth() {
+    await waitForFirebase();
+    
+    const { auth, onAuthStateChanged } = window.firebase;
+    
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            console.log('🔐 Käyttäjä kirjautunut:', user.email);
+            currentUser = user;
+            isAdmin = checkIsAdmin(user.email);
+            updateSyncStatus(true);
+        } else {
+            console.log('🔓 Ei kirjautunutta käyttäjää');
+            currentUser = null;
+            isAdmin = false;
+            updateSyncStatus(false);
+        }
+    });
+}
+
+// Setup realtime listeners for Firestore
+function setupRealtimeListeners() {
+    if (!window.firebase || !window.firebase.db) {
+        console.warn('⚠️ Firebase ei ole saatavilla, käytetään vain localStoragea');
+        return;
+    }
+    
+    const { db, collection, onSnapshot, doc } = window.firebase;
+    
+    console.log('🎧 Aloitetaan reaaliaikainen kuuntelu...');
+    
+    // LISTENER 1: Presets collection
+    try {
+        let isFirstLoad = true;
+        presetsUnsubscribe = onSnapshot(
+            collection(db, 'presets'),
+            (snapshot) => {
+                console.log('🔔 Esiasetukset päivitetty!');
+                
+                // Update localStorage backup
+                const presets = {};
+                snapshot.forEach((doc) => {
+                    presets[doc.data().name || doc.id] = {
+                        ...doc.data(),
+                        _firestoreId: doc.id
+                    };
+                });
+                localStorage.setItem('doorPresets', JSON.stringify(presets));
+                
+                // Refresh UI if preset dialog is open
+                const presetModal = document.getElementById('loadPresetModal');
+                if (presetModal && presetModal.classList.contains('show')) {
+                    refreshPresetList();
+                }
+                
+                // Show toast (but not on first load)
+                if (!isFirstLoad) {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === "added") {
+                            showToast(`Uusi esiasetus: ${change.doc.data().name}`, 'info');
+                        } else if (change.type === "removed") {
+                            showToast(`Esiasetus poistettu`, 'info');
+                        }
+                    });
+                }
+                isFirstLoad = false;
+            },
+            (error) => {
+                console.error('❌ Presets-kuunteluvirhe:', error);
+                updateSyncStatus(false);
+                showToast('Synkronointivirhe, käytetään offline-tilaa', 'warning');
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe presets-kuuntelijan luonnissa:', error);
+    }
+    
+    // LISTENER 2: Checked states document
+    try {
+        checkedStatesUnsubscribe = onSnapshot(
+            doc(db, 'checkedStates', 'global'),
+            (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    console.log('🔔 Checkbox-tilat päivitetty!');
+                    
+                    const checks = docSnapshot.data().checks || {};
+                    localStorage.setItem('checkedPresets', JSON.stringify(checks));
+                    
+                    // Update UI if preset list is visible
+                    const presetModal = document.getElementById('loadPresetModal');
+                    if (presetModal && presetModal.classList.contains('show')) {
+                        refreshPresetList();
+                    }
+                }
+            },
+            (error) => {
+                console.error('❌ CheckedStates-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe checkedStates-kuuntelijan luonnissa:', error);
+    }
+    
+    console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
+}
+
+// Stop realtime listeners
+function stopRealtimeListeners() {
+    console.log('🛑 Lopetetaan reaaliaikaiset kuuntelijat...');
+    
+    if (presetsUnsubscribe) {
+        presetsUnsubscribe();
+        presetsUnsubscribe = null;
+    }
+    
+    if (checkedStatesUnsubscribe) {
+        checkedStatesUnsubscribe();
+        checkedStatesUnsubscribe = null;
+    }
+    
+    console.log('✅ Kuuntelijat lopetettu');
+}
+
 // Dark mode initialization
 document.addEventListener('DOMContentLoaded', function() {
     // Load dark mode preference
@@ -14,6 +234,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const toggle = document.getElementById('darkModeToggle');
         if (toggle) toggle.checked = true;
     }
+    
+    // Initialize Firebase Auth listener
+    initializeFirebaseAuth();
 });
 
 // Valid passwords
@@ -21,33 +244,133 @@ const VALID_PASSWORDS = ['Soma<3', '1234'];
 const ADMIN_PASSWORDS = ['HarriTheMaster', '4321'];
 const SAVE_PASSWORD = '0303';
 
-// Login handling
-document.getElementById('loginForm').addEventListener('submit', function(e) {
+// Login handling with Firebase
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const password = document.getElementById('password').value;
     const errorDiv = document.getElementById('loginError');
     
-    if (VALID_PASSWORDS.includes(password)) {
-        document.getElementById('loginScreen').classList.add('d-none');
-        document.getElementById('calculatorScreen').classList.remove('d-none');
-        errorDiv.classList.remove('show');
-        errorDiv.textContent = '';
-        // Select default calculator
-        selectCalculator('janisol-pariovi');
-    } else {
+    // Wait for Firebase to be ready
+    await waitForFirebase();
+    
+    // Map password to email
+    const email = PASSWORD_TO_EMAIL[password];
+    
+    if (!email) {
         errorDiv.textContent = 'Väärä salasana. Yritä uudelleen.';
         errorDiv.classList.add('show');
         document.getElementById('password').classList.add('is-invalid');
+        return;
+    }
+    
+    // Try to sign in with Firebase
+    const firebasePassword = DEFAULT_PASSWORDS[email];
+    const { auth, signIn } = window.firebase;
+    
+    try {
+        const userCredential = await signIn(auth, email, firebasePassword);
+        console.log('✅ Firebase kirjautuminen onnistui:', userCredential.user.email);
+        
+        // Clear error
+        errorDiv.classList.remove('show');
+        errorDiv.textContent = '';
+        document.getElementById('password').classList.remove('is-invalid');
+        document.getElementById('password').value = '';
+        
+        // Update global state
+        currentUser = userCredential.user;
+        isAdmin = checkIsAdmin(currentUser.email);
+        
+        // Show calculator screen
+        document.getElementById('loginScreen').classList.add('d-none');
+        document.getElementById('calculatorScreen').classList.remove('d-none');
+        
+        // Update sync status
+        updateSyncStatus(true);
+        
+        // Setup realtime listeners
+        setupRealtimeListeners();
+        
+        // Select default calculator
+        selectCalculator('janisol-pariovi');
+        
+        // Show welcome toast
+        showToast(`Tervetuloa${isAdmin ? ' Admin' : ''}!`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Firebase kirjautuminen epäonnistui:', error);
+        
+        // If Firebase fails, try to create the user first
+        if (error.code === 'auth/user-not-found') {
+            try {
+                const { createUser } = window.firebase;
+                await createUser(auth, email, firebasePassword);
+                console.log('✅ Käyttäjä luotu, yritetään kirjautua uudelleen...');
+                
+                // Try login again
+                const userCredential = await signIn(auth, email, firebasePassword);
+                currentUser = userCredential.user;
+                isAdmin = checkIsAdmin(currentUser.email);
+                
+                document.getElementById('loginScreen').classList.add('d-none');
+                document.getElementById('calculatorScreen').classList.remove('d-none');
+                updateSyncStatus(true);
+                setupRealtimeListeners();
+                selectCalculator('janisol-pariovi');
+                showToast('Tervetuloa!', 'success');
+                
+            } catch (createError) {
+                console.error('❌ Käyttäjän luonti epäonnistui:', createError);
+                errorDiv.textContent = 'Verkkovirhe. Tarkista yhteys.';
+                errorDiv.classList.add('show');
+                document.getElementById('password').classList.add('is-invalid');
+            }
+        } else {
+            // Fall back to localStorage-only mode
+            if (VALID_PASSWORDS.includes(password)) {
+                console.warn('⚠️ Käytetään offline-tilaa (Firebase ei toimi)');
+                document.getElementById('loginScreen').classList.add('d-none');
+                document.getElementById('calculatorScreen').classList.remove('d-none');
+                updateSyncStatus(false);
+                selectCalculator('janisol-pariovi');
+                showToast('Offline-tila: muutokset eivät synkronoidu', 'warning');
+            } else {
+                errorDiv.textContent = 'Verkkovirhe. Tarkista yhteys.';
+                errorDiv.classList.add('show');
+                document.getElementById('password').classList.add('is-invalid');
+            }
+        }
     }
 });
 
 // Logout
-function logout() {
+async function logout() {
+    // Stop realtime listeners first
+    stopRealtimeListeners();
+    
+    // Sign out from Firebase
+    if (window.firebase && currentUser) {
+        try {
+            await window.firebase.signOut(window.firebase.auth);
+            console.log('✅ Firebase uloskirjautuminen onnistui');
+        } catch (error) {
+            console.error('❌ Uloskirjautumisvirhe:', error);
+        }
+    }
+    
+    // Clear state
+    currentUser = null;
+    isAdmin = false;
+    currentCalculator = '';
+    
+    // Update UI
     document.getElementById('calculatorScreen').classList.add('d-none');
     document.getElementById('loginScreen').classList.remove('d-none');
     document.getElementById('password').value = '';
     document.getElementById('password').classList.remove('is-invalid');
-    currentCalculator = '';
+    updateSyncStatus(false);
+    
+    showToast('Uloskirjauduttu', 'info');
 }
 
 // Select calculator
@@ -266,7 +589,17 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Uretaanipalat (Urethane pieces)
-    const uretaaniHeight = kickHeight + jf.uretaani_korkeus;
+    let uretaaniHeightAdjust;
+    if (settings.gapOption === '10mm') {
+        uretaaniHeightAdjust = jf.uretaani_10mm || jf.uretaani_korkeus;
+    } else if (settings.gapOption === '15mm') {
+        uretaaniHeightAdjust = jf.uretaani_15mm || jf.uretaani_korkeus;
+    } else if (settings.gapOption === 'saneeraus') {
+        uretaaniHeightAdjust = jf.uretaani_saneeraus || jf.uretaani_korkeus;
+    } else {
+        uretaaniHeightAdjust = jf.uretaani_8mm || jf.uretaani_korkeus;
+    }
+    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
     results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
     
@@ -355,7 +688,17 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
     });
     
     // Uretaanipalat
-    const uretaaniHeight = kickHeight + jf.uretaani_korkeus;
+    let uretaaniHeightAdjust;
+    if (settings.gapOption === '10mm') {
+        uretaaniHeightAdjust = jkf.uretaani_10mm || jf.uretaani_korkeus;
+    } else if (settings.gapOption === '15mm') {
+        uretaaniHeightAdjust = jkf.uretaani_15mm || jf.uretaani_korkeus;
+    } else if (settings.gapOption === 'saneeraus') {
+        uretaaniHeightAdjust = jkf.uretaani_saneeraus || jf.uretaani_korkeus;
+    } else {
+        uretaaniHeightAdjust = jkf.uretaani_8mm || jf.uretaani_korkeus;
+    }
+    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
     
     // Potkupellit
@@ -438,7 +781,17 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Uretaanipalat
-    const uretaaniHeight = kickHeight + ef.uretaani_korkeus;
+    let uretaaniHeightAdjust;
+    if (settings.gapOption === '10mm') {
+        uretaaniHeightAdjust = ef.uretaani_10mm || ef.uretaani_korkeus;
+    } else if (settings.gapOption === '15mm') {
+        uretaaniHeightAdjust = ef.uretaani_15mm || ef.uretaani_korkeus;
+    } else if (settings.gapOption === 'saneeraus') {
+        uretaaniHeightAdjust = ef.uretaani_saneeraus || ef.uretaani_korkeus;
+    } else {
+        uretaaniHeightAdjust = ef.uretaani_8mm || ef.uretaani_korkeus;
+    }
+    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
     results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
     
@@ -527,7 +880,17 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     });
     
     // Uretaanipalat
-    const uretaaniHeight = kickHeight + ef.uretaani_korkeus;
+    let uretaaniHeightAdjust;
+    if (settings.gapOption === '10mm') {
+        uretaaniHeightAdjust = ekf.uretaani_10mm || ef.uretaani_korkeus;
+    } else if (settings.gapOption === '15mm') {
+        uretaaniHeightAdjust = ekf.uretaani_15mm || ef.uretaani_korkeus;
+    } else if (settings.gapOption === 'saneeraus') {
+        uretaaniHeightAdjust = ekf.uretaani_saneeraus || ef.uretaani_korkeus;
+    } else {
+        uretaaniHeightAdjust = ekf.uretaani_8mm || ef.uretaani_korkeus;
+    }
+    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
     results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
     
     // Potkupellit
@@ -609,58 +972,162 @@ function combineResults(items) {
 function savePreset() {
     const modal = new bootstrap.Modal(document.getElementById('savePresetModal'));
     document.getElementById('presetName').value = '';
+    document.getElementById('presetMessage').value = '';
     modal.show();
 }
 
-function confirmSavePreset() {
+async function confirmSavePreset() {
     const name = document.getElementById('presetName').value.trim();
     if (!name) {
         alert('Anna nimi esiasetukselle.');
         return;
     }
     
+    // Check if preset with this name already exists (in localStorage for now)
+    const presets = JSON.parse(localStorage.getItem('doorPresets') || '{}');
+    if (presets[name]) {
+        alert(`Esiasetus nimellä "${name}" on jo olemassa. Valitse toinen nimi.`);
+        return;
+    }
+    
+    const message = document.getElementById('presetMessage')?.value.trim() || '';
+    
     const preset = {
+        name: name,
         calculator: currentCalculator,
-        mainDoorWidth: document.getElementById('mainDoorWidth').value,
-        sideDoorWidth: document.getElementById('sideDoorWidth').value,
-        kickPlateHeight: document.getElementById('kickPlateHeight').value,
+        mainDoorWidth: parseInt(document.getElementById('mainDoorWidth').value),
+        sideDoorWidth: parseInt(document.getElementById('sideDoorWidth').value),
+        kickPlateHeight: parseInt(document.getElementById('kickPlateHeight').value),
         settings: { ...settings },
-        paneHeights: []
+        paneHeights: [],
+        message: message
     };
     
     for (let i = 1; i <= settings.paneCount; i++) {
         const el = document.getElementById(`paneHeight${i}`);
-        if (el) preset.paneHeights.push(el.value);
+        if (el) preset.paneHeights.push(parseInt(el.value));
     }
     
-    // Save to localStorage
-    const presets = JSON.parse(localStorage.getItem('doorPresets') || '{}');
-    presets[name] = preset;
-    localStorage.setItem('doorPresets', JSON.stringify(presets));
-    
+    // Close modal first
     const modal = bootstrap.Modal.getInstance(document.getElementById('savePresetModal'));
     modal.hide();
     
-    alert('Esiasetus tallennettu!');
+    // Try to save to Firestore
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, collection, addDoc, serverTimestamp } = window.firebase;
+            
+            const presetWithMetadata = {
+                ...preset,
+                createdBy: currentUser.email,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            };
+            
+            const docRef = await addDoc(collection(db, 'presets'), presetWithMetadata);
+            console.log('✅ Esiasetus tallennettu Firestoreen:', docRef.id);
+            
+            // Also save to localStorage as backup
+            presets[name] = { ...preset, _firestoreId: docRef.id };
+            localStorage.setItem('doorPresets', JSON.stringify(presets));
+            
+            showToast(`Esiasetus "${name}" tallennettu!`, 'success');
+            
+        } catch (error) {
+            console.error('❌ Firestore-tallennusvirhe:', error);
+            
+            // Fallback to localStorage only
+            presets[name] = preset;
+            localStorage.setItem('doorPresets', JSON.stringify(presets));
+            
+            showToast('Tallennettu paikallisesti (offline)', 'warning');
+        }
+    } else {
+        // Firebase not available, use localStorage only
+        presets[name] = preset;
+        localStorage.setItem('doorPresets', JSON.stringify(presets));
+        
+        showToast('Tallennettu paikallisesti', 'success');
+    }
 }
 
 // Load preset dialog
-function loadPresetDialog() {
-    refreshPresetList();
+async function loadPresetDialog() {
     const modal = new bootstrap.Modal(document.getElementById('loadPresetModal'));
+    const listDiv = document.getElementById('presetList');
+    
+    // Show loading indicator
+    listDiv.innerHTML = '<div class="p-3 text-center"><div class="loading-spinner"></div><p class="mt-2">Ladataan...</p></div>';
     modal.show();
+    
+    // Try to fetch from Firestore
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, collection, getDocs } = window.firebase;
+            const querySnapshot = await getDocs(collection(db, 'presets'));
+            
+            // Update localStorage with fresh data
+            const presets = {};
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                presets[data.name || doc.id] = {
+                    ...data,
+                    _firestoreId: doc.id
+                };
+            });
+            localStorage.setItem('doorPresets', JSON.stringify(presets));
+            
+            console.log('✅ Esiasetukset ladattu Firestoresta');
+            
+        } catch (error) {
+            console.error('❌ Virhe ladattaessa Firestoresta:', error);
+            showToast('Käytetään paikallisia tietoja', 'warning');
+        }
+    }
+    
+    // Refresh the list (from localStorage)
+    refreshPresetList();
 }
 
 function loadPresetFromList(name) {
     loadPreset(name);
 }
 
-function togglePresetCheck(name, event) {
+async function togglePresetCheck(name, event) {
     event.stopPropagation();
+    
+    // Optimistic UI update - update localStorage immediately
     const checkedPresets = JSON.parse(localStorage.getItem('checkedPresets') || '{}');
     checkedPresets[name] = !checkedPresets[name];
     localStorage.setItem('checkedPresets', JSON.stringify(checkedPresets));
-    refreshPresetList(); // Refresh only the list, not the modal
+    refreshPresetList(); // Refresh UI immediately
+    
+    // Try to sync to Firestore
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, doc, setDoc, getDoc } = window.firebase;
+            const docRef = doc(db, 'checkedStates', 'global');
+            
+            // Get current document or create new object
+            const docSnap = await getDoc(docRef);
+            const currentChecks = docSnap.exists() ? (docSnap.data().checks || {}) : {};
+            
+            // Update the specific preset check
+            currentChecks[name] = checkedPresets[name];
+            
+            // Save back to Firestore
+            await setDoc(docRef, {
+                checks: currentChecks,
+                updatedAt: window.firebase.serverTimestamp()
+            });
+            
+            console.log('✅ Checkbox-tila synkronoitu Firestoreen');
+            
+        } catch (error) {
+            console.error('❌ Virhe checkbox-tilan synkronoinnissa:', error);
+            // Don't show error toast, localStorage update already happened
+        }
+    }
 }
 
 function refreshPresetList() {
@@ -678,19 +1145,37 @@ function refreshPresetList() {
             
             const isChecked = checkedPresets[name] || false;
             const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            const preset = presets[name];
+            const hasMessage = preset.message && preset.message.trim() !== '';
+            
+            // Escape single quotes in name and message for onclick attributes
+            const escapedName = name.replace(/'/g, "\\'");
+            const escapedMessage = hasMessage ? preset.message.replace(/'/g, "\\'").replace(/\n/g, '\\n') : '';
+            
+            const messageIcon = hasMessage ? 
+                `<span onclick="showPresetMessage('${escapedMessage}', event)" style="cursor: pointer; font-size: 1.2rem;" title="Näytä viesti">💬</span>` : '';
             
             item.innerHTML = `
                 <div class="d-flex align-items-center gap-2 flex-grow-1">
-                    <div class="${checkboxClass}" onclick="togglePresetCheck('${name}', event)">
+                    <span class="preset-name" onclick="loadPresetFromList('${escapedName}')" style="cursor: pointer;">${name}</span>
+                    ${messageIcon}
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span style="font-size: 0.85rem; color: var(--text-secondary);">lasilistat</span>
+                    <div class="${checkboxClass}" onclick="togglePresetCheck('${escapedName}', event)">
                         ${isChecked ? '✓' : ''}
+                    </div>
+                    <button class="btn btn-sm btn-danger" onclick="deletePreset('${escapedName}', event)">🗑️</button>
                 </div>
-                    <span class="preset-name" onclick="loadPresetFromList('${name}')" style="cursor: pointer; flex-grow: 1;">${name}</span>
-                </div>
-                <button class="btn btn-sm btn-danger" onclick="deletePreset('${name}', event)">🗑️</button>
             `;
             listDiv.appendChild(item);
         });
     }
+}
+
+function showPresetMessage(message, event) {
+    event.stopPropagation();
+    alert(message);
 }
 
 function loadPreset(name) {
@@ -726,15 +1211,25 @@ function loadPreset(name) {
     modal.hide();
 }
 
-function deletePreset(name, event) {
+async function deletePreset(name, event) {
     event.preventDefault();
     event.stopPropagation();
+    
+    // Check if user is admin
+    if (!isAdmin) {
+        showToast('Vain admin-käyttäjät voivat poistaa esiasetuksia', 'error');
+        return;
+    }
     
     if (!confirm(`Haluatko varmasti poistaa esiasetuksen "${name}"?`)) {
         return;
     }
     
     const presets = JSON.parse(localStorage.getItem('doorPresets') || '{}');
+    const presetData = presets[name];
+    const firestoreId = presetData?._firestoreId;
+    
+    // Delete from localStorage
     delete presets[name];
     localStorage.setItem('doorPresets', JSON.stringify(presets));
     
@@ -743,7 +1238,25 @@ function deletePreset(name, event) {
     delete checkedPresets[name];
     localStorage.setItem('checkedPresets', JSON.stringify(checkedPresets));
     
+    // Refresh UI immediately (optimistic update)
     refreshPresetList();
+    
+    // Try to delete from Firestore
+    if (window.firebase && window.firebase.db && firestoreId) {
+        try {
+            const { db, doc, deleteDoc } = window.firebase;
+            await deleteDoc(doc(db, 'presets', firestoreId));
+            
+            console.log('✅ Esiasetus poistettu Firestoresta');
+            showToast(`Esiasetus "${name}" poistettu`, 'success');
+            
+        } catch (error) {
+            console.error('❌ Virhe Firestore-poistossa:', error);
+            showToast('Poistettu paikallisesti (synkronointivirhe)', 'warning');
+        }
+    } else {
+        showToast(`Esiasetus "${name}" poistettu`, 'success');
+    }
 }
 
 // Copy results to clipboard
@@ -950,7 +1463,11 @@ function getDefaultFormulas() {
             rako_15_inner: 27,
             rako_15_outer: 2,
             rako_saneeraus_inner: -25,
-            rako_saneeraus_outer: 0
+            rako_saneeraus_outer: 0,
+            uretaani_8mm: -126,
+            uretaani_10mm: -126,
+            uretaani_15mm: -126,
+            uretaani_saneeraus: -126
         },
         janisol_kayntiovi: {
             rako_10_inner: 32,
@@ -958,7 +1475,11 @@ function getDefaultFormulas() {
             rako_15_inner: 27,
             rako_15_outer: 2,
             rako_saneeraus_inner: -25,
-            rako_saneeraus_outer: 0
+            rako_saneeraus_outer: 0,
+            uretaani_8mm: -126,
+            uretaani_10mm: -126,
+            uretaani_15mm: -126,
+            uretaani_saneeraus: -126
         },
         economy_pariovi: {
             lasilista_pysty: 38,
@@ -979,7 +1500,11 @@ function getDefaultFormulas() {
             rako_15_inner: 27,
             rako_15_outer: 2,
             rako_saneeraus_inner: -25,
-            rako_saneeraus_outer: 0
+            rako_saneeraus_outer: 0,
+            uretaani_8mm: -121,
+            uretaani_10mm: -121,
+            uretaani_15mm: -121,
+            uretaani_saneeraus: -121
         },
         economy_kayntiovi: {
             rako_10_inner: 32,
@@ -987,7 +1512,11 @@ function getDefaultFormulas() {
             rako_15_inner: 27,
             rako_15_outer: 2,
             rako_saneeraus_inner: -25,
-            rako_saneeraus_outer: 0
+            rako_saneeraus_outer: 0,
+            uretaani_8mm: -121,
+            uretaani_10mm: -121,
+            uretaani_15mm: -121,
+            uretaani_saneeraus: -121
         }
     };
 }
@@ -1189,7 +1718,11 @@ function collectFormulasFromPanel() {
             rako_15_inner: parseFloat(document.getElementById('janisol_pariovi_rako_15_inner').value),
             rako_15_outer: parseFloat(document.getElementById('janisol_pariovi_rako_15_outer').value),
             rako_saneeraus_inner: parseFloat(document.getElementById('janisol_pariovi_rako_saneeraus_inner').value),
-            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_pariovi_rako_saneeraus_outer').value)
+            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_pariovi_rako_saneeraus_outer').value),
+            uretaani_8mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_8mm').value),
+            uretaani_10mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_10mm').value),
+            uretaani_15mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_15mm').value),
+            uretaani_saneeraus: parseFloat(document.getElementById('janisol_pariovi_uretaani_saneeraus').value)
         },
         janisol_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_inner').value),
@@ -1197,7 +1730,11 @@ function collectFormulasFromPanel() {
             rako_15_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_15_inner').value),
             rako_15_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_15_outer').value),
             rako_saneeraus_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_saneeraus_inner').value),
-            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_saneeraus_outer').value)
+            rako_saneeraus_outer: parseFloat(document.getElementById('janisol_kayntiovi_rako_saneeraus_outer').value),
+            uretaani_8mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_8mm').value),
+            uretaani_10mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_10mm').value),
+            uretaani_15mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_15mm').value),
+            uretaani_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_saneeraus').value)
         },
         economy_pariovi: {
             lasilista_pysty: parseFloat(document.getElementById('economy_pariovi_lasilista_pysty').value),
@@ -1218,7 +1755,11 @@ function collectFormulasFromPanel() {
             rako_15_inner: parseFloat(document.getElementById('economy_pariovi_rako_15_inner').value),
             rako_15_outer: parseFloat(document.getElementById('economy_pariovi_rako_15_outer').value),
             rako_saneeraus_inner: parseFloat(document.getElementById('economy_pariovi_rako_saneeraus_inner').value),
-            rako_saneeraus_outer: parseFloat(document.getElementById('economy_pariovi_rako_saneeraus_outer').value)
+            rako_saneeraus_outer: parseFloat(document.getElementById('economy_pariovi_rako_saneeraus_outer').value),
+            uretaani_8mm: parseFloat(document.getElementById('economy_pariovi_uretaani_8mm').value),
+            uretaani_10mm: parseFloat(document.getElementById('economy_pariovi_uretaani_10mm').value),
+            uretaani_15mm: parseFloat(document.getElementById('economy_pariovi_uretaani_15mm').value),
+            uretaani_saneeraus: parseFloat(document.getElementById('economy_pariovi_uretaani_saneeraus').value)
         },
         economy_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_10_inner').value),
@@ -1226,7 +1767,11 @@ function collectFormulasFromPanel() {
             rako_15_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_15_inner').value),
             rako_15_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_15_outer').value),
             rako_saneeraus_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_saneeraus_inner').value),
-            rako_saneeraus_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_saneeraus_outer').value)
+            rako_saneeraus_outer: parseFloat(document.getElementById('economy_kayntiovi_rako_saneeraus_outer').value),
+            uretaani_8mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_8mm').value),
+            uretaani_10mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_10mm').value),
+            uretaani_15mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_15mm').value),
+            uretaani_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_uretaani_saneeraus').value)
         }
     };
 }

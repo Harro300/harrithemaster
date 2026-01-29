@@ -40,6 +40,10 @@
                         <p class="text-muted mb-0 mt-1" style="font-size: 13px;">Ammattimainen mittatyökalu</p>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
+                        <div id="syncStatus" class="sync-status" title="Synkronointitila">
+                            <span class="sync-indicator">🔴</span>
+                            <span class="sync-text">Offline</span>
+                        </div>
                         <button class="btn-admin-lock" onclick="openAdminPanel()" title="Kaavahallinta">🔒</button>
                         <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
                     </div>
@@ -97,7 +101,7 @@
             </div>
                 <div class="mt-3">
                     <button class="btn btn-success me-2" onclick="savePreset()">💾 Tallenna</button>
-                    <button class="btn btn-warning" onclick="loadPresetDialog()">📂 Tallennetut</button>
+                    <button class="btn btn-warning" onclick="loadPresetDialog()">📂 Valmiit Mitat</button>
             </div>
         </div>
         </div>
@@ -176,6 +180,10 @@
                         <label for="presetName" class="form-label">Nimi</label>
                         <input type="text" class="form-control" id="presetName" placeholder="esim. Ovi1">
                     </div>
+                    <div class="mb-3">
+                        <label for="presetMessage" class="form-label">Viesti (valinnainen)</label>
+                        <textarea class="form-control" id="presetMessage" rows="2"></textarea>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
@@ -187,10 +195,10 @@
 
     <!-- Load Preset Modal -->
     <div class="modal fade" id="loadPresetModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Tallennetut esiasetukset</h5>
+                    <h5 class="modal-title">Valmiit Mitat</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -293,6 +301,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <!-- Admin Panel Overlay -->
     <div id="adminPanelOverlay" class="admin-panel-overlay d-none">
@@ -419,7 +430,7 @@
                         </div>
                         
                         <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset</h6>
+                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_pariovi_rako_10_inner" class="formula-input" value="32">
@@ -451,6 +462,34 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_uretaani_8mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_uretaani_10mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_uretaani_15mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_uretaani_saneeraus" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -464,7 +503,7 @@
                         <p class="text-muted mb-3">Samat peruskaavat kuin Pariovi, ilman lisäovea</p>
                         
                         <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset</h6>
+                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_kayntiovi_rako_10_inner" class="formula-input" value="32">
@@ -493,6 +532,34 @@
                             <div class="formula-row">
                                 <label>Saneerauskynnys - Ulkopelti:</label>
                                 <input type="number" id="janisol_kayntiovi_rako_saneeraus_outer" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_uretaani_8mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_uretaani_10mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_uretaani_15mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_uretaani_saneeraus" class="formula-input" value="-126">
                                 <span>mm</span>
                             </div>
                         </div>
@@ -637,6 +704,34 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_uretaani_8mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_uretaani_10mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_uretaani_15mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_uretaani_saneeraus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -650,7 +745,7 @@
                         <p class="text-muted mb-3">Samat peruskaavat kuin Economy Pariovi, ilman lisäovea</p>
                         
                         <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset</h6>
+                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="economy_kayntiovi_rako_10_inner" class="formula-input" value="32">
@@ -682,6 +777,34 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_uretaani_8mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_uretaani_10mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_uretaani_15mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_uretaani_saneeraus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -695,6 +818,88 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- ====== FIREBASE CONFIGURATION ====== -->
+    <script type="module">
+      // Import Firebase modules
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+      import { 
+        getAuth, 
+        signInWithEmailAndPassword, 
+        onAuthStateChanged, 
+        signOut,
+        createUserWithEmailAndPassword
+      } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
+      import { 
+        getFirestore, 
+        collection, 
+        addDoc, 
+        getDocs, 
+        getDoc,
+        deleteDoc, 
+        updateDoc,
+        doc, 
+        onSnapshot,
+        query,
+        orderBy,
+        serverTimestamp,
+        setDoc
+      } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
+
+      // Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyCCvsKLQz0jtjcC8ErY3sjBrDgUIxrCv1c",
+        authDomain: "terasovi-laskin.firebaseapp.com",
+        projectId: "terasovi-laskin",
+        storageBucket: "terasovi-laskin.firebasestorage.app",
+        messagingSenderId: "121591640136",
+        appId: "1:121591640136:web:6e968d40c1589e5286687d",
+        measurementId: "G-5M849K7RZ5"
+      };
+
+      // Initialize Firebase
+      console.log("🔥 Alustetaan Firebase...");
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const db = getFirestore(app);
+      console.log("✅ Firebase alustettu onnistuneesti!");
+
+      // Export to global scope for app.js
+      window.firebase = {
+        // Core instances
+        app: app,
+        auth: auth,
+        db: db,
+        
+        // Auth functions
+        signIn: signInWithEmailAndPassword,
+        createUser: createUserWithEmailAndPassword,
+        onAuthStateChanged: onAuthStateChanged,
+        signOut: signOut,
+        
+        // Firestore functions
+        collection: collection,
+        addDoc: addDoc,
+        getDocs: getDocs,
+        getDoc: getDoc,
+        deleteDoc: deleteDoc,
+        updateDoc: updateDoc,
+        setDoc: setDoc,
+        doc: doc,
+        onSnapshot: onSnapshot,
+        query: query,
+        orderBy: orderBy,
+        serverTimestamp: serverTimestamp
+      };
+
+      // Ilmoita kun Firebase on valmis
+      window.firebaseReady = true;
+      console.log("✅ Firebase-funktiot viety window.firebase-objektiin");
+      
+      // Dispatch event kun Firebase on valmis
+      window.dispatchEvent(new Event('firebaseReady'));
+    </script>
+
     <script src="app.js"></script>
 </body>
 </html>
