@@ -15,20 +15,6 @@ let checkedStatesUnsubscribe = null;
 // Admin email addresses
 const ADMIN_EMAILS = ['admin@terasovi.local'];
 
-// Password to email mapping for backwards compatibility
-const PASSWORD_TO_EMAIL = {
-    'Soma<3': 'soma@terasovi.local',
-    '1234': 'soma@terasovi.local',
-    'HarriTheMaster': 'admin@terasovi.local',
-    '4321': 'admin@terasovi.local'
-};
-
-// Default passwords for Firebase users
-const DEFAULT_PASSWORDS = {
-    'soma@terasovi.local': 'Soma<3',
-    'admin@terasovi.local': 'HarriTheMaster'
-};
-
 // ========== UTILITY FUNCTIONS ==========
 
 // Show toast notification
@@ -247,34 +233,34 @@ const SAVE_PASSWORD = '0303';
 // Login handling with Firebase
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
+    const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const errorDiv = document.getElementById('loginError');
     
     // Wait for Firebase to be ready
     await waitForFirebase();
     
-    // Map password to email
-    const email = PASSWORD_TO_EMAIL[password];
-    
-    if (!email) {
-        errorDiv.textContent = 'Väärä salasana. Yritä uudelleen.';
+    // Validate email format
+    if (!email.includes('@')) {
+        errorDiv.textContent = 'Anna kelvollinen sähköpostiosoite.';
         errorDiv.classList.add('show');
-        document.getElementById('password').classList.add('is-invalid');
+        document.getElementById('email').classList.add('is-invalid');
         return;
     }
     
-    // Try to sign in with Firebase
-    const firebasePassword = DEFAULT_PASSWORDS[email];
+    // Try to sign in with Firebase directly with provided email and password
     const { auth, signIn } = window.firebase;
     
     try {
-        const userCredential = await signIn(auth, email, firebasePassword);
+        const userCredential = await signIn(auth, email, password);
         console.log('✅ Firebase kirjautuminen onnistui:', userCredential.user.email);
         
-        // Clear error
+        // Clear error and form
         errorDiv.classList.remove('show');
         errorDiv.textContent = '';
+        document.getElementById('email').classList.remove('is-invalid');
         document.getElementById('password').classList.remove('is-invalid');
+        document.getElementById('email').value = '';
         document.getElementById('password').value = '';
         
         // Update global state
@@ -300,46 +286,26 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
     } catch (error) {
         console.error('❌ Firebase kirjautuminen epäonnistui:', error);
         
-        // If Firebase fails, try to create the user first
+        // Show appropriate error message based on error code
+        let errorMessage = 'Kirjautuminen epäonnistui.';
+        
         if (error.code === 'auth/user-not-found') {
-            try {
-                const { createUser } = window.firebase;
-                await createUser(auth, email, firebasePassword);
-                console.log('✅ Käyttäjä luotu, yritetään kirjautua uudelleen...');
-                
-                // Try login again
-                const userCredential = await signIn(auth, email, firebasePassword);
-                currentUser = userCredential.user;
-                isAdmin = checkIsAdmin(currentUser.email);
-                
-                document.getElementById('loginScreen').classList.add('d-none');
-                document.getElementById('calculatorScreen').classList.remove('d-none');
-                updateSyncStatus(true);
-                setupRealtimeListeners();
-                selectCalculator('janisol-pariovi');
-                showToast('Tervetuloa!', 'success');
-                
-            } catch (createError) {
-                console.error('❌ Käyttäjän luonti epäonnistui:', createError);
-                errorDiv.textContent = 'Verkkovirhe. Tarkista yhteys.';
-                errorDiv.classList.add('show');
-                document.getElementById('password').classList.add('is-invalid');
-            }
+            errorMessage = 'Käyttäjää ei löydy. Tarkista sähköposti.';
+            document.getElementById('email').classList.add('is-invalid');
+        } else if (error.code === 'auth/wrong-password') {
+            errorMessage = 'Väärä salasana. Yritä uudelleen.';
+            document.getElementById('password').classList.add('is-invalid');
+        } else if (error.code === 'auth/invalid-email') {
+            errorMessage = 'Virheellinen sähköpostiosoite.';
+            document.getElementById('email').classList.add('is-invalid');
+        } else if (error.code === 'auth/network-request-failed') {
+            errorMessage = 'Verkkovirhe. Tarkista internet-yhteys.';
         } else {
-            // Fall back to localStorage-only mode
-            if (VALID_PASSWORDS.includes(password)) {
-                console.warn('⚠️ Käytetään offline-tilaa (Firebase ei toimi)');
-                document.getElementById('loginScreen').classList.add('d-none');
-                document.getElementById('calculatorScreen').classList.remove('d-none');
-                updateSyncStatus(false);
-                selectCalculator('janisol-pariovi');
-                showToast('Offline-tila: muutokset eivät synkronoidu', 'warning');
-            } else {
-                errorDiv.textContent = 'Verkkovirhe. Tarkista yhteys.';
-                errorDiv.classList.add('show');
-                document.getElementById('password').classList.add('is-invalid');
-            }
+            errorMessage = `Virhe: ${error.message}`;
         }
+        
+        errorDiv.textContent = errorMessage;
+        errorDiv.classList.add('show');
     }
 });
 
@@ -366,7 +332,9 @@ async function logout() {
     // Update UI
     document.getElementById('calculatorScreen').classList.add('d-none');
     document.getElementById('loginScreen').classList.remove('d-none');
+    document.getElementById('email').value = '';
     document.getElementById('password').value = '';
+    document.getElementById('email').classList.remove('is-invalid');
     document.getElementById('password').classList.remove('is-invalid');
     updateSyncStatus(false);
     

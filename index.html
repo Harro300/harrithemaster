@@ -5,26 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Harrin Teräsovi Mittalaskuri</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260129212100">
 </head>
 <body>
     <!-- Login Screen -->
     <div id="loginScreen" class="container">
         <div class="row justify-content-center align-items-center min-vh-100">
             <div class="col-md-6 col-lg-4">
-                <div class="card shadow-lg">
-                    <div class="card-body p-5">
-                        <h2 class="text-center mb-4">Harrin Teräsovi Mittalaskuri</h2>
-                        <form id="loginForm">
-        <div class="mb-3">
-                                <label for="password" class="form-label">Salasana</label>
-                                <input type="password" class="form-control" id="password" required>
-                                <div id="loginError" class="invalid-feedback d-block" style="display: none !important;"></div>
-        </div>
-                            <button type="submit" class="btn btn-primary w-100">Kirjaudu sisään</button>
-                        </form>
+                    <div class="card shadow-lg">
+                        <div class="card-body p-5">
+                            <h2 class="text-center mb-4">Harrin Teräsovi Mittalaskuri</h2>
+                            <form id="loginForm">
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">Sähköposti</label>
+                                    <input type="email" class="form-control" id="email" placeholder="esim. nimi@terasovi.local" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="password" class="form-label">Salasana</label>
+                                    <input type="password" class="form-control" id="password" required>
+                                    <div id="loginError" class="invalid-feedback d-block" style="display: none !important;"></div>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">Kirjaudu sisään</button>
+                            </form>
+                        </div>
                     </div>
-                </div>
             </div>
         </div>
     </div>
@@ -900,6 +904,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=20260129212013"></script>
 </body>
 </html>
