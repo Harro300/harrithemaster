@@ -230,12 +230,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (toggle) toggle.checked = settings.kickPlateEnabled;
         
         // Update field visibility on page load
-        const kickPlateInput = document.getElementById('kickPlateHeight');
-        if (kickPlateInput) {
-            const kickPlateContainer = kickPlateInput.closest('.col-md-6');
-            if (kickPlateContainer) {
-                kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
-            }
+        const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+        if (kickPlateContainer) {
+            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
         }
     }
     
@@ -370,12 +367,36 @@ function selectCalculator(type) {
     });
     document.getElementById(`btn-${type}`).classList.add('active');
     
+    const isWindowCalculator = type.includes('ikkuna');
+    
     // Show/hide side door input
     const sideDoorContainer = document.getElementById('sideDoorWidthContainer');
     if (type.includes('pariovi')) {
         sideDoorContainer.style.display = 'block';
     } else {
         sideDoorContainer.style.display = 'none';
+    }
+    
+    // For window calculators, change label text and adjust layout
+    const mainDoorInput = document.getElementById('mainDoorWidth');
+    const mainDoorLabel = document.getElementById('mainDoorWidthLabel');
+    
+    if (mainDoorInput && mainDoorLabel) {
+        if (isWindowCalculator) {
+            mainDoorLabel.textContent = 'Ruudun leveys (mm)';
+            mainDoorInput.value = '800';  // Default window width
+            mainDoorInput.min = '100';
+        } else {
+            mainDoorLabel.textContent = 'Käyntioven leveys (mm)';
+            mainDoorInput.value = '795';  // Default door width
+            mainDoorInput.min = '500';
+        }
+    }
+    
+    // Show/hide settings button for window calculators
+    const settingsButton = document.querySelector('.btn-info[onclick="openSettings()"]');
+    if (settingsButton) {
+        settingsButton.style.display = isWindowCalculator ? 'none' : '';
     }
     
     // Reset settings (but keep kickPlateEnabled or load from localStorage)
@@ -392,11 +413,12 @@ function selectCalculator(type) {
         kickPlateToggle.checked = kickPlateEnabled;
     }
     
-    // Update kick plate visibility
-    const kickPlateInput = document.getElementById('kickPlateHeight');
-    if (kickPlateInput) {
-        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
-        if (kickPlateContainer) {
+    // Update kick plate visibility (hide for windows)
+    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+    if (kickPlateContainer) {
+        if (isWindowCalculator) {
+            kickPlateContainer.style.display = 'none';
+        } else {
             kickPlateContainer.style.display = kickPlateEnabled ? '' : 'none';
         }
     }
@@ -447,12 +469,9 @@ function applySettings() {
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
     
     // Show/hide kick plate height input
-    const kickPlateInput = document.getElementById('kickPlateHeight');
-    if (kickPlateInput) {
-        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
-        if (kickPlateContainer) {
-            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
-        }
+    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+    if (kickPlateContainer) {
+        kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
     }
     
     updatePaneInputs();
@@ -538,13 +557,20 @@ function calculate() {
         paneHeights.push(height);
     }
     
-    // Validate inputs (skip kick plate validation if disabled)
-    if (mainDoorWidth < 500) {
+    // Validate inputs
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    
+    if (!isWindowCalculator && mainDoorWidth < 500) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
         return;
     }
     
-    if (settings.kickPlateEnabled && kickPlateHeight < 100) {
+    if (isWindowCalculator && mainDoorWidth < 100) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
+        return;
+    }
+    
+    if (!isWindowCalculator && settings.kickPlateEnabled && kickPlateHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
         return;
     }
@@ -556,10 +582,14 @@ function calculate() {
         results = calculateJanisolPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'janisol-kayntiovi') {
         results = calculateJanisolKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
+    } else if (currentCalculator === 'janisol-ikkuna') {
+        results = calculateJanisolIkkuna(mainDoorWidth, paneHeights);
     } else if (currentCalculator === 'economy-pariovi') {
         results = calculateEconomyPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-kayntiovi') {
         results = calculateEconomyKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
+    } else if (currentCalculator === 'economy-ikkuna') {
+        results = calculateEconomyIkkuna(mainDoorWidth, paneHeights);
     }
     
     displayResults(results);
@@ -961,9 +991,68 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     return results;
 }
 
+// Calculate Janisol Ikkuna (Windows only - glass strips only)
+function calculateJanisolIkkuna(windowWidth, paneHeights) {
+    const results = {
+        lasilista: [],
+        uretaani: [],
+        potkupelti: [],
+        harjalista: []
+    };
+    
+    // Get formulas (use Janisol door formulas)
+    const formulas = getActiveFormulas();
+    const jf = formulas.janisol_pariovi;
+    
+    // Lasilistat - Use same formulas as Janisol doors
+    paneHeights.forEach(height => {
+        // 2 vertical strips per pane
+        const verticalLength = height + jf.lasilista_pysty;  // height + 41mm
+        results.lasilista.push(verticalLength);
+        results.lasilista.push(verticalLength);
+        
+        // 2 horizontal strips per pane
+        const horizontalLength = windowWidth + jf.lasilista_vaaka;  // width + 3mm
+        results.lasilista.push(horizontalLength);
+        results.lasilista.push(horizontalLength);
+    });
+    
+    return results;
+}
+
+// Calculate Economy Ikkuna (Windows only - glass strips only)
+function calculateEconomyIkkuna(windowWidth, paneHeights) {
+    const results = {
+        lasilista: [],
+        uretaani: [],
+        potkupelti: [],
+        harjalista: []
+    };
+    
+    // Get formulas (use Economy door formulas)
+    const formulas = getActiveFormulas();
+    const ef = formulas.economy_pariovi;
+    
+    // Lasilistat - Use same formulas as Economy doors
+    paneHeights.forEach(height => {
+        // 2 vertical strips per pane
+        const verticalLength = height + ef.lasilista_pysty;  // height + 38mm
+        results.lasilista.push(verticalLength);
+        results.lasilista.push(verticalLength);
+        
+        // 2 horizontal strips per pane
+        const horizontalLength = windowWidth + ef.lasilista_vaaka;  // width - 2mm
+        results.lasilista.push(horizontalLength);
+        results.lasilista.push(horizontalLength);
+    });
+    
+    return results;
+}
+
 // Display results with combined duplicates
 function displayResults(results) {
     const resultsDiv = document.getElementById('results');
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     let html = '<div class="row">';
     
     // Lasilista
@@ -974,30 +1063,33 @@ function displayResults(results) {
     });
     html += '</div></div>';
     
-    // Uretaani (only show if kick plates are enabled)
-    if (settings.kickPlateEnabled && results.uretaani.length > 0) {
-        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
-        results.uretaani.forEach(item => {
+    // For window calculators, only show glass strips
+    if (!isWindowCalculator) {
+        // Uretaani (only show if kick plates are enabled)
+        if (settings.kickPlateEnabled && results.uretaani.length > 0) {
+            html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
+            results.uretaani.forEach(item => {
+                html += `<div class="result-item">${item}</div>`;
+            });
+            html += '</div></div>';
+        }
+        
+        // Potkupelti (only show if kick plates are enabled)
+        if (settings.kickPlateEnabled && results.potkupelti.length > 0) {
+            html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
+            results.potkupelti.forEach(item => {
+                html += `<div class="result-item">${item}</div>`;
+            });
+            html += '</div></div>';
+        }
+        
+        // Harjalista
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
+            results.harjalista.forEach(item => {
             html += `<div class="result-item">${item}</div>`;
         });
         html += '</div></div>';
     }
-    
-    // Potkupelti (only show if kick plates are enabled)
-    if (settings.kickPlateEnabled && results.potkupelti.length > 0) {
-        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
-        results.potkupelti.forEach(item => {
-            html += `<div class="result-item">${item}</div>`;
-        });
-        html += '</div></div>';
-    }
-    
-    // Harjalista
-    html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
-        results.harjalista.forEach(item => {
-        html += `<div class="result-item">${item}</div>`;
-    });
-    html += '</div></div>';
     
     html += '</div>';
     resultsDiv.innerHTML = html;
@@ -1250,12 +1342,9 @@ function loadPreset(name) {
     if (kickPlateToggle) {
         kickPlateToggle.checked = settings.kickPlateEnabled !== false; // Default to true
     }
-    const kickPlateInput = document.getElementById('kickPlateHeight');
-    if (kickPlateInput) {
-        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
-        if (kickPlateContainer) {
-            kickPlateContainer.style.display = settings.kickPlateEnabled !== false ? '' : 'none';
-        }
+    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+    if (kickPlateContainer) {
+        kickPlateContainer.style.display = settings.kickPlateEnabled !== false ? '' : 'none';
     }
     
     updatePaneInputs();
@@ -1333,9 +1422,13 @@ function copyResults(event) {
     const titles = {
         'janisol-pariovi': 'Janisol Pariovi',
         'janisol-kayntiovi': 'Janisol Käyntiovi',
+        'janisol-ikkuna': 'Janisol Ikkuna',
         'economy-pariovi': 'Economy Pariovi',
-        'economy-kayntiovi': 'Economy Käyntiovi'
+        'economy-kayntiovi': 'Economy Käyntiovi',
+        'economy-ikkuna': 'Economy Ikkuna'
     };
+    
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     
     let text = 'Harrin Teräsovi Mittalaskuri\n';
     text += titles[currentCalculator] + '\n';
@@ -1343,13 +1436,18 @@ function copyResults(event) {
     
     // Add inputs
     text += 'Syötteet:\n';
-    text += `Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
     
-    if (currentCalculator.includes('pariovi')) {
-        text += `Lisäoven leveys: ${document.getElementById('sideDoorWidth').value} mm\n`;
+    if (isWindowCalculator) {
+        text += `Ruudun leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
+    } else {
+        text += `Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
+        
+        if (currentCalculator.includes('pariovi')) {
+            text += `Lisäoven leveys: ${document.getElementById('sideDoorWidth').value} mm\n`;
+        }
+        
+        text += `Potkupellin korkeus: ${document.getElementById('kickPlateHeight').value} mm\n`;
     }
-    
-    text += `Potkupellin korkeus: ${document.getElementById('kickPlateHeight').value} mm\n`;
     
     for (let i = 1; i <= settings.paneCount; i++) {
         const el = document.getElementById(`paneHeight${i}`);
@@ -1358,8 +1456,10 @@ function copyResults(event) {
         }
     }
     
-    const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
-    text += `Rako: ${rakoText}\n`;
+    if (!isWindowCalculator) {
+        const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
+        text += `Rako: ${rakoText}\n`;
+    }
     text += `Ruutujen määrä: ${settings.paneCount}\n`;
     text += '\n';
     
@@ -1864,9 +1964,13 @@ function confirmExportToPDF() {
     const titles = {
         'janisol-pariovi': 'Janisol Pariovi',
         'janisol-kayntiovi': 'Janisol Käyntiovi',
+        'janisol-ikkuna': 'Janisol Ikkuna',
         'economy-pariovi': 'Economy Pariovi',
-        'economy-kayntiovi': 'Economy Käyntiovi'
+        'economy-kayntiovi': 'Economy Käyntiovi',
+        'economy-ikkuna': 'Economy Ikkuna'
     };
+    
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     
     doc.setFontSize(18);
     doc.text('Harrin Teräsovi Mittalaskuri', 105, 20, { align: 'center' });
@@ -1886,16 +1990,22 @@ function confirmExportToPDF() {
     yPos += 10;
     
     doc.setFontSize(10);
-    doc.text(`Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
-    yPos += 7;
     
-    if (currentCalculator.includes('pariovi')) {
-        doc.text(`Lisäoven leveys: ${document.getElementById('sideDoorWidth').value} mm`, 25, yPos);
+    if (isWindowCalculator) {
+        doc.text(`Ruudun leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
+        yPos += 7;
+    } else {
+        doc.text(`Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
+        yPos += 7;
+        
+        if (currentCalculator.includes('pariovi')) {
+            doc.text(`Lisäoven leveys: ${document.getElementById('sideDoorWidth').value} mm`, 25, yPos);
+            yPos += 7;
+        }
+        
+        doc.text(`Potkupellin oletuskorkeus: ${document.getElementById('kickPlateHeight').value} mm`, 25, yPos);
         yPos += 7;
     }
-    
-    doc.text(`Potkupellin oletuskorkeus: ${document.getElementById('kickPlateHeight').value} mm`, 25, yPos);
-    yPos += 7;
     
     for (let i = 1; i <= settings.paneCount; i++) {
         const el = document.getElementById(`paneHeight${i}`);
@@ -1905,9 +2015,11 @@ function confirmExportToPDF() {
         }
     }
     
-    const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
-    doc.text(`Rako: ${rakoText}`, 25, yPos);
-    yPos += 7;
+    if (!isWindowCalculator) {
+        const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
+        doc.text(`Rako: ${rakoText}`, 25, yPos);
+        yPos += 7;
+    }
     doc.text(`Ruutujen määrä: ${settings.paneCount}`, 25, yPos);
     yPos += 12;
     
