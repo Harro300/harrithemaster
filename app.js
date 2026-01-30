@@ -2,7 +2,8 @@
 let currentCalculator = '';
 let settings = {
     gapOption: 8,
-    paneCount: 1
+    paneCount: 1,
+    kickPlateEnabled: true
 };
 
 // Firebase state
@@ -221,6 +222,23 @@ document.addEventListener('DOMContentLoaded', function() {
         if (toggle) toggle.checked = true;
     }
     
+    // Load kick plate setting
+    const kickPlateEnabled = localStorage.getItem('kickPlateEnabled');
+    if (kickPlateEnabled !== null) {
+        settings.kickPlateEnabled = kickPlateEnabled === 'true';
+        const toggle = document.getElementById('kickPlateToggle');
+        if (toggle) toggle.checked = settings.kickPlateEnabled;
+        
+        // Update field visibility on page load
+        const kickPlateInput = document.getElementById('kickPlateHeight');
+        if (kickPlateInput) {
+            const kickPlateContainer = kickPlateInput.closest('.col-md-6');
+            if (kickPlateContainer) {
+                kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
+            }
+        }
+    }
+    
     // Initialize Firebase Auth listener
     initializeFirebaseAuth();
 });
@@ -360,10 +378,29 @@ function selectCalculator(type) {
         sideDoorContainer.style.display = 'none';
     }
     
-    // Reset settings
-    settings = { gapOption: 8, paneCount: 1 };
+    // Reset settings (but keep kickPlateEnabled or load from localStorage)
+    const savedKickPlateEnabled = localStorage.getItem('kickPlateEnabled');
+    const kickPlateEnabled = savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true;
+    
+    settings = { gapOption: 8, paneCount: 1, kickPlateEnabled: kickPlateEnabled };
     document.getElementById('gapOption').value = '8';
     document.getElementById('paneCount').value = '1';
+    
+    // Update kick plate toggle state
+    const kickPlateToggle = document.getElementById('kickPlateToggle');
+    if (kickPlateToggle) {
+        kickPlateToggle.checked = kickPlateEnabled;
+    }
+    
+    // Update kick plate visibility
+    const kickPlateInput = document.getElementById('kickPlateHeight');
+    if (kickPlateInput) {
+        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
+        if (kickPlateContainer) {
+            kickPlateContainer.style.display = kickPlateEnabled ? '' : 'none';
+        }
+    }
+    
     updatePaneInputs();
     
     // Calculate initial results
@@ -376,6 +413,13 @@ function openSettings() {
     // Update dark mode toggle state
     const darkModeToggle = document.getElementById('darkModeToggle');
     darkModeToggle.checked = document.body.classList.contains('dark-mode');
+    
+    // Update kick plate toggle state
+    const kickPlateToggle = document.getElementById('kickPlateToggle');
+    if (kickPlateToggle) {
+        kickPlateToggle.checked = settings.kickPlateEnabled !== false;
+    }
+    
     modal.show();
 }
 
@@ -397,6 +441,20 @@ function applySettings() {
     const gapValue = document.getElementById('gapOption').value;
     settings.gapOption = gapValue === 'saneeraus' ? 'saneeraus' : parseInt(gapValue);
     settings.paneCount = parseInt(document.getElementById('paneCount').value);
+    settings.kickPlateEnabled = document.getElementById('kickPlateToggle').checked;
+    
+    // Save kick plate setting to localStorage
+    localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
+    
+    // Show/hide kick plate height input
+    const kickPlateInput = document.getElementById('kickPlateHeight');
+    if (kickPlateInput) {
+        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
+        if (kickPlateContainer) {
+            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
+        }
+    }
+    
     updatePaneInputs();
     calculate();
 }
@@ -480,10 +538,15 @@ function calculate() {
         paneHeights.push(height);
     }
     
-    // Validate inputs
-    if (mainDoorWidth < 500 || kickPlateHeight < 100) {
-        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm, korkeus ≥ 100 mm.</p>';
-            return;
+    // Validate inputs (skip kick plate validation if disabled)
+    if (mainDoorWidth < 500) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
+        return;
+    }
+    
+    if (settings.kickPlateEnabled && kickPlateHeight < 100) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
+        return;
     }
     
     let results = {};
@@ -556,22 +619,24 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         results.lasilista.push(horizontalLength);
     });
     
-    // Uretaanipalat (Urethane pieces)
-    let uretaaniHeightAdjust;
-    if (settings.gapOption === '10mm') {
-        uretaaniHeightAdjust = jf.uretaani_10mm || jf.uretaani_korkeus;
-    } else if (settings.gapOption === '15mm') {
-        uretaaniHeightAdjust = jf.uretaani_15mm || jf.uretaani_korkeus;
-    } else if (settings.gapOption === 'saneeraus') {
-        uretaaniHeightAdjust = jf.uretaani_saneeraus || jf.uretaani_korkeus;
-    } else {
-        uretaaniHeightAdjust = jf.uretaani_8mm || jf.uretaani_korkeus;
-    }
-    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
-    results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
-    results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
-    
-    // Potkupellit - Käyntiovi (Kick plates - Main door)
+    // Only calculate kick plates and urethane if enabled
+    if (settings.kickPlateEnabled) {
+        // Uretaanipalat (Urethane pieces)
+        let uretaaniHeightAdjust;
+        if (settings.gapOption === '10mm') {
+            uretaaniHeightAdjust = jf.uretaani_10mm || jf.uretaani_korkeus;
+        } else if (settings.gapOption === '15mm') {
+            uretaaniHeightAdjust = jf.uretaani_15mm || jf.uretaani_korkeus;
+        } else if (settings.gapOption === 'saneeraus') {
+            uretaaniHeightAdjust = jf.uretaani_saneeraus || jf.uretaani_korkeus;
+        } else {
+            uretaaniHeightAdjust = jf.uretaani_8mm || jf.uretaani_korkeus;
+        }
+        const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
+        results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
+        results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
+        
+        // Potkupellit - Käyntiovi (Kick plates - Main door)
     let mainInnerHeight, mainOuterHeight;
     if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
@@ -607,7 +672,8 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
-    results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
+        results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
+    }
     
     // Harjalistat (Brush strips)
     results.harjalista.push(mainWidth + jf.harjalista);
@@ -655,38 +721,41 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
         results.lasilista.push(horizontalLength);
     });
     
-    // Uretaanipalat
-    let uretaaniHeightAdjust;
-    if (settings.gapOption === '10mm') {
-        uretaaniHeightAdjust = jkf.uretaani_10mm || jf.uretaani_korkeus;
-    } else if (settings.gapOption === '15mm') {
-        uretaaniHeightAdjust = jkf.uretaani_15mm || jf.uretaani_korkeus;
-    } else if (settings.gapOption === 'saneeraus') {
-        uretaaniHeightAdjust = jkf.uretaani_saneeraus || jf.uretaani_korkeus;
-    } else {
-        uretaaniHeightAdjust = jkf.uretaani_8mm || jf.uretaani_korkeus;
+    // Only calculate kick plates and urethane if enabled
+    if (settings.kickPlateEnabled) {
+        // Uretaanipalat
+        let uretaaniHeightAdjust;
+        if (settings.gapOption === '10mm') {
+            uretaaniHeightAdjust = jkf.uretaani_10mm || jf.uretaani_korkeus;
+        } else if (settings.gapOption === '15mm') {
+            uretaaniHeightAdjust = jkf.uretaani_15mm || jf.uretaani_korkeus;
+        } else if (settings.gapOption === 'saneeraus') {
+            uretaaniHeightAdjust = jkf.uretaani_saneeraus || jf.uretaani_korkeus;
+        } else {
+            uretaaniHeightAdjust = jkf.uretaani_8mm || jf.uretaani_korkeus;
+        }
+        const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
+        results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
+        
+        // Potkupellit
+        let innerHeight, outerHeight;
+        if (settings.gapOption === 'saneeraus') {
+            // Saneerauskynnys: Use values from admin panel
+            innerHeight = kickHeight + (jkf.rako_saneeraus_inner || -25);
+            outerHeight = kickHeight + (jkf.rako_saneeraus_outer || 0);
+        } else {
+            innerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+            outerHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+        }
+        const innerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
+        results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
+        
+        let outerWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
+        if (kickHeight > 310) {
+            outerWidth -= 5;
+        }
+        results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
-    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
-    results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
-    
-    // Potkupellit
-    let innerHeight, outerHeight;
-    if (settings.gapOption === 'saneeraus') {
-        // Saneerauskynnys: Use values from admin panel
-        innerHeight = kickHeight + (jkf.rako_saneeraus_inner || -25);
-        outerHeight = kickHeight + (jkf.rako_saneeraus_outer || 0);
-    } else {
-        innerHeight = kickHeight + jf.potku_kaynti_sisa_korkeus + innerHeightAdjust;
-        outerHeight = kickHeight + jf.potku_kaynti_ulko_korkeus + outerHeightAdjust;
-    }
-    const innerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
-    results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
-    
-    let outerWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
-    if (kickHeight > 310) {
-        outerWidth -= 5;
-    }
-    results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     
     // Harjalistat
     results.harjalista.push(mainWidth + jf.harjalista);
@@ -748,22 +817,24 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         results.lasilista.push(horizontalLength);
     });
     
-    // Uretaanipalat
-    let uretaaniHeightAdjust;
-    if (settings.gapOption === '10mm') {
-        uretaaniHeightAdjust = ef.uretaani_10mm || ef.uretaani_korkeus;
-    } else if (settings.gapOption === '15mm') {
-        uretaaniHeightAdjust = ef.uretaani_15mm || ef.uretaani_korkeus;
-    } else if (settings.gapOption === 'saneeraus') {
-        uretaaniHeightAdjust = ef.uretaani_saneeraus || ef.uretaani_korkeus;
-    } else {
-        uretaaniHeightAdjust = ef.uretaani_8mm || ef.uretaani_korkeus;
-    }
-    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
-    results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
-    results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
-    
-    // Potkupellit - Käyntiovi
+    // Only calculate kick plates and urethane if enabled
+    if (settings.kickPlateEnabled) {
+        // Uretaanipalat
+        let uretaaniHeightAdjust;
+        if (settings.gapOption === '10mm') {
+            uretaaniHeightAdjust = ef.uretaani_10mm || ef.uretaani_korkeus;
+        } else if (settings.gapOption === '15mm') {
+            uretaaniHeightAdjust = ef.uretaani_15mm || ef.uretaani_korkeus;
+        } else if (settings.gapOption === 'saneeraus') {
+            uretaaniHeightAdjust = ef.uretaani_saneeraus || ef.uretaani_korkeus;
+        } else {
+            uretaaniHeightAdjust = ef.uretaani_8mm || ef.uretaani_korkeus;
+        }
+        const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
+        results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
+        results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
+        
+        // Potkupellit - Käyntiovi
     let mainInnerHeight, mainOuterHeight;
     if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
@@ -799,7 +870,8 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
-    results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
+        results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
+    }
     
     // Harjalistat
     results.harjalista.push(mainWidth + ef.harjalista);
@@ -847,38 +919,41 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
         results.lasilista.push(horizontalLength);
     });
     
-    // Uretaanipalat
-    let uretaaniHeightAdjust;
-    if (settings.gapOption === '10mm') {
-        uretaaniHeightAdjust = ekf.uretaani_10mm || ef.uretaani_korkeus;
-    } else if (settings.gapOption === '15mm') {
-        uretaaniHeightAdjust = ekf.uretaani_15mm || ef.uretaani_korkeus;
-    } else if (settings.gapOption === 'saneeraus') {
-        uretaaniHeightAdjust = ekf.uretaani_saneeraus || ef.uretaani_korkeus;
-    } else {
-        uretaaniHeightAdjust = ekf.uretaani_8mm || ef.uretaani_korkeus;
+    // Only calculate kick plates and urethane if enabled
+    if (settings.kickPlateEnabled) {
+        // Uretaanipalat
+        let uretaaniHeightAdjust;
+        if (settings.gapOption === '10mm') {
+            uretaaniHeightAdjust = ekf.uretaani_10mm || ef.uretaani_korkeus;
+        } else if (settings.gapOption === '15mm') {
+            uretaaniHeightAdjust = ekf.uretaani_15mm || ef.uretaani_korkeus;
+        } else if (settings.gapOption === 'saneeraus') {
+            uretaaniHeightAdjust = ekf.uretaani_saneeraus || ef.uretaani_korkeus;
+        } else {
+            uretaaniHeightAdjust = ekf.uretaani_8mm || ef.uretaani_korkeus;
+        }
+        const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
+        results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
+        
+        // Potkupellit
+        let innerHeight, outerHeight;
+        if (settings.gapOption === 'saneeraus') {
+            // Saneerauskynnys: Use values from admin panel
+            innerHeight = kickHeight + (ekf.rako_saneeraus_inner || -25);
+            outerHeight = kickHeight + (ekf.rako_saneeraus_outer || 0);
+        } else {
+            innerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
+            outerHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
+        }
+        const innerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
+        results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
+        
+        let outerWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
+        if (kickHeight > 310) {
+            outerWidth -= 5;
+        }
+        results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
-    const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
-    results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
-    
-    // Potkupellit
-    let innerHeight, outerHeight;
-    if (settings.gapOption === 'saneeraus') {
-        // Saneerauskynnys: Use values from admin panel
-        innerHeight = kickHeight + (ekf.rako_saneeraus_inner || -25);
-        outerHeight = kickHeight + (ekf.rako_saneeraus_outer || 0);
-    } else {
-        innerHeight = kickHeight + ef.potku_kaynti_sisa_korkeus + innerHeightAdjust;
-        outerHeight = kickHeight + ef.potku_kaynti_ulko_korkeus + outerHeightAdjust;
-    }
-    const innerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
-    results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
-    
-    let outerWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
-    if (kickHeight > 310) {
-        outerWidth -= 5;
-    }
-    results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     
     // Harjalistat
     results.harjalista.push(mainWidth + ef.harjalista);
@@ -899,19 +974,23 @@ function displayResults(results) {
     });
     html += '</div></div>';
     
-    // Uretaani
-    html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
+    // Uretaani (only show if kick plates are enabled)
+    if (settings.kickPlateEnabled && results.uretaani.length > 0) {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
         results.uretaani.forEach(item => {
-        html += `<div class="result-item">${item}</div>`;
+            html += `<div class="result-item">${item}</div>`;
         });
-    html += '</div></div>';
+        html += '</div></div>';
+    }
     
-    // Potkupelti
-    html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
+    // Potkupelti (only show if kick plates are enabled)
+    if (settings.kickPlateEnabled && results.potkupelti.length > 0) {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
         results.potkupelti.forEach(item => {
-        html += `<div class="result-item">${item}</div>`;
-    });
-    html += '</div></div>';
+            html += `<div class="result-item">${item}</div>`;
+        });
+        html += '</div></div>';
+    }
     
     // Harjalista
     html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
@@ -1165,6 +1244,19 @@ function loadPreset(name) {
     settings = { ...preset.settings };
     document.getElementById('gapOption').value = settings.gapOption;
     document.getElementById('paneCount').value = settings.paneCount;
+    
+    // Update kick plate toggle and visibility
+    const kickPlateToggle = document.getElementById('kickPlateToggle');
+    if (kickPlateToggle) {
+        kickPlateToggle.checked = settings.kickPlateEnabled !== false; // Default to true
+    }
+    const kickPlateInput = document.getElementById('kickPlateHeight');
+    if (kickPlateInput) {
+        const kickPlateContainer = kickPlateInput.closest('.col-md-6');
+        if (kickPlateContainer) {
+            kickPlateContainer.style.display = settings.kickPlateEnabled !== false ? '' : 'none';
+        }
+    }
     
     updatePaneInputs();
     

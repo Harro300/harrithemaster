@@ -294,4 +294,3 @@ Tämä toteutus mahdollistaa:
 - ✅ Firebase Authentication turvalliseen kirjautumiseen
 - ✅ Admin-käyttäjät voivat poistaa esiasetuksia
 - ✅ localStorage varmuuskopiona offline-tilassa
-- ✅ Toimii GitHub Pagesissa ilman muutoksia
