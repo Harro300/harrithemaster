@@ -238,6 +238,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize Firebase Auth listener
     initializeFirebaseAuth();
+    
+    // Update settings info display
+    updateSettingsInfo();
 });
 
 // Valid passwords
@@ -430,6 +433,7 @@ function selectCalculator(type) {
     }
     
     updatePaneInputs();
+    updateSettingsInfo();
     
     // Calculate initial results
     calculate();
@@ -477,6 +481,44 @@ function toggleDarkMode() {
     }
 }
 
+// Update settings info display
+function updateSettingsInfo() {
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const gapSettingEl = document.getElementById('currentGapSetting');
+    const formulaSetEl = document.getElementById('currentFormulaSet');
+    const settingsInfoEl = document.getElementById('currentSettingsInfo');
+    
+    if (!settingsInfoEl) return;
+    
+    // Hide for window calculators (no gap setting)
+    if (isWindowCalculator) {
+        settingsInfoEl.style.visibility = 'hidden';
+    } else {
+        settingsInfoEl.style.visibility = 'visible';
+        
+        // Update gap setting text
+        if (gapSettingEl) {
+            let gapText = '';
+            if (settings.gapOption === 'saneeraus') {
+                gapText = 'Saneerauskynnys';
+            } else {
+                gapText = `${settings.gapOption} mm rako`;
+            }
+            gapSettingEl.textContent = gapText;
+        }
+    }
+    
+    // Update formula set text (always shown)
+    if (formulaSetEl) {
+        const activeSetName = localStorage.getItem('activeFormulaSet') || 'default';
+        if (activeSetName === 'default') {
+            formulaSetEl.textContent = 'Default Kaavat';
+        } else {
+            formulaSetEl.textContent = activeSetName;
+        }
+    }
+}
+
 // Apply settings
 function applySettings() {
     const gapValue = document.getElementById('gapOption').value;
@@ -505,6 +547,7 @@ function applySettings() {
     }
     
     updatePaneInputs();
+    updateSettingsInfo();
     calculate();
 }
 
@@ -1900,6 +1943,7 @@ function switchFormulaSet() {
     const setName = document.getElementById('activeFormulaSet').value;
     localStorage.setItem('activeFormulaSet', setName);
     loadFormulasToPanel();
+    updateSettingsInfo();
     calculate(); // Recalculate with new formulas
 }
 
@@ -1979,6 +2023,9 @@ function confirmSaveFormulas() {
         
         // Reload the list and set active
         loadFormulaSetsList();
+        
+        // Update settings info display
+        updateSettingsInfo();
         
         // Recalculate with new formulas
         calculate();
@@ -2088,6 +2135,7 @@ function resetToDefaults() {
     
     localStorage.setItem('activeFormulaSet', 'default');
     loadFormulasToPanel();
+    updateSettingsInfo();
     calculate();
     alert('Oletuskaavat palautettu!');
 }
