@@ -1108,21 +1108,21 @@ function calculateJanisolIkkuna(paneWidths, paneHeights) {
         harjalista: []
     };
     
-    // Get formulas (use Janisol door formulas)
+    // Get formulas (use Janisol Ikkuna formulas)
     const formulas = getActiveFormulas();
-    const jf = formulas.janisol_pariovi;
+    const jif = formulas.janisol_ikkuna;
     
-    // Lasilistat - Use same formulas as Janisol doors
+    // Lasilistat - Use Janisol Ikkuna formulas
     paneHeights.forEach((height, index) => {
         const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
         
         // 2 vertical strips per pane
-        const verticalLength = height + jf.lasilista_pysty;  // height + 41mm
+        const verticalLength = height + jif.lasilista_pysty;  // height + 41mm (default)
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
         // 2 horizontal strips per pane
-        const horizontalLength = width + jf.lasilista_vaaka;  // width + 3mm
+        const horizontalLength = width + jif.lasilista_vaaka;  // width + 3mm (default)
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
@@ -1139,21 +1139,21 @@ function calculateEconomyIkkuna(paneWidths, paneHeights) {
         harjalista: []
     };
     
-    // Get formulas (use Economy door formulas)
+    // Get formulas (use Economy Ikkuna formulas)
     const formulas = getActiveFormulas();
-    const ef = formulas.economy_pariovi;
+    const eif = formulas.economy_ikkuna;
     
-    // Lasilistat - Use same formulas as Economy doors
+    // Lasilistat - Use Economy Ikkuna formulas
     paneHeights.forEach((height, index) => {
         const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
         
         // 2 vertical strips per pane
-        const verticalLength = height + ef.lasilista_pysty;  // height + 38mm
+        const verticalLength = height + eif.lasilista_pysty;  // height + 38mm (default)
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
         // 2 horizontal strips per pane
-        const horizontalLength = width + ef.lasilista_vaaka;  // width - 2mm
+        const horizontalLength = width + eif.lasilista_vaaka;  // width - 2mm (default)
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
@@ -1789,6 +1789,14 @@ function getDefaultFormulas() {
             uretaani_10mm: -121,
             uretaani_15mm: -121,
             uretaani_saneeraus: -121
+        },
+        janisol_ikkuna: {
+            lasilista_pysty: 41,
+            lasilista_vaaka: 3
+        },
+        economy_ikkuna: {
+            lasilista_pysty: 38,
+            lasilista_vaaka: -2
         }
     };
 }
@@ -1841,6 +1849,22 @@ function loadFormulasToPanel() {
         Object.keys(formulas.economy_kayntiovi).forEach(key => {
             const input = document.getElementById(`economy_kayntiovi_${key}`);
             if (input) input.value = formulas.economy_kayntiovi[key];
+        });
+    }
+    
+    // Janisol Ikkuna
+    if (formulas.janisol_ikkuna) {
+        Object.keys(formulas.janisol_ikkuna).forEach(key => {
+            const input = document.getElementById(`janisol_ikkuna_${key}`);
+            if (input) input.value = formulas.janisol_ikkuna[key];
+        });
+    }
+    
+    // Economy Ikkuna
+    if (formulas.economy_ikkuna) {
+        Object.keys(formulas.economy_ikkuna).forEach(key => {
+            const input = document.getElementById(`economy_ikkuna_${key}`);
+            if (input) input.value = formulas.economy_ikkuna[key];
         });
     }
     
@@ -2044,6 +2068,14 @@ function collectFormulasFromPanel() {
             uretaani_10mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_10mm').value),
             uretaani_15mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_15mm').value),
             uretaani_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_uretaani_saneeraus').value)
+        },
+        janisol_ikkuna: {
+            lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),
+            lasilista_vaaka: parseFloat(document.getElementById('janisol_ikkuna_lasilista_vaaka').value)
+        },
+        economy_ikkuna: {
+            lasilista_pysty: parseFloat(document.getElementById('economy_ikkuna_lasilista_pysty').value),
+            lasilista_vaaka: parseFloat(document.getElementById('economy_ikkuna_lasilista_vaaka').value)
         }
     };
 }
