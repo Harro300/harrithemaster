@@ -393,10 +393,16 @@ function selectCalculator(type) {
         }
     }
     
-    // Show/hide settings button for window calculators
-    const settingsButton = document.querySelector('.btn-info[onclick="openSettings()"]');
-    if (settingsButton) {
-        settingsButton.style.display = isWindowCalculator ? 'none' : '';
+    // Settings button is always visible now (windows also have settings)
+    
+    // For window calculators with multiple panes, hide the main width input
+    const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
+    if (mainWidthContainer) {
+        if (isWindowCalculator && settings.paneCount > 1) {
+            mainWidthContainer.style.display = 'none';
+        } else {
+            mainWidthContainer.style.display = '';
+        }
     }
     
     // Reset settings (but keep kickPlateEnabled or load from localStorage)
@@ -432,6 +438,8 @@ function selectCalculator(type) {
 // Open settings modal
 function openSettings() {
     const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    
     // Update dark mode toggle state
     const darkModeToggle = document.getElementById('darkModeToggle');
     darkModeToggle.checked = document.body.classList.contains('dark-mode');
@@ -440,6 +448,17 @@ function openSettings() {
     const kickPlateToggle = document.getElementById('kickPlateToggle');
     if (kickPlateToggle) {
         kickPlateToggle.checked = settings.kickPlateEnabled !== false;
+    }
+    
+    // Hide rako and kick plate settings for window calculators
+    const gapOptionSetting = document.getElementById('gapOptionSetting');
+    const kickPlateSetting = document.getElementById('kickPlateSetting');
+    
+    if (gapOptionSetting) {
+        gapOptionSetting.style.display = isWindowCalculator ? 'none' : '';
+    }
+    if (kickPlateSetting) {
+        kickPlateSetting.style.display = isWindowCalculator ? 'none' : '';
     }
     
     modal.show();
@@ -474,6 +493,17 @@ function applySettings() {
         kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
     }
     
+    // For window calculators with multiple panes, hide the main width input
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
+    if (mainWidthContainer) {
+        if (isWindowCalculator && settings.paneCount > 1) {
+            mainWidthContainer.style.display = 'none';
+        } else {
+            mainWidthContainer.style.display = '';
+        }
+    }
+    
     updatePaneInputs();
     calculate();
 }
@@ -481,10 +511,71 @@ function applySettings() {
 // Update pane height inputs based on pane count
 function updatePaneInputs() {
     const container = document.getElementById('paneHeightInputs');
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     
-    // Create a row wrapper if multiple panes
-    if (settings.paneCount > 1) {
-    container.innerHTML = '';
+    // For window calculators with multiple panes, show width + height for each
+    if (isWindowCalculator && settings.paneCount > 1) {
+        container.innerHTML = '';
+        container.className = 'col-12';
+        const row = document.createElement('div');
+        row.className = 'row';
+        
+        for (let i = 1; i <= settings.paneCount; i++) {
+            // Width input
+            const colWidth = document.createElement('div');
+            colWidth.className = 'col-md-6 col-lg-3';
+            
+            const divWidth = document.createElement('div');
+            divWidth.className = 'mb-3';
+            
+            const labelWidth = document.createElement('label');
+            labelWidth.className = 'form-label';
+            labelWidth.htmlFor = `paneWidth${i}`;
+            labelWidth.textContent = `Ruutu ${i} leveys (mm)`;
+            
+            const inputWidth = document.createElement('input');
+            inputWidth.type = 'number';
+            inputWidth.className = 'form-control';
+            inputWidth.id = `paneWidth${i}`;
+            inputWidth.min = '100';
+            inputWidth.value = '800';
+            inputWidth.oninput = calculate;
+            
+            divWidth.appendChild(labelWidth);
+            divWidth.appendChild(inputWidth);
+            colWidth.appendChild(divWidth);
+            row.appendChild(colWidth);
+            
+            // Height input
+            const colHeight = document.createElement('div');
+            colHeight.className = 'col-md-6 col-lg-3';
+            
+            const divHeight = document.createElement('div');
+            divHeight.className = 'mb-3';
+            
+            const labelHeight = document.createElement('label');
+            labelHeight.className = 'form-label';
+            labelHeight.htmlFor = `paneHeight${i}`;
+            labelHeight.textContent = `Ruutu ${i} korkeus (mm)`;
+            
+            const inputHeight = document.createElement('input');
+            inputHeight.type = 'number';
+            inputHeight.className = 'form-control';
+            inputHeight.id = `paneHeight${i}`;
+            inputHeight.min = '100';
+            inputHeight.value = '800';
+            inputHeight.oninput = calculate;
+            
+            divHeight.appendChild(labelHeight);
+            divHeight.appendChild(inputHeight);
+            colHeight.appendChild(divHeight);
+            row.appendChild(colHeight);
+        }
+        container.appendChild(row);
+    }
+    // For door calculators or single pane windows
+    else if (settings.paneCount > 1) {
+        container.innerHTML = '';
         container.className = 'col-12';
         const row = document.createElement('div');
         row.className = 'row';
@@ -493,8 +584,8 @@ function updatePaneInputs() {
             const col = document.createElement('div');
             col.className = 'col-md-6 col-lg-3';
             
-        const div = document.createElement('div');
-        div.className = 'mb-3';
+            const div = document.createElement('div');
+            div.className = 'mb-3';
             
             const label = document.createElement('label');
             label.className = 'form-label';
@@ -551,21 +642,38 @@ function calculate() {
     const sideDoorWidth = parseInt(document.getElementById('sideDoorWidth').value) || 0;
     const kickPlateHeight = parseInt(document.getElementById('kickPlateHeight').value) || 0;
     
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    
     const paneHeights = [];
-    for (let i = 1; i <= settings.paneCount; i++) {
-        const height = parseInt(document.getElementById(`paneHeight${i}`).value) || 0;
-        paneHeights.push(height);
+    const paneWidths = [];
+    
+    // For window calculators with multiple panes, collect widths and heights
+    if (isWindowCalculator && settings.paneCount > 1) {
+        for (let i = 1; i <= settings.paneCount; i++) {
+            const width = parseInt(document.getElementById(`paneWidth${i}`).value) || 0;
+            const height = parseInt(document.getElementById(`paneHeight${i}`).value) || 0;
+            paneWidths.push(width);
+            paneHeights.push(height);
+        }
+    } else {
+        // For doors or single pane windows, collect heights only
+        for (let i = 1; i <= settings.paneCount; i++) {
+            const height = parseInt(document.getElementById(`paneHeight${i}`).value) || 0;
+            paneHeights.push(height);
+        }
+        // For single pane windows, use mainDoorWidth as the only width
+        if (isWindowCalculator) {
+            paneWidths.push(mainDoorWidth);
+        }
     }
     
     // Validate inputs
-    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
-    
     if (!isWindowCalculator && mainDoorWidth < 500) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
         return;
     }
     
-    if (isWindowCalculator && mainDoorWidth < 100) {
+    if (isWindowCalculator && settings.paneCount === 1 && mainDoorWidth < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
         return;
     }
@@ -583,13 +691,13 @@ function calculate() {
     } else if (currentCalculator === 'janisol-kayntiovi') {
         results = calculateJanisolKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'janisol-ikkuna') {
-        results = calculateJanisolIkkuna(mainDoorWidth, paneHeights);
+        results = calculateJanisolIkkuna(paneWidths, paneHeights);
     } else if (currentCalculator === 'economy-pariovi') {
         results = calculateEconomyPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-kayntiovi') {
         results = calculateEconomyKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-ikkuna') {
-        results = calculateEconomyIkkuna(mainDoorWidth, paneHeights);
+        results = calculateEconomyIkkuna(paneWidths, paneHeights);
     }
     
     displayResults(results);
@@ -992,7 +1100,7 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
 }
 
 // Calculate Janisol Ikkuna (Windows only - glass strips only)
-function calculateJanisolIkkuna(windowWidth, paneHeights) {
+function calculateJanisolIkkuna(paneWidths, paneHeights) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1005,14 +1113,16 @@ function calculateJanisolIkkuna(windowWidth, paneHeights) {
     const jf = formulas.janisol_pariovi;
     
     // Lasilistat - Use same formulas as Janisol doors
-    paneHeights.forEach(height => {
+    paneHeights.forEach((height, index) => {
+        const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
+        
         // 2 vertical strips per pane
         const verticalLength = height + jf.lasilista_pysty;  // height + 41mm
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
         // 2 horizontal strips per pane
-        const horizontalLength = windowWidth + jf.lasilista_vaaka;  // width + 3mm
+        const horizontalLength = width + jf.lasilista_vaaka;  // width + 3mm
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
@@ -1021,7 +1131,7 @@ function calculateJanisolIkkuna(windowWidth, paneHeights) {
 }
 
 // Calculate Economy Ikkuna (Windows only - glass strips only)
-function calculateEconomyIkkuna(windowWidth, paneHeights) {
+function calculateEconomyIkkuna(paneWidths, paneHeights) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1034,14 +1144,16 @@ function calculateEconomyIkkuna(windowWidth, paneHeights) {
     const ef = formulas.economy_pariovi;
     
     // Lasilistat - Use same formulas as Economy doors
-    paneHeights.forEach(height => {
+    paneHeights.forEach((height, index) => {
+        const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
+        
         // 2 vertical strips per pane
         const verticalLength = height + ef.lasilista_pysty;  // height + 38mm
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
         // 2 horizontal strips per pane
-        const horizontalLength = windowWidth + ef.lasilista_vaaka;  // width - 2mm
+        const horizontalLength = width + ef.lasilista_vaaka;  // width - 2mm
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
