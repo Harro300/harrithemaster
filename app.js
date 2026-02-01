@@ -1294,12 +1294,17 @@ async function confirmSavePreset() {
         kickPlateHeight: parseInt(document.getElementById('kickPlateHeight').value),
         settings: { ...settings },
         paneHeights: [],
+        paneWidths: [],
         message: message
     };
     
+    // Save pane heights and widths
     for (let i = 1; i <= settings.paneCount; i++) {
-        const el = document.getElementById(`paneHeight${i}`);
-        if (el) preset.paneHeights.push(parseInt(el.value));
+        const heightEl = document.getElementById(`paneHeight${i}`);
+        if (heightEl) preset.paneHeights.push(parseInt(heightEl.value));
+        
+        const widthEl = document.getElementById(`paneWidth${i}`);
+        if (widthEl) preset.paneWidths.push(parseInt(widthEl.value));
     }
     
     // Close modal first
@@ -1488,28 +1493,40 @@ function loadPreset(name) {
     document.getElementById('sideDoorWidth').value = preset.sideDoorWidth;
     document.getElementById('kickPlateHeight').value = preset.kickPlateHeight;
     
+    // Apply settings from preset
     settings = { ...preset.settings };
     document.getElementById('gapOption').value = settings.gapOption;
     document.getElementById('paneCount').value = settings.paneCount;
     
-    // Update kick plate toggle and visibility
+    // Update kick plate toggle state
     const kickPlateToggle = document.getElementById('kickPlateToggle');
     if (kickPlateToggle) {
-        kickPlateToggle.checked = settings.kickPlateEnabled !== false; // Default to true
+        kickPlateToggle.checked = settings.kickPlateEnabled;
     }
-    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
-    if (kickPlateContainer) {
-        kickPlateContainer.style.display = settings.kickPlateEnabled !== false ? '' : 'none';
+    localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled); // Ensure localStorage is updated
+    
+    applySettings(); // Apply all settings, which also calls updatePaneInputs and calculate
+    
+    // Load pane heights and widths
+    if (currentCalculator.includes('ikkuna') && settings.paneCount > 1) {
+        // For multi-pane windows, load both width and height
+        preset.paneHeights.forEach((height, i) => {
+            const heightEl = document.getElementById(`paneHeight${i + 1}`);
+            if (heightEl) heightEl.value = height;
+            const widthEl = document.getElementById(`paneWidth${i + 1}`);
+            if (widthEl && preset.paneWidths && preset.paneWidths[i]) {
+                widthEl.value = preset.paneWidths[i];
+            }
+        });
+    } else {
+        // For single pane or doors, just load pane heights
+        preset.paneHeights.forEach((height, i) => {
+            const el = document.getElementById(`paneHeight${i + 1}`);
+            if (el) el.value = height;
+        });
     }
     
-    updatePaneInputs();
-    
-    preset.paneHeights.forEach((height, i) => {
-        const el = document.getElementById(`paneHeight${i + 1}`);
-        if (el) el.value = height;
-    });
-    
-    calculate();
+    calculate(); // Recalculate after all values are loaded
     
     const modal = bootstrap.Modal.getInstance(document.getElementById('loadPresetModal'));
     modal.hide();
