@@ -1493,6 +1493,8 @@ function loadPreset(name) {
         selectCalculator(preset.calculator);
     }
     
+    const isWindowCalculator = currentCalculator.includes('ikkuna');
+    
     // Load values
     document.getElementById('mainDoorWidth').value = preset.mainDoorWidth;
     document.getElementById('sideDoorWidth').value = preset.sideDoorWidth;
@@ -1512,8 +1514,14 @@ function loadPreset(name) {
     
     applySettings(); // Apply all settings, which also calls updatePaneInputs and calculate
     
+    // Ensure kick plate field is hidden for window calculators (double-check)
+    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+    if (kickPlateContainer && isWindowCalculator) {
+        kickPlateContainer.style.display = 'none';
+    }
+    
     // Load pane heights and widths
-    if (currentCalculator.includes('ikkuna') && settings.paneCount > 1) {
+    if (isWindowCalculator && settings.paneCount > 1) {
         // For multi-pane windows, load both width and height
         preset.paneHeights.forEach((height, i) => {
             const heightEl = document.getElementById(`paneHeight${i + 1}`);
