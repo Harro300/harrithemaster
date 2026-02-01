@@ -529,14 +529,19 @@ function applySettings() {
     // Save kick plate setting to localStorage
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
     
-    // Show/hide kick plate height input
+    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    
+    // Show/hide kick plate height input (always hide for window calculators)
     const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
     if (kickPlateContainer) {
-        kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
+        if (isWindowCalculator) {
+            kickPlateContainer.style.display = 'none'; // Always hide for windows
+        } else {
+            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
+        }
     }
     
     // For window calculators with multiple panes, hide the main width input
-    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
     if (mainWidthContainer) {
         if (isWindowCalculator && settings.paneCount > 1) {
