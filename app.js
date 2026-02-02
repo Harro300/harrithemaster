@@ -12,6 +12,7 @@ let currentUser = null;
 let isAdmin = false;
 let presetsUnsubscribe = null;
 let checkedStatesUnsubscribe = null;
+let formulaSetsUnsubscribe = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = ['admin@terasovi.local'];
@@ -192,6 +193,58 @@ function setupRealtimeListeners() {
         console.error('❌ Virhe checkedStates-kuuntelijan luonnissa:', error);
     }
     
+    // LISTENER 3: Formula sets collection
+    try {
+        let isFirstLoadFormulas = true;
+        formulaSetsUnsubscribe = onSnapshot(
+            collection(db, 'formulaSets'),
+            (snapshot) => {
+                console.log('🔔 Kaavasetit päivitetty!');
+                
+                // Update localStorage backup
+                const sets = {};
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const setName = data.name || doc.id;
+                    sets[setName] = {
+                        ...data.formulas,
+                        _firestoreId: doc.id
+                    };
+                });
+                localStorage.setItem('formulaSets', JSON.stringify(sets));
+                
+                // Refresh formula sets dropdown
+                const currentActive = localStorage.getItem('activeFormulaSet') || 'default';
+                const select = document.getElementById('activeFormulaSet');
+                if (select) {
+                    const currentValue = select.value;
+                    loadFormulaSetsList();
+                    // Try to restore previous selection
+                    if (select.querySelector(`option[value="${currentValue}"]`)) {
+                        select.value = currentValue;
+                    }
+                }
+                
+                // Show toast (but not on first load)
+                if (!isFirstLoadFormulas) {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === "added") {
+                            showToast(`Uusi kaavasetti: ${change.doc.data().name}`, 'info');
+                        } else if (change.type === "removed") {
+                            showToast(`Kaavasetti poistettu`, 'info');
+                        }
+                    });
+                }
+                isFirstLoadFormulas = false;
+            },
+            (error) => {
+                console.error('❌ FormulaSets-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe formulaSets-kuuntelijan luonnissa:', error);
+    }
+    
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
 
@@ -207,6 +260,11 @@ function stopRealtimeListeners() {
     if (checkedStatesUnsubscribe) {
         checkedStatesUnsubscribe();
         checkedStatesUnsubscribe = null;
+    }
+    
+    if (formulaSetsUnsubscribe) {
+        formulaSetsUnsubscribe();
+        formulaSetsUnsubscribe = null;
     }
     
     console.log('✅ Kuuntelijat lopetettu');
@@ -1946,7 +2004,33 @@ function loadFormulasToPanel() {
 }
 
 // Load formula sets to dropdown
-function loadFormulaSetsList() {
+async function loadFormulaSetsList() {
+    // Try to fetch from Firestore
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, collection, getDocs } = window.firebase;
+            const querySnapshot = await getDocs(collection(db, 'formulaSets'));
+            
+            // Update localStorage with fresh data
+            const sets = {};
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                const setName = data.name || doc.id;
+                sets[setName] = {
+                    ...data.formulas,
+                    _firestoreId: doc.id
+                };
+            });
+            localStorage.setItem('formulaSets', JSON.stringify(sets));
+            
+            console.log('✅ Kaavasetit ladattu Firestoresta');
+            
+        } catch (error) {
+            console.error('❌ Virhe ladattaessa kaavoja Firestoresta:', error);
+        }
+    }
+    
+    // Load from localStorage (either fresh from Firestore or existing)
     const storedFormulas = localStorage.getItem('formulaSets');
     const activeSetName = localStorage.getItem('activeFormulaSet') || 'default';
     const select = document.getElementById('activeFormulaSet');
@@ -2027,7 +2111,7 @@ function backToNameModal() {
 }
 
 // Step 3: Confirm and save
-function confirmSaveFormulas() {
+async function confirmSaveFormulas() {
     const password = document.getElementById('savePassword').value;
     const errorDiv = document.getElementById('savePasswordError');
     
@@ -2047,9 +2131,47 @@ function confirmSaveFormulas() {
         const storedFormulas = localStorage.getItem('formulaSets');
         const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
         
-        sets[setName] = formulas;
-        localStorage.setItem('formulaSets', JSON.stringify(sets));
-        localStorage.setItem('activeFormulaSet', setName);
+        // Try to save to Firestore
+        if (window.firebase && window.firebase.db && currentUser) {
+            try {
+                const { db, collection, addDoc, serverTimestamp } = window.firebase;
+                
+                const formulaSetWithMetadata = {
+                    name: setName,
+                    formulas: formulas,
+                    createdBy: currentUser.email,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                };
+                
+                const docRef = await addDoc(collection(db, 'formulaSets'), formulaSetWithMetadata);
+                console.log('✅ Kaavasetti tallennettu Firestoreen:', docRef.id);
+                
+                // Also save to localStorage as backup
+                sets[setName] = { ...formulas, _firestoreId: docRef.id };
+                localStorage.setItem('formulaSets', JSON.stringify(sets));
+                localStorage.setItem('activeFormulaSet', setName);
+                
+                showToast(`Kaavasetti "${setName}" tallennettu!`, 'success');
+                
+            } catch (error) {
+                console.error('❌ Firestore-tallennusvirhe:', error);
+                
+                // Fallback to localStorage only
+                sets[setName] = formulas;
+                localStorage.setItem('formulaSets', JSON.stringify(sets));
+                localStorage.setItem('activeFormulaSet', setName);
+                
+                showToast('Tallennettu paikallisesti (offline)', 'warning');
+            }
+        } else {
+            // Firebase not available, use localStorage only
+            sets[setName] = formulas;
+            localStorage.setItem('formulaSets', JSON.stringify(sets));
+            localStorage.setItem('activeFormulaSet', setName);
+            
+            showToast('Tallennettu paikallisesti', 'success');
+        }
         
         // Reload the list and set active
         loadFormulaSetsList();
@@ -2060,7 +2182,6 @@ function confirmSaveFormulas() {
         // Recalculate with new formulas
         calculate();
         
-        alert(`Kaavasetti "${setName}" tallennettu!`);
     } else {
         // Wrong password
         errorDiv.textContent = 'Väärä salasana. Yritä uudelleen.';
