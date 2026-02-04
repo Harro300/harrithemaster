@@ -291,6 +291,3 @@ Muokataan [`app.js`](app.js) kirjautumislogiikka:**Muutokset tiedostossa app.js:
 Tämä toteutus mahdollistaa:
 
 - ✅ Reaaliaikainen synkronointi kaikkien käyttäjien välillä
-- ✅ Firebase Authentication turvalliseen kirjautumiseen
-- ✅ Admin-käyttäjät voivat poistaa esiasetuksia
-- ✅ localStorage varmuuskopiona offline-tilassa

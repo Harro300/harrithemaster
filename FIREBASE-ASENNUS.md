@@ -226,3 +226,4 @@ Sovellus päivittyy automaattisesti osoitteessa: https://harro300.github.io/harr
 
 **Onnittelut! Sinulla on nyt reaaliaikainen, synkronoituva teräsovi-laskuri! 🎉**
 
+
