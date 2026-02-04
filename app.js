@@ -199,7 +199,7 @@ function setupRealtimeListeners() {
         formulaSetsUnsubscribe = onSnapshot(
             collection(db, 'formulaSets'),
             (snapshot) => {
-                console.log('🔔 Kaavasetit päivitetty!');
+                console.log('🔔 Kaavasetit päivitetty Firestoresta!');
                 
                 // Update localStorage backup
                 const sets = {};
@@ -208,28 +208,32 @@ function setupRealtimeListeners() {
                     const setName = data.name || doc.id;
                     sets[setName] = {
                         ...data.formulas,
-                        _firestoreId: doc.id
+                        _firestoreId: doc.id,
+                        _createdBy: data.createdBy,
+                        _createdAt: data.createdAt
                     };
                 });
                 localStorage.setItem('formulaSets', JSON.stringify(sets));
                 
                 // Refresh formula sets dropdown
-                const currentActive = localStorage.getItem('activeFormulaSet') || 'default';
                 const select = document.getElementById('activeFormulaSet');
                 if (select) {
                     const currentValue = select.value;
                     loadFormulaSetsList();
-                    // Try to restore previous selection
+                    // Try to restore previous selection if it still exists
                     if (select.querySelector(`option[value="${currentValue}"]`)) {
                         select.value = currentValue;
                     }
                 }
                 
-                // Show toast (but not on first load)
+                // Show toast notifications (but not on first load)
                 if (!isFirstLoadFormulas) {
                     snapshot.docChanges().forEach((change) => {
+                        const data = change.doc.data();
                         if (change.type === "added") {
-                            showToast(`Uusi kaavasetti: ${change.doc.data().name}`, 'info');
+                            showToast(`Uusi kaavasetti: ${data.name}`, 'info');
+                        } else if (change.type === "modified") {
+                            showToast(`Kaavasetti päivitetty: ${data.name}`, 'info');
                         } else if (change.type === "removed") {
                             showToast(`Kaavasetti poistettu`, 'info');
                         }
@@ -2005,28 +2009,32 @@ function loadFormulasToPanel() {
 
 // Load formula sets to dropdown
 async function loadFormulaSetsList() {
-    // Try to fetch from Firestore
+    // Try to fetch from Firestore on initial load
     if (window.firebase && window.firebase.db && currentUser) {
         try {
             const { db, collection, getDocs } = window.firebase;
             const querySnapshot = await getDocs(collection(db, 'formulaSets'));
             
-            // Update localStorage with fresh data
+            // Update localStorage with fresh data from Firestore
             const sets = {};
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
                 const setName = data.name || doc.id;
                 sets[setName] = {
                     ...data.formulas,
-                    _firestoreId: doc.id
+                    _firestoreId: doc.id,
+                    _createdBy: data.createdBy
                 };
             });
-            localStorage.setItem('formulaSets', JSON.stringify(sets));
             
-            console.log('✅ Kaavasetit ladattu Firestoresta');
+            if (Object.keys(sets).length > 0) {
+                localStorage.setItem('formulaSets', JSON.stringify(sets));
+                console.log('✅ Kaavasetit ladattu Firestoresta');
+            }
             
         } catch (error) {
             console.error('❌ Virhe ladattaessa kaavoja Firestoresta:', error);
+            // Continue with localStorage data
         }
     }
     
@@ -2128,15 +2136,12 @@ async function confirmSaveFormulas() {
             setName = document.getElementById('activeFormulaSet').value;
         }
         
-        const storedFormulas = localStorage.getItem('formulaSets');
-        const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
-        
-        // Try to save to Firestore
+        // Try to save to Firestore first
         if (window.firebase && window.firebase.db && currentUser) {
             try {
                 const { db, collection, addDoc, serverTimestamp } = window.firebase;
                 
-                const formulaSetWithMetadata = {
+                const formulaSetData = {
                     name: setName,
                     formulas: formulas,
                     createdBy: currentUser.email,
@@ -2144,33 +2149,39 @@ async function confirmSaveFormulas() {
                     updatedAt: serverTimestamp()
                 };
                 
-                const docRef = await addDoc(collection(db, 'formulaSets'), formulaSetWithMetadata);
+                const docRef = await addDoc(collection(db, 'formulaSets'), formulaSetData);
                 console.log('✅ Kaavasetti tallennettu Firestoreen:', docRef.id);
                 
-                // Also save to localStorage as backup
+                // Also save to localStorage with Firestore ID
+                const storedFormulas = localStorage.getItem('formulaSets');
+                const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
                 sets[setName] = { ...formulas, _firestoreId: docRef.id };
                 localStorage.setItem('formulaSets', JSON.stringify(sets));
                 localStorage.setItem('activeFormulaSet', setName);
                 
-                showToast(`Kaavasetti "${setName}" tallennettu!`, 'success');
+                showToast(`Kaavasetti "${setName}" tallennettu ja synkronoitu!`, 'success');
                 
             } catch (error) {
-                console.error('❌ Firestore-tallennusvirhe:', error);
+                console.error('❌ Firestore-tallennus epäonnistui:', error);
                 
                 // Fallback to localStorage only
+                const storedFormulas = localStorage.getItem('formulaSets');
+                const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
                 sets[setName] = formulas;
                 localStorage.setItem('formulaSets', JSON.stringify(sets));
                 localStorage.setItem('activeFormulaSet', setName);
                 
-                showToast('Tallennettu paikallisesti (offline)', 'warning');
+                showToast(`Kaavasetti "${setName}" tallennettu paikallisesti`, 'warning');
             }
         } else {
-            // Firebase not available, use localStorage only
+            // Firebase not available, save to localStorage only
+            const storedFormulas = localStorage.getItem('formulaSets');
+            const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
             sets[setName] = formulas;
             localStorage.setItem('formulaSets', JSON.stringify(sets));
             localStorage.setItem('activeFormulaSet', setName);
             
-            showToast('Tallennettu paikallisesti', 'success');
+            alert(`Kaavasetti "${setName}" tallennettu paikallisesti!`);
         }
         
         // Reload the list and set active
