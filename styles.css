@@ -994,3 +994,39 @@ body.dark-mode select {
 .form-check-input:focus {
     box-shadow: 0 0 0 0.2rem rgba(26, 26, 26, 0.15);
 }
+
+/* Fill Down Button */
+.input-group .btn-outline-secondary {
+    min-width: 38px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0.375rem 0.5rem;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    background-color: var(--bg-secondary);
+}
+
+.input-group .btn-outline-secondary:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.input-group .btn-outline-secondary:active,
+.input-group .btn-outline-secondary:focus {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    box-shadow: none;
+}
+
+body.dark-mode .input-group .btn-outline-secondary {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+body.dark-mode .input-group .btn-outline-secondary:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}

@@ -623,6 +623,28 @@ function applySettings() {
     calculate();
 }
 
+// Fill all fields below with the same value
+function fillFieldsBelow(currentIndex, fieldType) {
+    const totalPanes = settings.paneCount;
+    
+    // Get current field value
+    const currentField = document.getElementById(`${fieldType}${currentIndex}`);
+    if (!currentField) return;
+    
+    const value = currentField.value;
+    
+    // Fill all fields below (from currentIndex+1 to totalPanes)
+    for (let i = currentIndex + 1; i <= totalPanes; i++) {
+        const fieldBelow = document.getElementById(`${fieldType}${i}`);
+        if (fieldBelow) {
+            fieldBelow.value = value;
+        }
+    }
+    
+    // Trigger calculation after filling
+    calculate();
+}
+
 // Update pane height inputs based on pane count
 function updatePaneInputs() {
     const container = document.getElementById('paneHeightInputs');
@@ -632,10 +654,12 @@ function updatePaneInputs() {
     if (isWindowCalculator && settings.paneCount > 1) {
         container.innerHTML = '';
         container.className = 'col-12';
-        const row = document.createElement('div');
-        row.className = 'row';
         
         for (let i = 1; i <= settings.paneCount; i++) {
+            // Create a new row for each pane
+            const row = document.createElement('div');
+            row.className = 'row';
+            
             // Width input
             const colWidth = document.createElement('div');
             colWidth.className = 'col-md-6 col-lg-3';
@@ -648,6 +672,10 @@ function updatePaneInputs() {
             labelWidth.htmlFor = `paneWidth${i}`;
             labelWidth.textContent = `Ruutu ${i} leveys (mm)`;
             
+            // Input group with button
+            const inputGroupWidth = document.createElement('div');
+            inputGroupWidth.className = 'input-group';
+            
             const inputWidth = document.createElement('input');
             inputWidth.type = 'number';
             inputWidth.className = 'form-control';
@@ -656,8 +684,18 @@ function updatePaneInputs() {
             inputWidth.value = '800';
             inputWidth.oninput = calculate;
             
+            const buttonWidth = document.createElement('button');
+            buttonWidth.className = 'btn btn-outline-secondary';
+            buttonWidth.type = 'button';
+            buttonWidth.innerHTML = '↓';
+            buttonWidth.title = 'Täytä kaikki alla olevat leveys-kentät';
+            buttonWidth.onclick = () => fillFieldsBelow(i, 'paneWidth');
+            
+            inputGroupWidth.appendChild(inputWidth);
+            inputGroupWidth.appendChild(buttonWidth);
+            
             divWidth.appendChild(labelWidth);
-            divWidth.appendChild(inputWidth);
+            divWidth.appendChild(inputGroupWidth);
             colWidth.appendChild(divWidth);
             row.appendChild(colWidth);
             
@@ -673,6 +711,10 @@ function updatePaneInputs() {
             labelHeight.htmlFor = `paneHeight${i}`;
             labelHeight.textContent = `Ruutu ${i} korkeus (mm)`;
             
+            // Input group with button
+            const inputGroupHeight = document.createElement('div');
+            inputGroupHeight.className = 'input-group';
+            
             const inputHeight = document.createElement('input');
             inputHeight.type = 'number';
             inputHeight.className = 'form-control';
@@ -681,12 +723,24 @@ function updatePaneInputs() {
             inputHeight.value = '800';
             inputHeight.oninput = calculate;
             
+            const buttonHeight = document.createElement('button');
+            buttonHeight.className = 'btn btn-outline-secondary';
+            buttonHeight.type = 'button';
+            buttonHeight.innerHTML = '↓';
+            buttonHeight.title = 'Täytä kaikki alla olevat korkeus-kentät';
+            buttonHeight.onclick = () => fillFieldsBelow(i, 'paneHeight');
+            
+            inputGroupHeight.appendChild(inputHeight);
+            inputGroupHeight.appendChild(buttonHeight);
+            
             divHeight.appendChild(labelHeight);
-            divHeight.appendChild(inputHeight);
+            divHeight.appendChild(inputGroupHeight);
             colHeight.appendChild(divHeight);
             row.appendChild(colHeight);
+            
+            // Append this row to the container
+            container.appendChild(row);
         }
-        container.appendChild(row);
     }
     // For door calculators or single pane windows
     else if (settings.paneCount > 1) {
