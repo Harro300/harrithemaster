@@ -315,28 +315,49 @@ const VALID_PASSWORDS = ['Soma<3', '1234'];
 const ADMIN_PASSWORDS = ['HarriTheMaster', '4321'];
 const SAVE_PASSWORD = '0303';
 
-// Login handling with Firebase
-document.getElementById('loginForm').addEventListener('submit', async function(e) {
+// Wait for DOM to be ready before attaching login handler
+function attachLoginHandler() {
+    console.log('🔵 Yritetään liittää login event listener...');
+    const loginForm = document.getElementById('loginForm');
+    if (!loginForm) {
+        console.error('❌ VIRHE: loginForm-elementtiä ei löydy!');
+        return;
+    }
+    console.log('✅ loginForm löytyi, liitetään event listener');
+
+    // Login handling with Firebase
+    loginForm.addEventListener('submit', async function(e) {
     e.preventDefault();
+    console.log('🔵 Login-lomake lähetetty!');
+    
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const errorDiv = document.getElementById('loginError');
     
+    console.log('🔵 Email:', email);
+    console.log('🔵 Odotetaan Firebasea...');
+    
     // Wait for Firebase to be ready
     await waitForFirebase();
+    console.log('✅ Firebase valmis!');
     
     // Validate email format
     if (!email.includes('@')) {
+        console.log('❌ Virheellinen email-muoto');
         errorDiv.textContent = 'Anna kelvollinen sähköpostiosoite.';
         errorDiv.classList.add('show');
         document.getElementById('email').classList.add('is-invalid');
         return;
     }
     
+    console.log('🔵 Haetaan Firebase auth ja signIn...');
     // Try to sign in with Firebase directly with provided email and password
     const { auth, signIn } = window.firebase;
+    console.log('🔵 Firebase auth:', auth ? 'OK' : 'PUUTTUU');
+    console.log('🔵 signIn-funktio:', signIn ? 'OK' : 'PUUTTUU');
     
     try {
+        console.log('🔵 Yritetään kirjautua Firebaseen...');
         const userCredential = await signIn(auth, email, password);
         console.log('✅ Firebase kirjautuminen onnistui:', userCredential.user.email);
         
@@ -351,10 +372,14 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         // Update global state
         currentUser = userCredential.user;
         isAdmin = checkIsAdmin(currentUser.email);
+        console.log('🔵 Käyttäjä asetettu:', currentUser.email, 'Admin:', isAdmin);
         
         // Show calculator screen
+        console.log('🔵 Piilotetaan loginScreen...');
         document.getElementById('loginScreen').classList.add('d-none');
+        console.log('🔵 Näytetään calculatorScreen...');
         document.getElementById('calculatorScreen').classList.remove('d-none');
+        console.log('✅ Näyttö vaihdettu!');
         
         // Update sync status
         updateSyncStatus(true);
@@ -363,10 +388,12 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         setupRealtimeListeners();
         
         // Select default calculator
+        console.log('🔵 Valitaan default-laskuri...');
         selectCalculator('janisol-pariovi');
         
         // Show welcome toast
         showToast(`Tervetuloa${isAdmin ? ' Admin' : ''}!`, 'success');
+        console.log('✅ Kirjautuminen valmis!');
         
     } catch (error) {
         console.error('❌ Firebase kirjautuminen epäonnistui:', error);
@@ -392,9 +419,48 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         errorDiv.textContent = errorMessage;
         errorDiv.classList.add('show');
     }
-});
+    });
+}
+
+// Attach login handler when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachLoginHandler);
+} else {
+    // DOM already loaded
+    attachLoginHandler();
+}
 
 // Logout
+// Switch between Laskin and Mitat views
+function switchView(view) {
+    const calculatorScreen = document.getElementById('calculatorScreen');
+    const mittatView = document.getElementById('mittatView');
+    
+    // Toggle views
+    if (view === 'laskin') {
+        calculatorScreen.classList.remove('d-none');
+        mittatView.classList.add('d-none');
+        
+        // Update toggle buttons - both sets
+        document.getElementById('btn-view-laskin').classList.add('active');
+        document.getElementById('btn-view-mitat').classList.remove('active');
+        document.getElementById('btn-view-laskin-2').classList.add('active');
+        document.getElementById('btn-view-mitat-2').classList.remove('active');
+    } else if (view === 'mitat') {
+        calculatorScreen.classList.add('d-none');
+        mittatView.classList.remove('d-none');
+        
+        // Load mitat data
+        loadMittatView();
+        
+        // Update toggle buttons - both sets
+        document.getElementById('btn-view-laskin').classList.remove('active');
+        document.getElementById('btn-view-mitat').classList.add('active');
+        document.getElementById('btn-view-laskin-2').classList.remove('active');
+        document.getElementById('btn-view-mitat-2').classList.add('active');
+    }
+}
+
 async function logout() {
     // Stop realtime listeners first
     stopRealtimeListeners();
@@ -416,6 +482,7 @@ async function logout() {
     
     // Update UI
     document.getElementById('calculatorScreen').classList.add('d-none');
+    document.getElementById('mittatView').classList.add('d-none');
     document.getElementById('loginScreen').classList.remove('d-none');
     document.getElementById('email').value = '';
     document.getElementById('password').value = '';
@@ -652,7 +719,7 @@ function updatePaneInputs() {
     
     // For window calculators with multiple panes, show width + height for each
     if (isWindowCalculator && settings.paneCount > 1) {
-        container.innerHTML = '';
+    container.innerHTML = '';
         container.className = 'col-12';
         
         for (let i = 1; i <= settings.paneCount; i++) {
@@ -753,8 +820,8 @@ function updatePaneInputs() {
             const col = document.createElement('div');
             col.className = 'col-md-6 col-lg-3';
             
-            const div = document.createElement('div');
-            div.className = 'mb-3';
+        const div = document.createElement('div');
+        div.className = 'mb-3';
             
             const label = document.createElement('label');
             label.className = 'form-label';
@@ -849,7 +916,7 @@ function calculate() {
     
     if (!isWindowCalculator && settings.kickPlateEnabled && kickPlateHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
-        return;
+            return;
     }
     
     let results = {};
@@ -1366,7 +1433,7 @@ function displayResults(results) {
         
         // Harjalista
         html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
-            results.harjalista.forEach(item => {
+        results.harjalista.forEach(item => {
             html += `<div class="result-item">${item}</div>`;
         });
         html += '</div></div>';
@@ -1462,9 +1529,9 @@ async function confirmSavePreset() {
             console.error('❌ Firestore-tallennusvirhe:', error);
             
             // Fallback to localStorage only
-            presets[name] = preset;
-            localStorage.setItem('doorPresets', JSON.stringify(presets));
-            
+    presets[name] = preset;
+    localStorage.setItem('doorPresets', JSON.stringify(presets));
+    
             showToast('Tallennettu paikallisesti (offline)', 'warning');
         }
     } else {
@@ -1557,7 +1624,6 @@ async function togglePresetCheck(name, event) {
 
 function refreshPresetList() {
     const presets = JSON.parse(localStorage.getItem('doorPresets') || '{}');
-    const checkedPresets = JSON.parse(localStorage.getItem('checkedPresets') || '{}');
     const listDiv = document.getElementById('presetList');
     
     if (Object.keys(presets).length === 0) {
@@ -1568,8 +1634,6 @@ function refreshPresetList() {
             const item = document.createElement('div');
             item.className = 'list-group-item d-flex justify-content-between align-items-center';
             
-            const isChecked = checkedPresets[name] || false;
-            const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
             const preset = presets[name];
             const hasMessage = preset.message && preset.message.trim() !== '';
             
@@ -1586,18 +1650,14 @@ function refreshPresetList() {
                     ${messageIcon}
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    <span style="font-size: 0.85rem; color: var(--text-secondary);">lasilistat</span>
-                    <div class="${checkboxClass}" onclick="togglePresetCheck('${escapedName}', event)">
-                        ${isChecked ? '✓' : ''}
-                    </div>
                     <button class="btn btn-sm btn-danger" onclick="deletePreset('${escapedName}', event)">🗑️</button>
                 </div>
             `;
             listDiv.appendChild(item);
         });
     }
-}
-
+    }
+    
 function showPresetMessage(message, event) {
     event.stopPropagation();
     alert(message);
@@ -1835,7 +1895,75 @@ function copyResults(event) {
     });
 }
 
+// Copy named mitat results to clipboard
+function copyMittaResults(jobNumber, itemName, event) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const mitta = mittatData[jobNumber] && mittatData[jobNumber][itemName];
+    if (!mitta) {
+        showToast('Tallennettuja mittoja ei löytynyt.', 'warning');
+        return;
+    }
+
+    let text = 'Teräsovi Mittaohjelmisto\n';
+    text += `Työ ${jobNumber} / ${itemName}\n`;
+    text += '='.repeat(40) + '\n\n';
+    text += 'Tulokset:\n';
+    text += '-'.repeat(40) + '\n\n';
+
+    mitta.data.forEach(section => {
+        text += section.title + '\n';
+        section.items.forEach(resultItem => {
+            const valuePart = resultItem.value ? `: ${resultItem.value}` : '';
+            text += `  ${resultItem.label}${valuePart}\n`;
+        });
+        text += '\n';
+    });
+
+    const btn = event.currentTarget;
+    navigator.clipboard.writeText(text).then(() => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Kopioitu!';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-success');
+
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-primary');
+        }, 2000);
+    }).catch(() => {
+        try {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (successful) {
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✓ Kopioitu!';
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-success');
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-primary');
+                }, 2000);
+            } else {
+                alert('Kopiointi epäonnistui. Kokeile kopioida manuaalisesti.');
+            }
+        } catch {
+            alert('Kopiointi epäonnistui. Kokeile kopioida manuaalisesti.');
+        }
+    });
+}
+
 // Export to PDF - Show modal first
+let pdfExportContext = { type: 'calculator', jobNumber: null, itemName: null };
+
 function exportToPDF() {
     const resultsDiv = document.getElementById('results');
     const sections = resultsDiv.querySelectorAll('.result-section');
@@ -1845,8 +1973,24 @@ function exportToPDF() {
         return;
     }
     
+    pdfExportContext = { type: 'calculator', jobNumber: null, itemName: null };
+
     // Clear previous input and show modal
     document.getElementById('pdfFileName').value = '';
+    const modal = new bootstrap.Modal(document.getElementById('pdfExportModal'));
+    modal.show();
+}
+
+// Export named mitta to PDF - show same modal
+function exportMittaToPDF(jobNumber, itemName) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber] || !mittatData[jobNumber][itemName]) {
+        showToast('Tallennettuja mittoja ei löytynyt.', 'warning');
+        return;
+    }
+
+    pdfExportContext = { type: 'mitat', jobNumber, itemName };
+    document.getElementById('pdfFileName').value = `${jobNumber}_${itemName}`;
     const modal = new bootstrap.Modal(document.getElementById('pdfExportModal'));
     modal.show();
 }
@@ -2387,6 +2531,61 @@ function confirmExportToPDF() {
     
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
+
+    // Branch: export from named Mitat
+    if (pdfExportContext.type === 'mitat') {
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const mitta = mittatData[pdfExportContext.jobNumber] &&
+            mittatData[pdfExportContext.jobNumber][pdfExportContext.itemName];
+        if (!mitta) {
+            alert('Tallennettua mittaa ei löytynyt.');
+            return;
+        }
+
+        doc.setFontSize(18);
+        doc.text('Teräsovi Mittaohjelmisto', 105, 20, { align: 'center' });
+        doc.setFontSize(14);
+        doc.text(`Työ ${pdfExportContext.jobNumber} / ${pdfExportContext.itemName}`, 105, 30, { align: 'center' });
+        doc.setFontSize(12);
+        doc.text(fileName, 105, 38, { align: 'center' });
+
+        let yPosM = 52;
+        doc.setFontSize(12);
+        doc.text('Tulokset:', 20, yPosM);
+        yPosM += 10;
+        doc.setFontSize(10);
+
+        mitta.data.forEach(section => {
+            if (yPosM > 275) {
+                doc.addPage();
+                yPosM = 20;
+            }
+            doc.setFont(undefined, 'bold');
+            doc.text(section.title, 25, yPosM);
+            yPosM += 7;
+            doc.setFont(undefined, 'normal');
+
+            section.items.forEach(resultItem => {
+                if (yPosM > 280) {
+                    doc.addPage();
+                    yPosM = 20;
+                }
+                const line = resultItem.value ? `${resultItem.label}: ${resultItem.value}` : resultItem.label;
+                doc.text(line, 30, yPosM);
+                yPosM += 6;
+            });
+            yPosM += 4;
+        });
+
+        const dateM = new Date().toLocaleDateString('fi-FI');
+        const cleanFileNameM = fileName.replace(/[^a-zA-Z0-9åäöÅÄÖ\s-]/g, '').replace(/\s+/g, '_');
+        doc.save(`${cleanFileNameM}_${dateM}.pdf`);
+
+        const modalM = bootstrap.Modal.getInstance(document.getElementById('pdfExportModal'));
+        modalM.hide();
+        pdfExportContext = { type: 'calculator', jobNumber: null, itemName: null };
+        return;
+    }
     
     // Title
     const titles = {
@@ -2425,8 +2624,8 @@ function confirmExportToPDF() {
     } else {
         doc.text(`Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
         yPos += 7;
-        
-        if (currentCalculator.includes('pariovi')) {
+    
+    if (currentCalculator.includes('pariovi')) {
             doc.text(`Lisäoven leveys: ${document.getElementById('sideDoorWidth').value} mm`, 25, yPos);
             yPos += 7;
         }
@@ -2490,4 +2689,439 @@ function confirmExportToPDF() {
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('pdfExportModal'));
     modal.hide();
+}
+
+// ============================================
+// MITAT VIEW - Transfer Results Functionality
+// ============================================
+
+// Open transfer modal
+function transferResults() {
+    const resultsDiv = document.getElementById('results');
+    const sections = resultsDiv.querySelectorAll('.result-section');
+    
+    if (sections.length === 0) {
+        showToast('Ei tuloksia siirrettäväksi. Syötä ensin mitat.', 'warning');
+        return;
+    }
+    
+    // Clear previous values
+    document.getElementById('transferJobNumber').value = '';
+    document.getElementById('transferItemName').value = '';
+    
+    // Open modal
+    const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
+    modal.show();
+}
+
+// Confirm and save to Mitat
+function confirmTransferToMitat() {
+    const jobNumber = document.getElementById('transferJobNumber').value.trim();
+    const itemName = document.getElementById('transferItemName').value.trim();
+    
+    if (!jobNumber || !itemName) {
+        showToast('Täytä molemmat kentät!', 'warning');
+        return;
+    }
+    
+    // Get current results
+    const resultsDiv = document.getElementById('results');
+    const sections = resultsDiv.querySelectorAll('.result-section');
+    
+    if (sections.length === 0) {
+        showToast('Ei tuloksia siirrettäväksi.', 'warning');
+        return;
+    }
+    
+    // Build results object
+    const results = {
+        calculator: currentCalculator,
+        timestamp: new Date().toISOString(),
+        data: []
+    };
+    
+    sections.forEach(section => {
+        const title = section.querySelector('h5').textContent;
+        const items = [];
+        
+        section.querySelectorAll('.result-item').forEach(item => {
+            // Result items contain full text like "Sisä vasen: 2500 mm"
+            const fullText = item.textContent.trim();
+            
+            // Split by colon to separate label and value
+            const colonIndex = fullText.indexOf(':');
+            if (colonIndex !== -1) {
+                const label = fullText.substring(0, colonIndex).trim();
+                const value = fullText.substring(colonIndex + 1).trim();
+                items.push({ label, value });
+            } else {
+                // If no colon, use full text as label
+                items.push({ label: fullText, value: '' });
+            }
+        });
+        
+        results.data.push({ title, items });
+    });
+    
+    // Load existing mitat from localStorage
+    let mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    
+    // Initialize job if doesn't exist
+    if (!mittatData[jobNumber]) {
+        mittatData[jobNumber] = {};
+    }
+    
+    // Save results under job number and item name
+    mittatData[jobNumber][itemName] = results;
+    
+    // Save to localStorage
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
+    modal.hide();
+    
+    showToast(`Mitat siirretty: ${jobNumber} - ${itemName}`, 'success');
+    
+    console.log('✅ Mitat tallennettu:', { jobNumber, itemName, results });
+}
+
+// Load and display Mitat view
+function loadMittatView() {
+    const container = document.getElementById('mittatContainer');
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    
+    // Check if empty
+    if (Object.keys(mittatData).length === 0) {
+        container.innerHTML = '<p class="text-muted text-center">Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.</p>';
+        return;
+    }
+    
+    // Build HTML
+    let html = '';
+    
+    // Sort job numbers
+    const jobNumbers = Object.keys(mittatData).sort();
+    
+    jobNumbers.forEach(jobNumber => {
+        const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        
+        // Check if job has notes
+        const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+        const jobNoteKey = `job-${jobNumber}`;
+        const hasJobNote = mittatNotes[jobNoteKey] && mittatNotes[jobNoteKey].trim() !== '';
+        const jobNoteClass = hasJobNote ? 'btn-note-active' : 'btn-note-empty';
+        
+        html += `<div class="mitat-job-section">`;
+        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')">`;
+        html += `<div class="d-flex align-items-center gap-2">`;
+        html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
+        html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
+        html += `</div>`;
+        html += `<div class="d-flex align-items-center gap-2">`;
+        html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')">🗑️</button>`;
+        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
+        html += `</div>`;
+        html += `</div>`;
+        
+        // Job items container (hidden by default)
+        html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
+        
+        // Sort item names
+        const itemNames = Object.keys(mittatData[jobNumber]).sort();
+        
+        itemNames.forEach(itemName => {
+            const item = mittatData[jobNumber][itemName];
+            const date = new Date(item.timestamp).toLocaleString('fi-FI');
+            const uniqueId = `mitat-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const checkKey = `${jobNumber}-${itemName}`;
+            
+            // Get checked state
+            const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+            const isChecked = checkedMitat[checkKey] || false;
+            const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            
+            // Check if item has notes
+            const itemNoteKey = `item-${jobNumber}-${itemName}`;
+            const hasItemNote = mittatNotes[itemNoteKey] && mittatNotes[itemNoteKey].trim() !== '';
+            const itemNoteClass = hasItemNote ? 'btn-note-active' : 'btn-note-empty';
+            
+            html += `<div class="mitat-item-section">`;
+            html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')">`;
+            html += `<div class="mitat-item-header-main">`;
+            html += `<div class="d-flex align-items-center gap-2">`;
+            html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
+            html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
+            html += `<span style="font-size: 0.7rem; color: var(--text-secondary);">lasilistat</span>`;
+            html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
+            html += `${isChecked ? '✓' : ''}`;
+            html += `</div>`;
+            html += `</div>`;
+            html += `<div class="d-flex align-items-center gap-2">`;
+            html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteMitta('${jobNumber}', '${itemName}')">🗑️</button>`;
+            html += `<span class="mitat-toggle-icon" id="${uniqueId}-icon">▼</span>`;
+            html += `</div>`;
+            html += `</div>`;
+            html += `<div class="mitat-item-header-secondary">`;
+            html += `<small class="text-muted">${date}</small>`;
+            html += `<div></div>`;
+            html += `</div>`;
+            html += `</div>`;
+            
+            // Render results (hidden by default)
+            html += `<div class="mitat-details" id="${uniqueId}" style="display: none;">`;
+            item.data.forEach(section => {
+                html += `<div class="mitat-result-section">`;
+                html += `<h6>${section.title}</h6>`;
+                html += `<div class="mitat-result-items">`;
+                
+                section.items.forEach(resultItem => {
+                    html += `<div class="mitat-result-item">`;
+                    html += `<span class="mitat-result-label">${resultItem.label}</span>`;
+                    html += `<span class="mitat-result-value">${resultItem.value}</span>`;
+                    html += `</div>`;
+                });
+                
+                html += `</div>`;
+                html += `</div>`;
+            });
+            html += `<div class="d-flex justify-content-end align-items-center gap-2 mt-2">`;
+            html += `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); copyMittaResults('${jobNumber}', '${itemName}', event)">📋 Kopioi</button>`;
+            html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); exportMittaToPDF('${jobNumber}', '${itemName}')">📄 PDF</button>`;
+            html += `</div>`;
+            html += `</div>`;
+            
+            html += `</div>`;
+        });
+        
+        html += `</div>`; // Close mitat-job-items
+        html += `</div>`; // Close mitat-job-section
+    });
+    
+    container.innerHTML = html;
+}
+
+// ============================================
+// MITAT NOTES FUNCTIONALITY
+// ============================================
+
+let currentNoteType = null;
+let currentNoteJobNumber = null;
+let currentNoteItemName = null;
+let currentNoteButtonElement = null;
+
+// Open notes modal
+function openMittatNote(type, jobNumber, itemName, buttonElement = null) {
+    currentNoteType = type;
+    currentNoteJobNumber = jobNumber;
+    currentNoteItemName = itemName;
+    currentNoteButtonElement = buttonElement;
+    
+    // Load existing note
+    const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    let noteKey;
+    let title;
+    
+    if (type === 'job') {
+        noteKey = `job-${jobNumber}`;
+        title = `📝 Muistiinpano: Työ ${jobNumber}`;
+    } else {
+        noteKey = `item-${jobNumber}-${itemName}`;
+        title = `📝 Muistiinpano: ${itemName} (Työ ${jobNumber})`;
+    }
+    
+    const existingNote = mittatNotes[noteKey] || '';
+    
+    // Set modal content
+    document.getElementById('mittatNotesTitle').textContent = title;
+    document.getElementById('mittatNotesText').value = existingNote;
+    
+    // Open modal
+    const modal = new bootstrap.Modal(document.getElementById('mittatNotesModal'));
+    modal.show();
+}
+
+// Save note
+function saveMittatNote() {
+    const noteText = document.getElementById('mittatNotesText').value;
+    
+    // Get notes from localStorage
+    const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    
+    // Build note key
+    let noteKey;
+    if (currentNoteType === 'job') {
+        noteKey = `job-${currentNoteJobNumber}`;
+    } else {
+        noteKey = `item-${currentNoteJobNumber}-${currentNoteItemName}`;
+    }
+    
+    // Save or delete note
+    if (noteText.trim() === '') {
+        delete mittatNotes[noteKey];
+    } else {
+        mittatNotes[noteKey] = noteText;
+    }
+    
+    localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('mittatNotesModal'));
+    modal.hide();
+    
+    // Update note button UI in-place so open panels don't collapse
+    if (currentNoteButtonElement) {
+        const hasNote = noteText.trim() !== '';
+        currentNoteButtonElement.classList.remove('btn-note-empty', 'btn-note-active');
+        currentNoteButtonElement.classList.add(hasNote ? 'btn-note-active' : 'btn-note-empty');
+    }
+    
+    showToast('Muistiinpano tallennettu', 'success');
+}
+
+// Toggle job details visibility
+function toggleJobDetails(jobId) {
+    const jobItemsElement = document.getElementById(jobId);
+    const iconElement = document.getElementById(`${jobId}-icon`);
+    
+    if (jobItemsElement.style.display === 'none') {
+        jobItemsElement.style.display = 'block';
+        iconElement.textContent = '▲';
+        iconElement.classList.add('rotated');
+    } else {
+        jobItemsElement.style.display = 'none';
+        iconElement.textContent = '▼';
+        iconElement.classList.remove('rotated');
+    }
+}
+
+// Toggle mitta checkbox (lasilistat)
+function toggleMittatCheck(checkKey, checkboxElement) {
+    // Update localStorage
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    const isChecked = !checkedMitat[checkKey];
+    checkedMitat[checkKey] = isChecked;
+    localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+    
+    // Update checkbox UI in-place so open panels don't collapse
+    if (checkboxElement) {
+        if (isChecked) {
+            checkboxElement.classList.add('checked');
+            checkboxElement.textContent = '✓';
+        } else {
+            checkboxElement.classList.remove('checked');
+            checkboxElement.textContent = '';
+        }
+    }
+}
+
+// Toggle mitta details visibility
+function toggleMitatDetails(detailsId) {
+    const detailsElement = document.getElementById(detailsId);
+    const iconElement = document.getElementById(`${detailsId}-icon`);
+    
+    if (detailsElement.style.display === 'none') {
+        detailsElement.style.display = 'block';
+        iconElement.textContent = '▲';
+        iconElement.classList.add('rotated');
+    } else {
+        detailsElement.style.display = 'none';
+        iconElement.textContent = '▼';
+        iconElement.classList.remove('rotated');
+    }
+}
+
+// Delete all named mitat under a job number
+function deleteJobMitat(jobNumber) {
+    if (!confirm(`Haluatko varmasti poistaa koko työn: ${jobNumber}?`)) {
+        return;
+    }
+    
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber]) {
+        return;
+    }
+
+    // Remove checkbox states and item notes for all items in job
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    const itemNames = Object.keys(mittatData[jobNumber]);
+    
+    itemNames.forEach(itemName => {
+        const checkKey = `${jobNumber}-${itemName}`;
+        delete checkedMitat[checkKey];
+        delete mittatNotes[`item-${jobNumber}-${itemName}`];
+    });
+    
+    // Remove job note and job data
+    delete mittatNotes[`job-${jobNumber}`];
+    delete mittatData[jobNumber];
+    
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+    localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+    
+    loadMittatView();
+    showToast(`Työ ${jobNumber} poistettu`, 'info');
+}
+
+// Delete a single mitta
+function deleteMitta(jobNumber, itemName) {
+    if (!confirm(`Haluatko varmasti poistaa: ${jobNumber} - ${itemName}?`)) {
+        return;
+    }
+    
+    let mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    
+    if (mittatData[jobNumber] && mittatData[jobNumber][itemName]) {
+        delete mittatData[jobNumber][itemName];
+        
+        // If job has no items left, delete job
+        if (Object.keys(mittatData[jobNumber]).length === 0) {
+            delete mittatData[jobNumber];
+        }
+        
+        localStorage.setItem('mittatData', JSON.stringify(mittatData));
+        
+        // Also remove checkbox state
+        const checkKey = `${jobNumber}-${itemName}`;
+        const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+        if (checkedMitat[checkKey]) {
+            delete checkedMitat[checkKey];
+            localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+        }
+        
+        // Also remove notes
+        const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+        const itemNoteKey = `item-${jobNumber}-${itemName}`;
+        if (mittatNotes[itemNoteKey]) {
+            delete mittatNotes[itemNoteKey];
+            localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+        }
+        
+        // If job is being deleted, remove job note too
+        if (Object.keys(mittatData[jobNumber] || {}).length === 0) {
+            const jobNoteKey = `job-${jobNumber}`;
+            if (mittatNotes[jobNoteKey]) {
+                delete mittatNotes[jobNoteKey];
+                localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+            }
+        }
+        
+        loadMittatView();
+        showToast('Mitat poistettu', 'info');
+    }
+}
+
+// Clear all mitat
+function clearAllMitat() {
+    if (!confirm('Haluatko varmasti tyhjentää KAIKKI tallennetut mitat? Tätä toimintoa ei voi perua!')) {
+        return;
+    }
+    
+    localStorage.removeItem('mittatData');
+    localStorage.removeItem('checkedMitat');
+    localStorage.removeItem('mittatNotes');
+    loadMittatView();
+    showToast('Kaikki mitat tyhjennetty', 'info');
 }

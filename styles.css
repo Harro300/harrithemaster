@@ -46,6 +46,48 @@ body {
     line-height: 1.6;
 }
 
+/* View Toggle: Laskin / Mitat */
+.view-toggle-container {
+    display: flex;
+    gap: 0;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px var(--card-shadow);
+}
+
+.view-toggle-btn {
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-right: 1px solid var(--accent-color);
+}
+
+.view-toggle-btn:last-child {
+    border-right: none;
+}
+
+.view-toggle-btn:hover:not(.active) {
+    background: var(--bg-tertiary);
+}
+
+.view-toggle-btn.active {
+    background: var(--accent-color);
+    color: var(--bg-secondary);
+    font-weight: 700;
+}
+
+body.dark-mode .view-toggle-btn.active {
+    background: #ffffff;
+    color: #1a1a1a;
+}
+
 /* Cards - Modern & Clean */
 .card {
     border-radius: 20px;
@@ -1029,4 +1071,266 @@ body.dark-mode .input-group .btn-outline-secondary {
 body.dark-mode .input-group .btn-outline-secondary:hover {
     background-color: var(--bg-tertiary);
     color: var(--text-primary);
+}
+
+/* ============================================
+   MITAT VIEW STYLES
+   ============================================ */
+
+.mitat-job-section {
+    margin-bottom: 15px;
+    padding: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.mitat-job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -8px -8px 8px -8px;
+    border-radius: 8px 8px 0 0;
+    transition: background-color 0.2s ease;
+}
+
+.mitat-job-header:hover {
+    background-color: var(--bg-secondary);
+}
+
+.mitat-job-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--accent-color);
+    margin: 0;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--accent-color);
+}
+
+.mitat-job-header .mitat-toggle-icon {
+    font-size: 0.85rem;
+    margin-left: 10px;
+}
+
+.mitat-job-items {
+    animation: slideDown 0.3s ease-out;
+}
+
+.mitat-item-section {
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 6px;
+    border: 1px solid var(--border-light);
+    box-shadow: 0 1px 4px var(--card-shadow);
+}
+
+.mitat-item-header {
+    padding: 6px 8px;
+    margin: -8px -8px 0 -8px;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    border-radius: 6px 6px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mitat-item-header:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.mitat-item-header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.mitat-item-header-secondary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.mitat-item-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.mitat-item-header small {
+    font-size: 0.65rem;
+}
+
+.mitat-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s ease;
+    user-select: none;
+}
+
+.mitat-toggle-icon.rotated {
+    transform: rotate(180deg);
+}
+
+.mitat-details {
+    padding: 8px 0 0 0;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.mitat-result-section {
+    margin-bottom: 8px;
+    margin-top: 6px;
+}
+
+.mitat-result-section:last-child {
+    margin-bottom: 6px;
+}
+
+.mitat-result-section h6 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    margin-bottom: 5px;
+    padding-left: 6px;
+    border-left: 2px solid var(--accent-color);
+}
+
+.mitat-result-items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mitat-result-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    background: var(--result-bg);
+    border-radius: 4px;
+    border: 1px solid var(--result-border);
+    font-size: 0.8rem;
+}
+
+.mitat-result-label {
+    font-weight: 500;
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.mitat-result-value {
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: right;
+    min-width: 100px;
+}
+
+/* Smaller checkbox for Mitat view */
+.mitat-item-header .preset-checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Muistiinpano-napit */
+.btn-note {
+    padding: 1px 5px;
+    font-size: 0.68rem;
+    border: 1px solid;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+/* Harmaa nappi (ei muistiinpanoa) */
+.btn-note-empty {
+    color: #6c757d;
+    background-color: #e9ecef;
+    border-color: #ced4da;
+}
+
+.btn-note-empty:hover {
+    background-color: #dee2e6;
+    border-color: #adb5bd;
+    transform: scale(1.05);
+}
+
+/* Vihreä nappi (on muistiinpano) */
+.btn-note-active {
+    color: #ffffff;
+    background-color: #28a745;
+    border-color: #28a745;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+}
+
+.btn-note-active:hover {
+    background-color: #218838;
+    border-color: #1e7e34;
+    transform: scale(1.05);
+    box-shadow: 0 3px 6px rgba(40, 167, 69, 0.4);
+}
+
+/* Dark mode */
+body.dark-mode .btn-note-empty {
+    color: #adb5bd;
+    background-color: #495057;
+    border-color: #6c757d;
+}
+
+body.dark-mode .btn-note-empty:hover {
+    background-color: #5a6268;
+    border-color: #868e96;
+}
+
+body.dark-mode .btn-note-active {
+    color: #000000;
+    background-color: #4caf50;
+    border-color: #4caf50;
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.4);
+}
+
+body.dark-mode .btn-note-active:hover {
+    background-color: #66bb6a;
+    border-color: #66bb6a;
+    box-shadow: 0 3px 6px rgba(76, 175, 80, 0.5);
+}
+
+/* Dark mode adjustments for Mitat */
+body.dark-mode .mitat-job-section {
+    background: var(--bg-tertiary);
+}
+
+body.dark-mode .mitat-item-section {
+    background: var(--bg-secondary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .mitat-result-item {
+    background: var(--result-bg);
+}
+
+body.dark-mode .mitat-item-header .preset-checkbox.checked {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #1a1a1a;
 }
