@@ -16,7 +16,11 @@ let formulaSetsUnsubscribe = null;
 let mitatStateUnsubscribe = null;
 
 // Admin email addresses
-const ADMIN_EMAILS = ['admin@terasovi.local'];
+const ADMIN_EMAILS = [
+    'admin@terasovi.local',
+    'admin01@teras.local',
+    'admin02@teras.local'
+];
 
 // ========== UTILITY FUNCTIONS ==========
 
@@ -143,11 +147,13 @@ async function initializeFirebaseAuth() {
             currentUser = user;
             isAdmin = checkIsAdmin(user.email);
             updateSyncStatus(true);
+            updateAdminAccessUI();
         } else {
             console.log('🔓 Ei kirjautunutta käyttäjää');
             currentUser = null;
             isAdmin = false;
             updateSyncStatus(false);
+            updateAdminAccessUI();
         }
     });
 }
@@ -395,8 +401,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Valid passwords
 const VALID_PASSWORDS = ['Soma<3', '1234'];
-const ADMIN_PASSWORDS = ['HarriTheMaster', '4321'];
-const SAVE_PASSWORD = '0303';
+
+function updateAdminAccessUI() {
+    const adminLockButton = document.getElementById('adminLockButton');
+    if (adminLockButton) {
+        adminLockButton.style.display = isAdmin ? '' : 'none';
+    }
+}
 
 // Wait for DOM to be ready before attaching login handler
 function attachLoginHandler() {
@@ -456,6 +467,7 @@ function attachLoginHandler() {
         currentUser = userCredential.user;
         isAdmin = checkIsAdmin(currentUser.email);
         console.log('🔵 Käyttäjä asetettu:', currentUser.email, 'Admin:', isAdmin);
+        updateAdminAccessUI();
         
         // Show calculator screen
         console.log('🔵 Piilotetaan loginScreen...');
@@ -562,6 +574,7 @@ async function logout() {
     currentUser = null;
     isAdmin = false;
     currentCalculator = '';
+    updateAdminAccessUI();
     
     // Update UI
     document.getElementById('calculatorScreen').classList.add('d-none');
@@ -681,6 +694,9 @@ function openSettings() {
     if (kickPlateSetting) {
         kickPlateSetting.style.display = isWindowCalculator ? 'none' : '';
     }
+
+    // Keep formula set options and selection in sync for all users
+    loadFormulaSetsList();
     
     modal.show();
 }
@@ -2080,38 +2096,18 @@ function exportMittaToPDF(jobNumber, itemName) {
 
 // Admin Panel Functions
 function openAdminPanel() {
-    // Show admin password modal
-    document.getElementById('adminPassword').value = '';
-    document.getElementById('adminPasswordError').style.display = 'none';
-    const modal = new bootstrap.Modal(document.getElementById('adminPasswordModal'));
-    modal.show();
-    
-    // Allow Enter key to submit
-    document.getElementById('adminPassword').onkeypress = function(e) {
-        if (e.key === 'Enter') {
-            confirmAdminPassword();
-        }
-    };
-}
-
-function confirmAdminPassword() {
-    const password = document.getElementById('adminPassword').value;
-    const errorDiv = document.getElementById('adminPasswordError');
-    
-    if (ADMIN_PASSWORDS.includes(password)) {
-        // Correct password - close modal and show admin panel
-        const modal = bootstrap.Modal.getInstance(document.getElementById('adminPasswordModal'));
-        modal.hide();
-        showAdminPanelView();
-    } else {
-        // Wrong password
-        errorDiv.textContent = 'Väärä salasana. Yritä uudelleen.';
-        errorDiv.style.display = 'block';
-        document.getElementById('adminPassword').classList.add('is-invalid');
+    if (!isAdmin) {
+        showToast('Ei oikeuksia kaavahallintaan.', 'warning');
+        return;
     }
+    showAdminPanelView();
 }
 
 function showAdminPanelView() {
+    if (!isAdmin) {
+        return;
+    }
+
     // Show the admin panel overlay
     document.getElementById('adminPanelOverlay').classList.remove('d-none');
     // Load current formulas
@@ -2327,36 +2323,142 @@ async function loadFormulaSetsList() {
     // Load from localStorage (either fresh from Firestore or existing)
     const storedFormulas = localStorage.getItem('formulaSets');
     const activeSetName = localStorage.getItem('activeFormulaSet') || 'default';
-    const select = document.getElementById('activeFormulaSet');
-    
-    select.innerHTML = '<option value="default">Default Kaavat</option>';
+    const adminSelect = document.getElementById('activeFormulaSet');
+    const settingsSelect = document.getElementById('settingsFormulaSet');
+    const targets = [adminSelect, settingsSelect].filter(Boolean);
+
+    targets.forEach((select) => {
+        select.innerHTML = '<option value="default">Default Kaavat</option>';
+    });
     
     if (storedFormulas) {
         const sets = JSON.parse(storedFormulas);
         Object.keys(sets).forEach(setName => {
             if (setName !== 'default') {
-                const option = document.createElement('option');
-                option.value = setName;
-                option.textContent = setName;
-                select.appendChild(option);
+                targets.forEach((select) => {
+                    const option = document.createElement('option');
+                    option.value = setName;
+                    option.textContent = setName;
+                    select.appendChild(option);
+                });
             }
         });
     }
-    
-    select.value = activeSetName;
+
+    targets.forEach((select) => {
+        const hasOption = Array.from(select.options).some((opt) => opt.value === activeSetName);
+        select.value = hasOption ? activeSetName : 'default';
+    });
 }
 
 // Switch formula set
 function switchFormulaSet() {
     const setName = document.getElementById('activeFormulaSet').value;
     localStorage.setItem('activeFormulaSet', setName);
+    const settingsSelect = document.getElementById('settingsFormulaSet');
+    if (settingsSelect) {
+        settingsSelect.value = setName;
+    }
     loadFormulasToPanel();
     updateSettingsInfo();
     calculate(); // Recalculate with new formulas
 }
 
+// Switch formula set from settings modal (available to all users)
+function switchFormulaSetFromSettings() {
+    const settingsSelect = document.getElementById('settingsFormulaSet');
+    if (!settingsSelect) return;
+
+    const setName = settingsSelect.value;
+    localStorage.setItem('activeFormulaSet', setName);
+
+    const adminSelect = document.getElementById('activeFormulaSet');
+    if (adminSelect) {
+        adminSelect.value = setName;
+    }
+
+    loadFormulasToPanel();
+    updateSettingsInfo();
+    calculate();
+}
+
+// Delete selected formula set (admin only)
+async function deleteFormulaSet() {
+    if (!isAdmin) {
+        showToast('Ei oikeuksia kaavasetin poistoon.', 'warning');
+        return;
+    }
+
+    const adminSelect = document.getElementById('activeFormulaSet');
+    if (!adminSelect) return;
+
+    const setName = adminSelect.value;
+    if (!setName || setName === 'default') {
+        showToast('Default-kaavasettiä ei voi poistaa.', 'warning');
+        return;
+    }
+
+    if (!confirm(`Haluatko varmasti poistaa kaavasetin "${setName}"?`)) {
+        return;
+    }
+
+    let firestoreDeleteFailed = false;
+
+    // Delete matching formula set documents from Firestore
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, collection, getDocs, doc, deleteDoc } = window.firebase;
+            const querySnapshot = await getDocs(collection(db, 'formulaSets'));
+            const deletePromises = [];
+
+            querySnapshot.forEach((formulaDoc) => {
+                const data = formulaDoc.data();
+                const firestoreSetName = data.name || formulaDoc.id;
+                if (firestoreSetName === setName) {
+                    deletePromises.push(deleteDoc(doc(db, 'formulaSets', formulaDoc.id)));
+                }
+            });
+
+            if (deletePromises.length > 0) {
+                await Promise.all(deletePromises);
+            }
+        } catch (error) {
+            firestoreDeleteFailed = true;
+            console.error('❌ Virhe kaavasetin poistossa Firestoresta:', error);
+        }
+    }
+
+    // Delete from localStorage and fallback to default
+    const storedFormulas = localStorage.getItem('formulaSets');
+    const sets = storedFormulas ? JSON.parse(storedFormulas) : {};
+    delete sets[setName];
+    localStorage.setItem('formulaSets', JSON.stringify(sets));
+    localStorage.setItem('activeFormulaSet', 'default');
+
+    const settingsSelect = document.getElementById('settingsFormulaSet');
+    if (settingsSelect) {
+        settingsSelect.value = 'default';
+    }
+    adminSelect.value = 'default';
+
+    loadFormulasToPanel();
+    updateSettingsInfo();
+    calculate();
+
+    if (firestoreDeleteFailed) {
+        showToast(`Kaavasetti "${setName}" poistettu paikallisesti (synkronointivirhe).`, 'warning');
+    } else {
+        showToast(`Kaavasetti "${setName}" poistettu.`, 'success');
+    }
+}
+
 // Save formula changes - Step 1: Ask for name
 function saveFormulaChanges() {
+    if (!isAdmin) {
+        showToast('Ei oikeuksia kaavojen tallennukseen.', 'warning');
+        return;
+    }
+
     // Show name input modal
     const currentSet = document.getElementById('activeFormulaSet').value;
     document.getElementById('formulaSetName').value = currentSet === 'default' ? '' : currentSet;
@@ -2365,71 +2467,41 @@ function saveFormulaChanges() {
     modal.show();
 }
 
-// Step 2: Ask for password
-function askSavePassword() {
-    const name = document.getElementById('formulaSetName').value.trim();
-    
+// Confirm and save formulas (admin only, no extra password)
+async function confirmSaveFormulas() {
+    if (!isAdmin) {
+        showToast('Ei oikeuksia kaavojen tallennukseen.', 'warning');
+        return;
+    }
+
+    const formulas = collectFormulasFromPanel();
+    let setName = document.getElementById('formulaSetName').value.trim();
+
     // Validate name
-    if (name === 'default') {
+    if (setName === 'default') {
         alert('Nimi "default" on varattu. Valitse toinen nimi.');
         return;
     }
-    
+
+    // If no name provided, use current active set
+    if (!setName) {
+        setName = document.getElementById('activeFormulaSet').value;
+    }
+
     // Close name modal
     const nameModal = bootstrap.Modal.getInstance(document.getElementById('saveNameModal'));
-    nameModal.hide();
-    
-    // Show password modal
-    document.getElementById('savePassword').value = '';
-    document.getElementById('savePasswordError').style.display = 'none';
-    document.getElementById('savePassword').classList.remove('is-invalid');
-    
-    const passwordModal = new bootstrap.Modal(document.getElementById('savePasswordModal'));
-    passwordModal.show();
-    
-    // Allow Enter key to submit
-    document.getElementById('savePassword').onkeypress = function(e) {
-        if (e.key === 'Enter') {
-            confirmSaveFormulas();
-        }
-    };
-}
-
-// Go back to name modal
-function backToNameModal() {
-    const passwordModal = bootstrap.Modal.getInstance(document.getElementById('savePasswordModal'));
-    passwordModal.hide();
-    
-    const nameModal = new bootstrap.Modal(document.getElementById('saveNameModal'));
-    nameModal.show();
-}
-
-// Step 3: Confirm and save
-async function confirmSaveFormulas() {
-    const password = document.getElementById('savePassword').value;
-    const errorDiv = document.getElementById('savePasswordError');
-    
-    if (password === SAVE_PASSWORD) {
-        // Correct password - save formulas
-        const passwordModal = bootstrap.Modal.getInstance(document.getElementById('savePasswordModal'));
-        passwordModal.hide();
+    if (nameModal) {
+        nameModal.hide();
+    }
         
-        const formulas = collectFormulasFromPanel();
-        let setName = document.getElementById('formulaSetName').value.trim();
+    // Try to save to Firestore first
+    console.log('🔍 DEBUG - Tallennus alkaa:');
+    console.log('  - Firebase käytössä:', !!window.firebase);
+    console.log('  - DB käytössä:', !!window.firebase?.db);
+    console.log('  - Käyttäjä kirjautunut:', !!currentUser);
+    console.log('  - Käyttäjän email:', currentUser?.email);
         
-        // If no name provided, use current active set
-        if (!setName) {
-            setName = document.getElementById('activeFormulaSet').value;
-        }
-        
-        // Try to save to Firestore first
-        console.log('🔍 DEBUG - Tallennus alkaa:');
-        console.log('  - Firebase käytössä:', !!window.firebase);
-        console.log('  - DB käytössä:', !!window.firebase?.db);
-        console.log('  - Käyttäjä kirjautunut:', !!currentUser);
-        console.log('  - Käyttäjän email:', currentUser?.email);
-        
-        if (window.firebase && window.firebase.db && currentUser) {
+    if (window.firebase && window.firebase.db && currentUser) {
             try {
                 const { db, collection, addDoc, serverTimestamp } = window.firebase;
                 
@@ -2485,21 +2557,14 @@ async function confirmSaveFormulas() {
             showToast(`⚠️ Tallennettu vain paikallisesti - Firebase ei käytettävissä`, 'warning');
         }
         
-        // Reload the list and set active
-        loadFormulaSetsList();
+    // Reload the list and set active
+    loadFormulaSetsList();
         
-        // Update settings info display
-        updateSettingsInfo();
+    // Update settings info display
+    updateSettingsInfo();
         
-        // Recalculate with new formulas
-        calculate();
-        
-    } else {
-        // Wrong password
-        errorDiv.textContent = 'Väärä salasana. Yritä uudelleen.';
-        errorDiv.style.display = 'block';
-        document.getElementById('savePassword').classList.add('is-invalid');
-    }
+    // Recalculate with new formulas
+    calculate();
 }
 
 // Collect formulas from panel
@@ -2875,6 +2940,10 @@ function loadMittatView() {
     const container = document.getElementById('mittatContainer');
     const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const clearAllBtn = document.getElementById('clearAllMitatBtn');
+    if (clearAllBtn) {
+        clearAllBtn.style.display = isAdmin ? '' : 'none';
+    }
     
     // Check if empty
     if (Object.keys(mittatData).length === 0) {
@@ -2904,7 +2973,9 @@ function loadMittatView() {
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
-        html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')">🗑️</button>`;
+        if (isAdmin) {
+            html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')">🗑️</button>`;
+        }
         html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
         html += `</div>`;
         html += `</div>`;
@@ -2943,7 +3014,9 @@ function loadMittatView() {
             html += `</div>`;
             html += `</div>`;
             html += `<div class="d-flex align-items-center gap-2">`;
-            html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteMitta('${jobNumber}', '${itemName}')">🗑️</button>`;
+            if (isAdmin) {
+                html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteMitta('${jobNumber}', '${itemName}')">🗑️</button>`;
+            }
             html += `<span class="mitat-toggle-icon" id="${uniqueId}-icon">▼</span>`;
             html += `</div>`;
             html += `</div>`;
@@ -3169,6 +3242,11 @@ function toggleMitatDetails(detailsId) {
 
 // Delete all named mitat under a job number
 function deleteJobMitat(jobNumber) {
+    if (!isAdmin) {
+        showToast('Vain admin voi poistaa mittoja.', 'warning');
+        return;
+    }
+
     if (!confirm(`Haluatko varmasti poistaa koko työn: ${jobNumber}?`)) {
         return;
     }
@@ -3204,6 +3282,11 @@ function deleteJobMitat(jobNumber) {
 
 // Delete a single mitta
 function deleteMitta(jobNumber, itemName) {
+    if (!isAdmin) {
+        showToast('Vain admin voi poistaa mittoja.', 'warning');
+        return;
+    }
+
     if (!confirm(`Haluatko varmasti poistaa: ${jobNumber} - ${itemName}?`)) {
         return;
     }
@@ -3254,6 +3337,11 @@ function deleteMitta(jobNumber, itemName) {
 
 // Clear all mitat
 function clearAllMitat() {
+    if (!isAdmin) {
+        showToast('Vain admin voi poistaa mittoja.', 'warning');
+        return;
+    }
+
     if (!confirm('Haluatko varmasti tyhjentää KAIKKI tallennetut mitat? Tätä toimintoa ei voi perua!')) {
         return;
     }

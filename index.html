@@ -56,7 +56,7 @@
                             <span class="sync-indicator">🔴</span>
                             <span class="sync-text">Offline</span>
                         </div>
-                        <button class="btn-admin-lock" onclick="openAdminPanel()" title="Kaavahallinta">🔒</button>
+                        <button class="btn-admin-lock" id="adminLockButton" onclick="openAdminPanel()" title="Kaavahallinta" style="display: none;">🔒</button>
                         <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
                     </div>
                 </div>
@@ -177,7 +177,7 @@
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h2 style="color: var(--accent-color); margin: 0; font-size: 1.3rem;">Mitat</h2>
-                    <button class="btn btn-danger" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
+                    <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
                 </div>
                 <div id="mittatContainer">
                     <p class="text-muted text-center">Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.</p>
@@ -220,6 +220,13 @@
                             <option value="11">11 ruutua</option>
                             <option value="12">12 ruutua</option>
                         </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="settingsFormulaSet" class="form-label">Kaavasetti</label>
+                        <select class="form-select" id="settingsFormulaSet" onchange="switchFormulaSetFromSettings()">
+                            <option value="default">Default Kaavat</option>
+                        </select>
+                        <div class="form-text">Kaavasetin vaihto on sallittu kaikille käyttäjille. Uusien kaavasettien luonti vaatii admin-oikeudet.</div>
                     </div>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center">
@@ -305,53 +312,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
-                    <button type="button" class="btn btn-primary" onclick="askSavePassword()">Jatka</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Save Password Modal -->
-    <div class="modal fade" id="savePasswordModal" tabindex="-1" data-bs-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">🔐 Vahvista tallennus</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="backToNameModal()"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="savePassword" class="form-label">Tallennussalasana</label>
-                        <input type="password" class="form-control" id="savePassword" placeholder="Syötä tallennussalasana">
-                        <div id="savePasswordError" class="invalid-feedback d-block" style="display: none !important;"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="backToNameModal()">Takaisin</button>
                     <button type="button" class="btn btn-primary" onclick="confirmSaveFormulas()">Tallenna</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Admin Password Modal -->
-    <div class="modal fade" id="adminPasswordModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">🔒 Admin-kirjautuminen</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="adminPassword" class="form-label">Salasana</label>
-                        <input type="password" class="form-control" id="adminPassword" placeholder="Syötä admin-salasana">
-                        <div id="adminPasswordError" class="invalid-feedback d-block" style="display: none !important;"></div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
-                    <button type="button" class="btn btn-primary" onclick="confirmAdminPassword()">Kirjaudu</button>
                 </div>
             </div>
         </div>
@@ -446,6 +407,9 @@
                         <select class="form-select" id="activeFormulaSet" onchange="switchFormulaSet()">
                             <option value="default">Default Kaavat</option>
                         </select>
+                        <div class="d-flex justify-content-end mt-2">
+                            <button class="btn btn-danger btn-sm" onclick="deleteFormulaSet()">🗑️ Poista kaavasetti</button>
+                        </div>
                     </div>
                 </div>
 
