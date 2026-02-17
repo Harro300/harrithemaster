@@ -13,6 +13,7 @@ let isAdmin = false;
 let presetsUnsubscribe = null;
 let checkedStatesUnsubscribe = null;
 let formulaSetsUnsubscribe = null;
+let mitatStateUnsubscribe = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = ['admin@terasovi.local'];
@@ -87,6 +88,47 @@ function waitForFirebase() {
             window.addEventListener('firebaseReady', () => resolve(), { once: true });
         }
     });
+}
+
+// ============================================
+// MITAT FIREBASE SYNC HELPERS
+// ============================================
+
+function getMitatStateFromLocalStorage() {
+    return {
+        mittatData: JSON.parse(localStorage.getItem('mittatData') || '{}'),
+        checkedMitat: JSON.parse(localStorage.getItem('checkedMitat') || '{}'),
+        mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}')
+    };
+}
+
+function applyMitatStateToLocalStorage(state) {
+    localStorage.setItem('mittatData', JSON.stringify(state.mittatData || {}));
+    localStorage.setItem('checkedMitat', JSON.stringify(state.checkedMitat || {}));
+    localStorage.setItem('mittatNotes', JSON.stringify(state.mittatNotes || {}));
+}
+
+async function syncMitatStateToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser) {
+        return;
+    }
+
+    try {
+        const { db, doc, setDoc, serverTimestamp } = window.firebase;
+        const state = getMitatStateFromLocalStorage();
+        // Overwrite full document to ensure deleted note keys are removed too.
+        // Using merge:true would keep omitted map keys in Firestore.
+        await setDoc(
+            doc(db, 'mitatState', 'global'),
+            {
+                ...state,
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            }
+        );
+    } catch (error) {
+        console.error('❌ Mitat-synkronointi Firestoreen epäonnistui:', error);
+    }
 }
 
 // Firebase Auth State Listener
@@ -253,6 +295,42 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe formulaSets-kuuntelijan luonnissa:', error);
     }
+
+    // LISTENER 4: Mitat state document
+    try {
+        let isFirstLoadMitat = true;
+        mitatStateUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'global'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    return;
+                }
+
+                const data = docSnapshot.data();
+                applyMitatStateToLocalStorage({
+                    mittatData: data.mittatData || {},
+                    checkedMitat: data.checkedMitat || {},
+                    mittatNotes: data.mittatNotes || {}
+                });
+
+                // Refresh Mitat view if visible
+                const mittatView = document.getElementById('mittatView');
+                if (mittatView && !mittatView.classList.contains('d-none')) {
+                    loadMittatView();
+                }
+
+                if (!isFirstLoadMitat && data.updatedBy !== currentUser?.email) {
+                    showToast('Mitat-sivu päivitetty reaaliajassa', 'info');
+                }
+                isFirstLoadMitat = false;
+            },
+            (error) => {
+                console.error('❌ MitatState-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe mitatState-kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -274,6 +352,11 @@ function stopRealtimeListeners() {
     if (formulaSetsUnsubscribe) {
         formulaSetsUnsubscribe();
         formulaSetsUnsubscribe = null;
+    }
+
+    if (mitatStateUnsubscribe) {
+        mitatStateUnsubscribe();
+        mitatStateUnsubscribe = null;
     }
     
     console.log('✅ Kuuntelijat lopetettu');
@@ -2776,6 +2859,7 @@ function confirmTransferToMitat() {
     
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    syncMitatStateToFirestore();
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
@@ -2789,6 +2873,7 @@ function confirmTransferToMitat() {
 // Load and display Mitat view
 function loadMittatView() {
     const container = document.getElementById('mittatContainer');
+    const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     
     // Check if empty
@@ -2899,6 +2984,55 @@ function loadMittatView() {
     });
     
     container.innerHTML = html;
+    restoreMitatOpenState(openState);
+}
+
+// Capture currently open Mitat accordion state before rerender
+function captureMitatOpenState() {
+    const state = { openJobs: [], openItems: [] };
+
+    document.querySelectorAll('.mitat-job-items').forEach((el) => {
+        if (el.style.display !== 'none') {
+            state.openJobs.push(el.id);
+        }
+    });
+
+    document.querySelectorAll('.mitat-details').forEach((el) => {
+        if (el.style.display !== 'none') {
+            state.openItems.push(el.id);
+        }
+    });
+
+    return state;
+}
+
+// Restore open Mitat accordion state after rerender
+function restoreMitatOpenState(state) {
+    if (!state) return;
+
+    (state.openJobs || []).forEach((jobId) => {
+        const jobEl = document.getElementById(jobId);
+        const jobIcon = document.getElementById(`${jobId}-icon`);
+        if (jobEl) {
+            jobEl.style.display = 'block';
+        }
+        if (jobIcon) {
+            jobIcon.textContent = '▲';
+            jobIcon.classList.add('rotated');
+        }
+    });
+
+    (state.openItems || []).forEach((itemId) => {
+        const itemEl = document.getElementById(itemId);
+        const itemIcon = document.getElementById(`${itemId}-icon`);
+        if (itemEl) {
+            itemEl.style.display = 'block';
+        }
+        if (itemIcon) {
+            itemIcon.textContent = '▲';
+            itemIcon.classList.add('rotated');
+        }
+    });
 }
 
 // ============================================
@@ -2964,6 +3098,7 @@ function saveMittatNote() {
     }
     
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+    syncMitatStateToFirestore();
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('mittatNotesModal'));
@@ -3002,6 +3137,7 @@ function toggleMittatCheck(checkKey, checkboxElement) {
     const isChecked = !checkedMitat[checkKey];
     checkedMitat[checkKey] = isChecked;
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+    syncMitatStateToFirestore();
     
     // Update checkbox UI in-place so open panels don't collapse
     if (checkboxElement) {
@@ -3060,6 +3196,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+    syncMitatStateToFirestore();
     
     loadMittatView();
     showToast(`Työ ${jobNumber} poistettu`, 'info');
@@ -3107,6 +3244,8 @@ function deleteMitta(jobNumber, itemName) {
                 localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
             }
         }
+
+        syncMitatStateToFirestore();
         
         loadMittatView();
         showToast('Mitat poistettu', 'info');
@@ -3122,6 +3261,7 @@ function clearAllMitat() {
     localStorage.removeItem('mittatData');
     localStorage.removeItem('checkedMitat');
     localStorage.removeItem('mittatNotes');
+    syncMitatStateToFirestore();
     loadMittatView();
     showToast('Kaikki mitat tyhjennetty', 'info');
 }
