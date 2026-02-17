@@ -6,7 +6,6 @@ Selkeä ja käyttäjäystävällinen sovellus, joka laskee teräsovien komponent
 
 ### 🔐 Salasanasuojaus
 - Sovellus vaatii kirjautumisen
-- Hyväksytyt salasanat: `Soma<3` tai `Harri10K`
 
 ### 🚪 Neljä Laskuria
 1. **Janisol Pariovi** - Janisol-tyylinen pariovi
