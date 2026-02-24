@@ -177,7 +177,10 @@
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h2 style="color: var(--accent-color); margin: 0; font-size: 1.3rem;">Mitat</h2>
-                    <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-primary" id="togglePackingListBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="togglePackingListMode()">📦 Tee pakkausluettelo</button>
+                        <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
+                    </div>
                 </div>
                 <div id="mittatContainer">
                     <p class="text-muted text-center">Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.</p>

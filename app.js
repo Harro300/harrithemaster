@@ -2941,8 +2941,14 @@ function loadMittatView() {
     const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const clearAllBtn = document.getElementById('clearAllMitatBtn');
+    const togglePackingBtn = document.getElementById('togglePackingListBtn');
     if (clearAllBtn) {
         clearAllBtn.style.display = isAdmin ? '' : 'none';
+    }
+    if (togglePackingBtn) {
+        togglePackingBtn.classList.toggle('btn-primary', !isPackingListMode);
+        togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
+        togglePackingBtn.textContent = isPackingListMode ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
     }
     
     // Check if empty
@@ -2971,6 +2977,15 @@ function loadMittatView() {
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
+        if (isPackingListMode) {
+            const isSelectedJob = selectedPackingJobNumber === jobNumber;
+            const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
+            const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
+            html += `<button class="btn btn-sm ${selectClass}" onclick="event.stopPropagation(); selectPackingJob('${sanitizeForAttribute(jobNumber)}')">${selectText}</button>`;
+            if (isSelectedJob) {
+                html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadPackingList('${sanitizeForAttribute(jobNumber)}')">Lataa pakkausluettelo</button>`;
+            }
+        }
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
         if (isAdmin) {
@@ -3008,7 +3023,16 @@ function loadMittatView() {
             html += `<div class="d-flex align-items-center gap-2">`;
             html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            html += `<span style="font-size: 0.7rem; color: var(--text-secondary);">lasilistat</span>`;
+            if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
+                const packingKey = `${jobNumber}||${itemName}`;
+                const packingChecked = !!selectedPackingItems[packingKey];
+                const packingClass = packingChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+                html += `<span class="mitat-mini-label">pakkaus</span>`;
+                html += `<div class="${packingClass}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
+                html += `${packingChecked ? '✓' : ''}`;
+                html += `</div>`;
+            }
+            html += `<span class="mitat-mini-label">lasilistat</span>`;
             html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
             html += `${isChecked ? '✓' : ''}`;
             html += `</div>`;
@@ -3116,6 +3140,107 @@ let currentNoteType = null;
 let currentNoteJobNumber = null;
 let currentNoteItemName = null;
 let currentNoteButtonElement = null;
+let isPackingListMode = false;
+let selectedPackingJobNumber = null;
+let selectedPackingItems = {};
+
+function sanitizeForAttribute(value) {
+    return String(value).replace(/'/g, "\\'");
+}
+
+function formatFinnishDate(date) {
+    return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+}
+
+function togglePackingListMode() {
+    isPackingListMode = !isPackingListMode;
+
+    if (!isPackingListMode) {
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+    }
+
+    loadMittatView();
+}
+
+function selectPackingJob(jobNumber) {
+    if (!isPackingListMode) return;
+
+    if (selectedPackingJobNumber === jobNumber) {
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+    } else {
+        selectedPackingJobNumber = jobNumber;
+        selectedPackingItems = {};
+    }
+
+    loadMittatView();
+}
+
+function togglePackingItem(jobNumber, itemName) {
+    if (!isPackingListMode || selectedPackingJobNumber !== jobNumber) return;
+
+    const itemKey = `${jobNumber}||${itemName}`;
+    selectedPackingItems[itemKey] = !selectedPackingItems[itemKey];
+
+    if (!selectedPackingItems[itemKey]) {
+        delete selectedPackingItems[itemKey];
+    }
+
+    loadMittatView();
+}
+
+function buildPackingListText(jobNumber, selectedItemNames) {
+    const dateText = formatFinnishDate(new Date());
+    const rows = selectedItemNames
+        .map((itemName) => `${itemName.padEnd(34, ' ')} /                  1 KPL`)
+        .join('\n');
+
+    return [
+        'PAKKAUSLUETTELO',
+        '',
+        'LÄHETYKSEN VASTAANOTTAJA: ',
+        '',
+        '',
+        `PAKKAUSPVM: ${dateText}`,
+        '',
+        `TYÖNRO: ${jobNumber}`,
+        '',
+        'PAKKAAJA: ',
+        '',
+        '',
+        rows
+    ].join('\n');
+}
+
+function downloadPackingList(jobNumber) {
+    if (!isPackingListMode || !jobNumber) {
+        showToast('Valitse ensin työnumero.', 'warning');
+        return;
+    }
+
+    const selectedItemNames = Object.keys(selectedPackingItems)
+        .filter((key) => key.startsWith(`${jobNumber}||`) && selectedPackingItems[key])
+        .map((key) => key.split('||')[1]);
+
+    if (selectedItemNames.length === 0) {
+        showToast('Valitse vähintään yksi ovi pakkausluetteloon.', 'warning');
+        return;
+    }
+
+    const textContent = buildPackingListText(jobNumber, selectedItemNames);
+    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pakkausluettelo_${jobNumber}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast('Pakkausluettelo ladattu.', 'success');
+}
 
 // Open notes modal
 function openMittatNote(type, jobNumber, itemName, buttonElement = null) {
@@ -3275,6 +3400,17 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     syncMitatStateToFirestore();
+
+    if (selectedPackingJobNumber === jobNumber) {
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+    } else {
+        Object.keys(selectedPackingItems).forEach((key) => {
+            if (key.startsWith(`${jobNumber}||`)) {
+                delete selectedPackingItems[key];
+            }
+        });
+    }
     
     loadMittatView();
     showToast(`Työ ${jobNumber} poistettu`, 'info');
@@ -3310,6 +3446,11 @@ function deleteMitta(jobNumber, itemName) {
             delete checkedMitat[checkKey];
             localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
         }
+
+        const packingKey = `${jobNumber}||${itemName}`;
+        if (selectedPackingItems[packingKey]) {
+            delete selectedPackingItems[packingKey];
+        }
         
         // Also remove notes
         const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
@@ -3325,6 +3466,10 @@ function deleteMitta(jobNumber, itemName) {
             if (mittatNotes[jobNoteKey]) {
                 delete mittatNotes[jobNoteKey];
                 localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
+            }
+            if (selectedPackingJobNumber === jobNumber) {
+                selectedPackingJobNumber = null;
+                selectedPackingItems = {};
             }
         }
 
@@ -3350,6 +3495,9 @@ function clearAllMitat() {
     localStorage.removeItem('checkedMitat');
     localStorage.removeItem('mittatNotes');
     syncMitatStateToFirestore();
+    selectedPackingJobNumber = null;
+    selectedPackingItems = {};
+    isPackingListMode = false;
     loadMittatView();
     showToast('Kaikki mitat tyhjennetty', 'info');
 }

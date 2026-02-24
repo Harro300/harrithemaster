@@ -1168,6 +1168,11 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     font-size: 0.65rem;
 }
 
+.mitat-mini-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
 .mitat-toggle-icon {
     font-size: 0.75rem;
     color: var(--text-secondary);
