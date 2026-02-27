@@ -1,144 +1,163 @@
-# Harrin Teräsovi Mittalaskuri
+# Teräsovi Mittaohjelmisto
 
-Selkeä ja käyttäjäystävällinen sovellus, joka laskee teräsovien komponenttien (potkupeltien, uretaanipalojen, harjalistojen ja lasilistojen) leikkausmitat syötettyjen ovimittojen perusteella.
+Teräsovi- ja ikkunatuotteiden mittalaskenta- ja työnhallintasovellus tuotantokäyttöön.
 
-## Ominaisuudet
+Sovellus sisältää:
+- useita laskureita ovi- ja ikkunamalleille
+- kaavasettien hallinnan (admin)
+- Mitat-sivun työnumero-/tuoterakenteen
+- reaaliaikaisen monikäyttäjäsynkan Firebasella
+- pakkausluetteloiden luonnin PDF-muodossa.
 
-### 🔐 Salasanasuojaus
-- Sovellus vaatii kirjautumisen
+## Sisältö
+- [Päätoiminnot](#päätoiminnot)
+- [Käyttäjäroolit](#käyttäjäroolit)
+- [Mitat-sivun toiminnot](#mitat-sivun-toiminnot)
+- [Pakkausluettelo](#pakkausluettelo)
+- [Tekninen rakenne](#tekninen-rakenne)
+- [Asennus ja käynnistys](#asennus-ja-käynnistys)
+- [Firebase-käyttöönotto](#firebase-käyttöönotto)
+- [Tiedostorakenne](#tiedostorakenne)
 
-### 🚪 Neljä Laskuria
-1. **Janisol Pariovi** - Janisol-tyylinen pariovi
-2. **Janisol Käyntiovi** - Janisol-tyylinen yksittäisovi
-3. **Economy Pariovi** - Economy-tyylinen pariovi
-4. **Economy Käyntiovi** - Economy-tyylinen yksittäisovi
+## Päätoiminnot
 
-### 📊 Laskennat
-Jokainen laskuri laskee automaattisesti:
-- **Lasilistat** - Pysty- ja vaakalistat jokaiselle ruudulle
-- **Uretaanipalat** - Eristysosat
-- **Potkupellit** - Sisä- ja ulkopuolen pellit
-- **Harjalistat** - Tiivistyslistat
+### 1) Kirjautuminen
+- Kirjautuminen sähköpostilla ja salasanalla (Firebase Authentication).
+- Sovellus näyttää kirjautumisen jälkeen laskin- tai Mitat-näkymän.
 
-### ⚙️ Asetukset
-- **Rako-vaihtoehdot**: 8 mm (oletus), 10 mm, 15 mm
-- **Ruutujen määrä**: 1-5 ruutua
-- Asetukset vaikuttavat laskentakaavoihin automaattisesti
+### 2) Laskimet
+Sovelluksessa on kuusi laskuria:
+- Janisol Pariovi
+- Janisol Käyntiovi
+- Economy Pariovi
+- Economy Käyntiovi
+- Janisol Ikkuna
+- Economy Ikkuna
 
-### 💾 Esiasetukset
-- Tallenna usein käytettyjä mittoja omilla nimillä
-- Lataa tallennetut esiasetukset nopeasti
-- Poista tarpeettomat esiasetukset
+Laskuri laskee automaattisesti tuotekohtaisia mittoja (esim. lasilistat, uretaanit, potkupellit, harjalistat mallin mukaan).
 
-### 📄 PDF-Vienti
-- Vie laskentatulokset PDF-muodossa
-- Sisältää kaikki syötteet ja tulokset
-- Selkeä ja ammattimainen muotoilu
+### 3) Asetukset
+- Rakoasetus (ovilaskimet)
+- Ruutujen määrä
+- Potkupellin päälle/pois
+- Dark mode
+- Aktiivinen kaavasetti (myös ei-admin voi vaihtaa)
 
-## Käyttöohje
+### 4) Esiasetukset
+- Tulokset ja syötteet voi tallentaa nimettyinä esiasetuksina.
+- Esiasetukset voidaan ladata myöhemmin nopeasti käyttöön.
+- Esiasetuslista sisältää poistotoiminnon (admin-rajaus käytössä).
 
-### 1. Kirjautuminen
-- Avaa `index.html` selaimessa
-- Syötä salasana: `Soma<3` tai `Harri10K`
-- Paina "Kirjaudu sisään"
+### 5) Tulosten vienti
+- Kopioi tulokset leikepöydälle
+- Vie PDF
+- Siirrä tulokset Mitat-sivulle työnumeron alle
 
-### 2. Laskurin Valinta
-- Valitse haluamasi laskuri päävalikosta
-- Neljä vaihtoehtoa käytettävissä
+## Käyttäjäroolit
 
-### 3. Mittojen Syöttäminen
-- **Käyntioven leveys** (mm) - Pakollinen
-- **Lisäoven leveys** (mm) - Vain pariovissa
-- **Potkupellin oletuskorkeus** (mm) - Oletus: 300 mm
-- **Ruudun korkeus** (mm) - Yksi tai useampi riippuen asetuksista
+### Peruskäyttäjä
+- Voi käyttää laskureita, asetuksia, esiasetuksia ja Mitat-sivua.
+- Voi vaihtaa aktiivisen kaavasetin asetuksista.
+- Voi tehdä pakkausluetteloita.
 
-### 4. Asetusten Muokkaus
-- Paina "⚙️ Asetukset" -painiketta
-- Valitse rako (8/10/15 mm)
-- Valitse ruutujen määrä (1-5)
-- Asetukset päivittyvät automaattisesti
+### Admin-käyttäjä
+- Näkee ja avaa kaavahallinnan (`Kaavahallinta`).
+- Voi tallentaa, päivittää ja poistaa kaavasettejä.
+- Voi poistaa Mitat-sivulla työnumeroita ja yksittäisiä nimettyjä mittoja.
 
-### 5. Tulosten Tarkastelu
-- Tulokset näkyvät reaaliajassa oikealla puolella
-- Järjestetty selkeästi: Lasilista → Uretaani → Potkupelti → Harjalista
-- Samanlaiset mitat yhdistetty (esim. "841 x 4")
+Admin-käyttäjät määritellään `app.js`-tiedoston `ADMIN_EMAILS`-listassa.
 
-### 6. Esiasetukset
-- **Tallenna**: Paina "💾 Tallenna", anna nimi, vahvista
-- **Lataa**: Paina "📂 Lataa", valitse esiasetus listasta
-- **Poista**: Paina 🗑️-ikonia esiasetuksen vieressä
+## Mitat-sivun toiminnot
 
-### 7. PDF-Vienti
-- Paina "📄 Vie PDF:ksi" -painiketta
-- PDF latautuu automaattisesti
-- Sisältää laskurin nimen, syötteet ja tulokset
+Mitat-sivu toimii työnumero -> tuote (ovi/ikkuna) -rakenteella.
 
-## Laskentakaavat
+Tuotekohtaiset toiminnot:
+- avaa/sulje yksityiskohdat
+- muistiinpano (tuote- ja työnumerotasolla)
+- lasilistat-checkpoint
+- tehty-checkpoint
+- pakattu-merkintä `(pakattu!)` kun tuote on lisätty pakkausluetteloon
+- kopioi tuotteen tiedot
+- PDF-vienti tuotekohtaisesti
 
-### Janisol Lasilistat
-- **Pystylista**: Ruudun korkeus + 41 mm
-- **Vaakalista**: Oven leveys + 3 mm
+Työnumerotasolla:
+- laskuri muodossa `(X KPL / Y TEHTY)` näyttää kokonaismäärän ja tehty-merkittyjen määrän
+- adminille poistotoiminnot
 
-### Economy Lasilistat
-- **Pystylista**: Ruudun korkeus + 38 mm
-- **Vaakalista**: Oven leveys - 2 mm
+## Pakkausluettelo
 
-### Uretaanipalat
-- **Janisol**: Korkeus = Potkupellin korkeus - 126 mm, Leveys = Oven leveys + 46 mm
-- **Economy**: Korkeus = Potkupellin korkeus - 121 mm, Leveys = Oven leveys + 41 mm
+Mitat-sivulta voi muodostaa pakkausluettelon:
+- aktivoi pakkausluettelotila
+- valitse työnumero
+- valitse halutut ovet/ikkunat
+- lataa pakkausluettelo PDF:nä
 
-### Potkupellit
-Vaihtelevat ovi- ja rako-tyypin mukaan. Tarkemmat kaavat sisäänrakennettuna.
+Pakkausluettelon luonti:
+- merkitsee valitut tuotteet pakatuiksi (`packedMitat`)
+- näyttää tuotteelle `(pakattu!)`-tekstin
+- jos `tehty`-check poistetaan, myös pakattu-merkintä poistuu automaattisesti
 
-### Rako-Vaikutukset
-- **10 mm rako**: Sisäpelti +32 mm, Ulkopelti +7 mm
-- **15 mm rako**: Sisäpelti +27 mm, Ulkopelti +2 mm
+## Tekninen rakenne
 
-### Erikoissäännöt
-- Jos potkupellin korkeus > 310 mm, ulkopellin leveydestä vähennetään 5 mm
-- Jokaisessa ruudussa aina 2 pystylistaa + 2 vaakalistaa
+### Frontend
+- `index.html` (UI-rakenne)
+- `styles.css` (teemat, layout, komponenttityylit)
+- `app.js` (sovelluslogiikka, laskenta, UI-toiminnot, synkka)
 
-## Tekniset Tiedot
+### Backend-palvelut
+- Firebase Authentication (kirjautuminen)
+- Cloud Firestore (reaaliaikainen data)
 
-### Teknologiat
-- HTML5
-- CSS3 (Bootstrap 5)
-- JavaScript (Vanilla)
-- jsPDF (PDF-generointiin)
+### Reaaliaikaisesti synkattavat kokonaisuudet
+- `presets`
+- `checkedStates`
+- `formulaSets`
+- `mitatState` (mittadata + checkboxit + muistiinpanot + tehty + pakattu)
 
-### Selainyhteensopivuus
-- Chrome (suositeltu)
-- Firefox
-- Safari
-- Edge
+## Asennus ja käynnistys
 
-### Responsiivisuus
-- Täysi mobiilituki
-- Tabletti-optimoitu
-- Desktop-ystävällinen
+### Paikallinen testaus (suositus)
+1. Siirry projektikansioon.
+2. Käynnistä paikallinen palvelin, esim:
+   - `python -m http.server 8080`
+3. Avaa selaimessa:
+   - `http://localhost:8080`
 
-## Tiedostot
+### Vaihtoehto
+- Voit avata `index.html` suoraan tiedostona, mutta osa selaintoiminnoista (esim. clipboard/PDF-käytös) toimii luotettavammin localhostilla.
 
+## Firebase-käyttöönotto
+
+### 1) Konfiguroi Firebase
+- Varmista, että Firebase-konfiguraatio on projektissa käytössä.
+- Ota käyttöön:
+  - Authentication (Email/Password)
+  - Firestore Database
+
+### 2) Päivitä Firestore rules
+- Käytä projektin `firestore.rules`-tiedostoa.
+- Julkaise säännöt Firebase Consoleen (Publish).
+
+### 3) Admin-oikeudet
+- Päivitä admin-lista:
+  - `app.js` -> `ADMIN_EMAILS`
+- Pidä `firestore.rules` admin-sähköpostilistat linjassa tämän kanssa.
+
+## Tiedostorakenne
+
+```text
+.
+├── index.html
+├── styles.css
+├── app.js
+├── firestore.rules
+└── README.md
 ```
-harrin-terasovi-mittalaskuri/
-├── index.html          # Pääsivu
-├── styles.css          # Tyylit
-├── app.js             # Sovelluslogiikka
-└── README.md          # Tämä tiedosto
-```
 
-## Käynnistäminen
-
-1. Lataa kaikki tiedostot samaan kansioon
-2. Avaa `index.html` verkkoselaimessa
-3. Ei vaadi palvelinta - toimii suoraan selaimessa
-
-## Tuki ja Yhteystiedot
-
-Tämä sovellus on luotu Harrin teräsovien mittalaskentaa varten.
-Kaikki laskentakaavat perustuvat annettuihin spesifikaatioihin.
-
----
-
-**Versio**: 1.0
-**Viimeisin päivitys**: Joulukuu 2025
+## Huomioita ylläpitoon
+- Sovellus on toteutettu Vanilla JS -pohjaisena (ei React/Vite-migraatiota).
+- Kaikki merkittävät käyttäjätilat pyritään pitämään synkassa Firestoreen.
+- Ennen tuotantokäyttöä tarkista:
+  - admin-listat
+  - Firestore rules
+  - Firebase-projektin domain-asetukset (jos julkaistu webiin).
