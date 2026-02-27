@@ -102,6 +102,8 @@ function getMitatStateFromLocalStorage() {
     return {
         mittatData: JSON.parse(localStorage.getItem('mittatData') || '{}'),
         checkedMitat: JSON.parse(localStorage.getItem('checkedMitat') || '{}'),
+        doneMitat: JSON.parse(localStorage.getItem('doneMitat') || '{}'),
+        packedMitat: JSON.parse(localStorage.getItem('packedMitat') || '{}'),
         mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}')
     };
 }
@@ -109,6 +111,8 @@ function getMitatStateFromLocalStorage() {
 function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('mittatData', JSON.stringify(state.mittatData || {}));
     localStorage.setItem('checkedMitat', JSON.stringify(state.checkedMitat || {}));
+    localStorage.setItem('doneMitat', JSON.stringify(state.doneMitat || {}));
+    localStorage.setItem('packedMitat', JSON.stringify(state.packedMitat || {}));
     localStorage.setItem('mittatNotes', JSON.stringify(state.mittatNotes || {}));
 }
 
@@ -316,6 +320,8 @@ function setupRealtimeListeners() {
                 applyMitatStateToLocalStorage({
                     mittatData: data.mittatData || {},
                     checkedMitat: data.checkedMitat || {},
+                    doneMitat: data.doneMitat || {},
+                    packedMitat: data.packedMitat || {},
                     mittatNotes: data.mittatNotes || {}
                 });
 
@@ -2940,6 +2946,8 @@ function loadMittatView() {
     const container = document.getElementById('mittatContainer');
     const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const clearAllBtn = document.getElementById('clearAllMitatBtn');
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
     if (clearAllBtn) {
@@ -2972,11 +2980,16 @@ function loadMittatView() {
         const hasJobNote = mittatNotes[jobNoteKey] && mittatNotes[jobNoteKey].trim() !== '';
         const jobNoteClass = hasJobNote ? 'btn-note-active' : 'btn-note-empty';
         
+        const itemNames = Object.keys(mittatData[jobNumber]).sort();
+        const totalCount = itemNames.length;
+        const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
+
         html += `<div class="mitat-job-section">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
+        html += `<span class="mitat-mini-label" id="${jobId}-done-counter">(${totalCount} KPL / ${doneCount} TEHTY)</span>`;
         if (isPackingListMode) {
             const isSelectedJob = selectedPackingJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
@@ -2997,10 +3010,7 @@ function loadMittatView() {
         
         // Job items container (hidden by default)
         html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
-        
-        // Sort item names
-        const itemNames = Object.keys(mittatData[jobNumber]).sort();
-        
+
         itemNames.forEach(itemName => {
             const item = mittatData[jobNumber][itemName];
             const date = new Date(item.timestamp).toLocaleString('fi-FI');
@@ -3011,6 +3021,8 @@ function loadMittatView() {
             const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
             const isChecked = checkedMitat[checkKey] || false;
             const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            const doneChecked = doneMitat[checkKey] || false;
+            const doneCheckboxClass = doneChecked ? 'preset-checkbox checked' : 'preset-checkbox';
             
             // Check if item has notes
             const itemNoteKey = `item-${jobNumber}-${itemName}`;
@@ -3036,6 +3048,13 @@ function loadMittatView() {
             html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
             html += `${isChecked ? '✓' : ''}`;
             html += `</div>`;
+            html += `<span class="mitat-mini-label">tehty</span>`;
+            html += `<div class="${doneCheckboxClass}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
+            html += `${doneChecked ? '✓' : ''}`;
+            html += `</div>`;
+            if (doneChecked && packedMitat[checkKey]) {
+                html += `<span class="mitat-packed-label">(pakattu!)</span>`;
+            }
             html += `</div>`;
             html += `<div class="d-flex align-items-center gap-2">`;
             if (isAdmin) {
@@ -3190,27 +3209,63 @@ function togglePackingItem(jobNumber, itemName) {
     loadMittatView();
 }
 
-function buildPackingListText(jobNumber, selectedItemNames) {
-    const dateText = formatFinnishDate(new Date());
-    const rows = selectedItemNames
-        .map((itemName) => `${itemName.padEnd(34, ' ')} /                  1 KPL`)
-        .join('\n');
+function generatePackingListPdf(jobNumber, selectedItemNames) {
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+        throw new Error('jsPDF ei ole saatavilla.');
+    }
 
-    return [
-        'PAKKAUSLUETTELO',
-        '',
-        'LÄHETYKSEN VASTAANOTTAJA: ',
-        '',
-        '',
-        `PAKKAUSPVM: ${dateText}`,
-        '',
-        `TYÖNRO: ${jobNumber}`,
-        '',
-        'PAKKAAJA: ',
-        '',
-        '',
-        rows
-    ].join('\n');
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const dateText = formatFinnishDate(new Date());
+
+    const rowLeftX = 28;
+    const rowRightX = 175;
+    const rowHeight = 12;
+    let rowY = 160;
+
+    // Shared page header block
+    const drawHeader = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.text('PAKKAUSLUETTELO', pageWidth / 2, 30, { align: 'center' });
+
+        doc.setFontSize(14);
+        doc.text('LÄHETYKSEN VASTAANOTTAJA:', pageWidth / 2, 54, { align: 'center' });
+
+        doc.setFontSize(12);
+        doc.text('PAKKAUSPVM:', 32, 108);
+        doc.text('PAKKAAJA:', 92, 108);
+        doc.text('TYÖNRO:', 145, 108);
+
+        doc.setFont('helvetica', 'normal');
+        doc.text(dateText, 32, 121);
+        doc.text(jobNumber, 145, 121);
+    };
+
+    drawHeader();
+
+    const sortedItems = [...selectedItemNames].sort((a, b) =>
+        a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
+    );
+
+    sortedItems.forEach((itemName) => {
+        if (rowY > pageHeight - 20) {
+            doc.addPage();
+            rowY = 30;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(itemName.toUpperCase(), rowLeftX, rowY);
+        doc.text('1 KPL', rowRightX, rowY, { align: 'right' });
+        rowY += rowHeight;
+    });
+
+    const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cleanDate = dateText.replace(/\./g, '-');
+    doc.save(`pakkausluettelo_${cleanJob}_${cleanDate}.pdf`);
 }
 
 function downloadPackingList(jobNumber) {
@@ -3228,18 +3283,21 @@ function downloadPackingList(jobNumber) {
         return;
     }
 
-    const textContent = buildPackingListText(jobNumber, selectedItemNames);
-    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pakkausluettelo_${jobNumber}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    showToast('Pakkausluettelo ladattu.', 'success');
+    try {
+        generatePackingListPdf(jobNumber, selectedItemNames);
+        const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+        selectedItemNames.forEach((itemName) => {
+            const checkKey = `${jobNumber}-${itemName}`;
+            packedMitat[checkKey] = true;
+        });
+        localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+        syncMitatStateToFirestore();
+        loadMittatView();
+        showToast('Pakkausluettelo ladattu.', 'success');
+    } catch (error) {
+        console.error('❌ Pakkausluettelon PDF-luonti epäonnistui:', error);
+        showToast('Pakkausluettelon luonti epäonnistui.', 'error');
+    }
 }
 
 // Open notes modal
@@ -3349,6 +3407,51 @@ function toggleMittatCheck(checkKey, checkboxElement) {
     }
 }
 
+function updateJobDoneCounter(jobNumber) {
+    const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const counterElement = document.getElementById(`${jobId}-done-counter`);
+    if (!counterElement) return;
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const itemNames = Object.keys(mittatData[jobNumber] || {});
+    const totalCount = itemNames.length;
+    const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
+
+    counterElement.textContent = `(${totalCount} KPL / ${doneCount} TEHTY)`;
+}
+
+// Toggle mitta checkbox (tehty)
+function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const isDone = !doneMitat[checkKey];
+    if (isDone) {
+        doneMitat[checkKey] = true;
+    } else {
+        delete doneMitat[checkKey];
+        // If item is no longer "done", remove packed marker as well.
+        delete packedMitat[checkKey];
+    }
+    localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
+    localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+    syncMitatStateToFirestore();
+
+    // Update checkbox UI in-place so open panels don't collapse
+    if (checkboxElement) {
+        if (isDone) {
+            checkboxElement.classList.add('checked');
+            checkboxElement.textContent = '✓';
+        } else {
+            checkboxElement.classList.remove('checked');
+            checkboxElement.textContent = '';
+        }
+    }
+
+    updateJobDoneCounter(jobNumber);
+    loadMittatView();
+}
+
 // Toggle mitta details visibility
 function toggleMitatDetails(detailsId) {
     const detailsElement = document.getElementById(detailsId);
@@ -3383,12 +3486,16 @@ function deleteJobMitat(jobNumber) {
 
     // Remove checkbox states and item notes for all items in job
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
     const itemNames = Object.keys(mittatData[jobNumber]);
     
     itemNames.forEach(itemName => {
         const checkKey = `${jobNumber}-${itemName}`;
         delete checkedMitat[checkKey];
+        delete doneMitat[checkKey];
+        delete packedMitat[checkKey];
         delete mittatNotes[`item-${jobNumber}-${itemName}`];
     });
     
@@ -3398,6 +3505,8 @@ function deleteJobMitat(jobNumber) {
     
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+    localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
+    localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     syncMitatStateToFirestore();
 
@@ -3447,6 +3556,18 @@ function deleteMitta(jobNumber, itemName) {
             localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
         }
 
+        const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+        if (Object.prototype.hasOwnProperty.call(doneMitat, checkKey)) {
+            delete doneMitat[checkKey];
+            localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
+        }
+
+        const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+        if (Object.prototype.hasOwnProperty.call(packedMitat, checkKey)) {
+            delete packedMitat[checkKey];
+            localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+        }
+
         const packingKey = `${jobNumber}||${itemName}`;
         if (selectedPackingItems[packingKey]) {
             delete selectedPackingItems[packingKey];
@@ -3493,6 +3614,8 @@ function clearAllMitat() {
     
     localStorage.removeItem('mittatData');
     localStorage.removeItem('checkedMitat');
+    localStorage.removeItem('doneMitat');
+    localStorage.removeItem('packedMitat');
     localStorage.removeItem('mittatNotes');
     syncMitatStateToFirestore();
     selectedPackingJobNumber = null;

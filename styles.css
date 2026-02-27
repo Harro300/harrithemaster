@@ -1173,6 +1173,12 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     color: var(--text-secondary);
 }
 
+.mitat-packed-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
 .mitat-toggle-icon {
     font-size: 0.75rem;
     color: var(--text-secondary);
