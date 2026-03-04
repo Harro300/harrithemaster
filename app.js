@@ -10,6 +10,7 @@ let settings = {
 let firebaseInitialized = false;
 let currentUser = null;
 let isAdmin = false;
+let isCoordinator = false;
 let presetsUnsubscribe = null;
 let checkedStatesUnsubscribe = null;
 let formulaSetsUnsubscribe = null;
@@ -21,6 +22,7 @@ const ADMIN_EMAILS = [
     'admin01@teras.local',
     'admin02@teras.local'
 ];
+const COORDINATOR_EMAIL = 'koordinaattori@teras.fi';
 
 // ========== UTILITY FUNCTIONS ==========
 
@@ -81,6 +83,10 @@ function updateSyncStatus(online) {
 // Check if user is admin
 function checkIsAdmin(email) {
     return ADMIN_EMAILS.includes(email);
+}
+
+function checkIsCoordinator(email) {
+    return email === COORDINATOR_EMAIL;
 }
 
 // Wait for Firebase to be ready
@@ -150,12 +156,14 @@ async function initializeFirebaseAuth() {
             console.log('🔐 Käyttäjä kirjautunut:', user.email);
             currentUser = user;
             isAdmin = checkIsAdmin(user.email);
+            isCoordinator = checkIsCoordinator(user.email);
             updateSyncStatus(true);
             updateAdminAccessUI();
         } else {
             console.log('🔓 Ei kirjautunutta käyttäjää');
             currentUser = null;
             isAdmin = false;
+            isCoordinator = false;
             updateSyncStatus(false);
             updateAdminAccessUI();
         }
@@ -413,6 +421,15 @@ function updateAdminAccessUI() {
     if (adminLockButton) {
         adminLockButton.style.display = isAdmin ? '' : 'none';
     }
+
+    const laskinToggleMain = document.getElementById('btn-view-laskin');
+    const laskinToggleMitat = document.getElementById('btn-view-laskin-2');
+    if (laskinToggleMain) {
+        laskinToggleMain.style.display = isCoordinator ? 'none' : '';
+    }
+    if (laskinToggleMitat) {
+        laskinToggleMitat.style.display = isCoordinator ? 'none' : '';
+    }
 }
 
 // Wait for DOM to be ready before attaching login handler
@@ -472,25 +489,34 @@ function attachLoginHandler() {
         // Update global state
         currentUser = userCredential.user;
         isAdmin = checkIsAdmin(currentUser.email);
+        isCoordinator = checkIsCoordinator(currentUser.email);
         console.log('🔵 Käyttäjä asetettu:', currentUser.email, 'Admin:', isAdmin);
         updateAdminAccessUI();
         
-        // Show calculator screen
+        // Hide login screen
         console.log('🔵 Piilotetaan loginScreen...');
         document.getElementById('loginScreen').classList.add('d-none');
-        console.log('🔵 Näytetään calculatorScreen...');
-        document.getElementById('calculatorScreen').classList.remove('d-none');
-        console.log('✅ Näyttö vaihdettu!');
         
         // Update sync status
         updateSyncStatus(true);
         
         // Setup realtime listeners
         setupRealtimeListeners();
-        
-        // Select default calculator
-        console.log('🔵 Valitaan default-laskuri...');
-        selectCalculator('janisol-pariovi');
+
+        // Coordinator sees only Mitat view
+        if (isCoordinator) {
+            console.log('🔵 Koordinaattori: avataan vain Mitat-näkymä');
+            switchView('mitat');
+        } else {
+            // Show calculator screen
+            console.log('🔵 Näytetään calculatorScreen...');
+            document.getElementById('calculatorScreen').classList.remove('d-none');
+            console.log('✅ Näyttö vaihdettu!');
+            
+            // Select default calculator
+            console.log('🔵 Valitaan default-laskuri...');
+            selectCalculator('janisol-pariovi');
+        }
         
         // Show welcome toast
         showToast(`Tervetuloa${isAdmin ? ' Admin' : ''}!`, 'success');
@@ -536,6 +562,11 @@ if (document.readyState === 'loading') {
 function switchView(view) {
     const calculatorScreen = document.getElementById('calculatorScreen');
     const mittatView = document.getElementById('mittatView');
+
+    if (isCoordinator && view === 'laskin') {
+        showToast('Koordinaattori-käyttäjällä on pääsy vain Mitat-sivulle.', 'warning');
+        view = 'mitat';
+    }
     
     // Toggle views
     if (view === 'laskin') {
@@ -579,6 +610,7 @@ async function logout() {
     // Clear state
     currentUser = null;
     isAdmin = false;
+    isCoordinator = false;
     currentCalculator = '';
     updateAdminAccessUI();
     
