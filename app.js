@@ -18,6 +18,7 @@ let mitatStateUnsubscribe = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
+    'admin@teras.fi',
     'admin@terasovi.local',
     'admin01@teras.local',
     'admin02@teras.local'
