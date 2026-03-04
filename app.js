@@ -3038,9 +3038,11 @@ function loadMittatView() {
             if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
                 const packingKey = `${jobNumber}||${itemName}`;
                 const packingChecked = !!selectedPackingItems[packingKey];
-                const packingClass = packingChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+                const packingClass = doneChecked
+                    ? (packingChecked ? 'preset-checkbox checked' : 'preset-checkbox')
+                    : 'preset-checkbox disabled';
                 html += `<span class="mitat-mini-label">pakkaus</span>`;
-                html += `<div class="${packingClass}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
+                html += `<div class="${packingClass}" title="${doneChecked ? 'Merkitse pakattavaksi' : 'Merkitse ensin tehdyksi'}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
                 html += `${packingChecked ? '✓' : ''}`;
                 html += `</div>`;
             }
@@ -3199,6 +3201,13 @@ function selectPackingJob(jobNumber) {
 function togglePackingItem(jobNumber, itemName) {
     if (!isPackingListMode || selectedPackingJobNumber !== jobNumber) return;
 
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const doneKey = `${jobNumber}-${itemName}`;
+    if (!doneMitat[doneKey]) {
+        showToast('Merkitse tuote ensin tehdyksi ennen pakkausta.', 'warning');
+        return;
+    }
+
     const itemKey = `${jobNumber}||${itemName}`;
     selectedPackingItems[itemKey] = !selectedPackingItems[itemKey];
 
@@ -3209,7 +3218,22 @@ function togglePackingItem(jobNumber, itemName) {
     loadMittatView();
 }
 
-function generatePackingListPdf(jobNumber, selectedItemNames) {
+async function loadImageAsDataUrl(imagePath) {
+    const response = await fetch(imagePath);
+    if (!response.ok) {
+        throw new Error(`Kuvan lataus epäonnistui: ${imagePath}`);
+    }
+
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function generatePackingListPdf(jobNumber, selectedItemNames) {
     const { jsPDF } = window.jspdf || {};
     if (!jsPDF) {
         throw new Error('jsPDF ei ole saatavilla.');
@@ -3220,28 +3244,34 @@ function generatePackingListPdf(jobNumber, selectedItemNames) {
     const pageHeight = doc.internal.pageSize.getHeight();
     const dateText = formatFinnishDate(new Date());
 
-    const rowLeftX = 28;
-    const rowRightX = 175;
-    const rowHeight = 12;
-    let rowY = 160;
+    const rowLeftX = 24;
+    const rowRightX = 188;
+    const rowHeight = 16;
+    const bottomReserve = 55;
+    let rowY = 176;
+
+    const logoPath = 'projects/c-Users-Harri-cursor/assets/c__Users_Harri_AppData_Roaming_Cursor_User_workspaceStorage_4765d42edbab4931dbd125b120460713_images_N_ytt_kuva_2026-03-04_161615-377a20df-0cf4-4d0f-87d9-16ac616d7b97.png';
+    const qrPath = 'projects/c-Users-Harri-cursor/assets/c__Users_Harri_AppData_Roaming_Cursor_User_workspaceStorage_4765d42edbab4931dbd125b120460713_images_image-602b459f-35b3-4ad0-aabe-67bb5120ff72.png';
 
     // Shared page header block
     const drawHeader = () => {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(18);
+        doc.setFontSize(36);
         doc.text('PAKKAUSLUETTELO', pageWidth / 2, 30, { align: 'center' });
 
-        doc.setFontSize(14);
-        doc.text('LÄHETYKSEN VASTAANOTTAJA:', pageWidth / 2, 54, { align: 'center' });
+        doc.setFontSize(28);
+        doc.text('LÄHETYKSEN VASTAANOTTAJA:', pageWidth / 2, 58, { align: 'center' });
 
-        doc.setFontSize(12);
-        doc.text('PAKKAUSPVM:', 32, 108);
-        doc.text('PAKKAAJA:', 92, 108);
-        doc.text('TYÖNRO:', 145, 108);
+        const infoFontSize = 16.8; // 30% smaller than previous 24
+        doc.setFontSize(infoFontSize);
+        doc.text('PAKKAUSPVM:', 22, 118);
+        doc.text('PAKKAAJA:', 84, 118);
+        doc.text('TYÖNRO:', 145, 118);
 
         doc.setFont('helvetica', 'normal');
-        doc.text(dateText, 32, 121);
-        doc.text(jobNumber, 145, 121);
+        doc.setFontSize(infoFontSize);
+        doc.text(dateText, 22, 135);
+        doc.text(jobNumber, 145, 135);
     };
 
     drawHeader();
@@ -3251,24 +3281,34 @@ function generatePackingListPdf(jobNumber, selectedItemNames) {
     );
 
     sortedItems.forEach((itemName) => {
-        if (rowY > pageHeight - 20) {
+        if (rowY > pageHeight - bottomReserve) {
             doc.addPage();
             rowY = 30;
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
+        doc.setFontSize(28);
         doc.text(itemName.toUpperCase(), rowLeftX, rowY);
         doc.text('1 KPL', rowRightX, rowY, { align: 'right' });
         rowY += rowHeight;
     });
+
+    const logoDataUrl = await loadImageAsDataUrl(logoPath);
+    const qrDataUrl = await loadImageAsDataUrl(qrPath);
+    const logoWidth = 45;
+    const logoHeight = 22;
+    const qrSize = 35;
+    const imagesY = pageHeight - 40;
+
+    doc.addImage(logoDataUrl, 'PNG', 38, imagesY, logoWidth, logoHeight);
+    doc.addImage(qrDataUrl, 'PNG', pageWidth - 38 - qrSize, imagesY - 6, qrSize, qrSize);
 
     const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
     const cleanDate = dateText.replace(/\./g, '-');
     doc.save(`pakkausluettelo_${cleanJob}_${cleanDate}.pdf`);
 }
 
-function downloadPackingList(jobNumber) {
+async function downloadPackingList(jobNumber) {
     if (!isPackingListMode || !jobNumber) {
         showToast('Valitse ensin työnumero.', 'warning');
         return;
@@ -3284,7 +3324,7 @@ function downloadPackingList(jobNumber) {
     }
 
     try {
-        generatePackingListPdf(jobNumber, selectedItemNames);
+        await generatePackingListPdf(jobNumber, selectedItemNames);
         const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
         selectedItemNames.forEach((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;

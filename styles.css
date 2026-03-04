@@ -404,6 +404,16 @@ h5 {
     border-color: var(--accent-color);
 }
 
+.preset-checkbox.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.preset-checkbox.disabled:hover {
+    border-color: var(--border-color);
+    transform: none;
+}
+
 .preset-name {
     user-select: none;
     font-weight: 500;
