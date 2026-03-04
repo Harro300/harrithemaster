@@ -3054,7 +3054,9 @@ function loadMittatView() {
             const isChecked = checkedMitat[checkKey] || false;
             const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
             const doneChecked = doneMitat[checkKey] || false;
-            const doneCheckboxClass = doneChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            const doneCheckboxClass = !isChecked && !doneChecked
+                ? 'preset-checkbox disabled'
+                : (doneChecked ? 'preset-checkbox checked' : 'preset-checkbox');
             
             // Check if item has notes
             const itemNoteKey = `item-${jobNumber}-${itemName}`;
@@ -3064,7 +3066,7 @@ function loadMittatView() {
             html += `<div class="mitat-item-section">`;
             html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')">`;
             html += `<div class="mitat-item-header-main">`;
-            html += `<div class="d-flex align-items-center gap-2">`;
+            html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
             if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
@@ -3077,13 +3079,15 @@ function loadMittatView() {
                 html += `<div class="${packingClass}" title="${doneChecked ? 'Merkitse pakattavaksi' : 'Merkitse ensin tehdyksi'}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
                 html += `${packingChecked ? '✓' : ''}`;
                 html += `</div>`;
+                html += `<span class="mitat-checkpoint-separator">/</span>`;
             }
             html += `<span class="mitat-mini-label">lasilistat</span>`;
             html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
             html += `${isChecked ? '✓' : ''}`;
             html += `</div>`;
+            html += `<span class="mitat-checkpoint-separator">/</span>`;
             html += `<span class="mitat-mini-label">tehty</span>`;
-            html += `<div class="${doneCheckboxClass}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
+            html += `<div class="${doneCheckboxClass}" title="${isChecked || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
             html += `${doneChecked ? '✓' : ''}`;
             html += `</div>`;
             if (doneChecked && packedMitat[checkKey]) {
@@ -3495,9 +3499,14 @@ function updateJobDoneCounter(jobNumber) {
 
 // Toggle mitta checkbox (tehty)
 function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const isDone = !doneMitat[checkKey];
+    if (isDone && !checkedMitat[checkKey]) {
+        showToast('Merkitse ensin lasilistat ennen tehty-merkintää.', 'warning');
+        return;
+    }
     if (isDone) {
         doneMitat[checkKey] = true;
     } else {

@@ -1183,6 +1183,18 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     color: var(--text-secondary);
 }
 
+.mitat-checkpoints {
+    gap: 0.45rem !important;
+}
+
+.mitat-checkpoint-separator {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    opacity: 0.8;
+    margin: 0 0.2rem;
+}
+
 .mitat-packed-label {
     font-size: 0.7rem;
     font-weight: 600;
