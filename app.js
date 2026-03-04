@@ -3287,8 +3287,9 @@ async function generatePackingListPdf(jobNumber, selectedItemNames) {
     const bottomReserve = 55;
     let rowY = 176;
 
-    const logoPath = 'projects/c-Users-Harri-cursor/assets/c__Users_Harri_AppData_Roaming_Cursor_User_workspaceStorage_4765d42edbab4931dbd125b120460713_images_N_ytt_kuva_2026-03-04_161615-377a20df-0cf4-4d0f-87d9-16ac616d7b97.png';
-    const qrPath = 'projects/c-Users-Harri-cursor/assets/c__Users_Harri_AppData_Roaming_Cursor_User_workspaceStorage_4765d42edbab4931dbd125b120460713_images_image-602b459f-35b3-4ad0-aabe-67bb5120ff72.png';
+    // Resolve image paths relative to current page so they work on localhost and GitHub Pages.
+    const logoPath = new URL('assets/packing-logo.png', window.location.href).toString();
+    const qrPath = new URL('assets/packing-qr.png', window.location.href).toString();
 
     // Shared page header block
     const drawHeader = () => {
