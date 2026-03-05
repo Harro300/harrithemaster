@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teräsovi Mittaohjelmisto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260304R1">
+    <link rel="stylesheet" href="styles.css?v=20260304R2">
 </head>
 <body>
     <!-- Login Screen -->
@@ -244,6 +244,14 @@
                             <label class="form-label mb-0">Potkupelti</label>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="kickPlateToggle" checked onchange="applySettings()">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="sealThresholdSetting">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <label class="form-label mb-0">Tiivistekynnys</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="sealThresholdToggle" onchange="applySettings()">
                             </div>
                         </div>
                     </div>
@@ -582,6 +590,78 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_tiiviste_uretaani_8mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_tiiviste_uretaani_10mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_tiiviste_uretaani_15mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_pariovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_inner_8mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_outer_8mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_inner_10mm" class="formula-input" value="-35">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_outer_10mm" class="formula-input" value="-11">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_inner_15mm" class="formula-input" value="-40">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_outer_15mm" class="formula-input" value="-16">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_inner_saneeraus" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="janisol_pariovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -652,6 +732,78 @@
                                 <label>Saneerauskynnys - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
                                 <input type="number" id="janisol_kayntiovi_uretaani_saneeraus" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_uretaani_8mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_uretaani_10mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_uretaani_15mm" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-126">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_inner_8mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_8mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_inner_10mm" class="formula-input" value="-35">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_10mm" class="formula-input" value="-11">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_inner_15mm" class="formula-input" value="-40">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_15mm" class="formula-input" value="-16">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_inner_saneeraus" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
                         </div>
@@ -824,6 +976,78 @@
                                 <span>mm</span>
                             </div>
                         </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_tiiviste_uretaani_8mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_tiiviste_uretaani_10mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_tiiviste_uretaani_15mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_pariovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_inner_8mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_outer_8mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_inner_10mm" class="formula-input" value="-33">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_outer_10mm" class="formula-input" value="-13">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_inner_15mm" class="formula-input" value="-38">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_outer_15mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_inner_saneeraus" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="economy_pariovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -894,6 +1118,78 @@
                                 <label>Saneerauskynnys - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
                                 <input type="number" id="economy_kayntiovi_uretaani_saneeraus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_tiiviste_uretaani_8mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_tiiviste_uretaani_10mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_tiiviste_uretaani_15mm" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Uretaani:</label>
+                                <span>Potkupellin korkeus</span>
+                                <input type="number" id="economy_kayntiovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-121">
+                                <span>mm</span>
+                            </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_inner_8mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_8mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_inner_10mm" class="formula-input" value="-33">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_10mm" class="formula-input" value="-13">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_inner_15mm" class="formula-input" value="-38">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_15mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisäpelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_inner_saneeraus" class="formula-input" value="-25">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulkopelti:</label>
+                                <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
                         </div>
@@ -1046,7 +1342,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R2"></script>
+    <script src="app.js?v=20260304R3"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

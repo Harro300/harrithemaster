@@ -3,7 +3,8 @@ let currentCalculator = '';
 let settings = {
     gapOption: 8,
     paneCount: 1,
-    kickPlateEnabled: true
+    kickPlateEnabled: true,
+    sealThresholdEnabled: false
 };
 
 // Firebase state
@@ -406,6 +407,12 @@ document.addEventListener('DOMContentLoaded', function() {
             kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
         }
     }
+
+    // Load seal threshold setting
+    const sealThresholdEnabled = localStorage.getItem('sealThresholdEnabled');
+    if (sealThresholdEnabled !== null) {
+        settings.sealThresholdEnabled = sealThresholdEnabled === 'true';
+    }
     
     // Initialize Firebase Auth listener
     initializeFirebaseAuth();
@@ -677,11 +684,18 @@ function selectCalculator(type) {
         }
     }
     
-    // Reset settings (but keep kickPlateEnabled or load from localStorage)
+    // Reset settings (but keep kick plate and seal threshold toggles)
     const savedKickPlateEnabled = localStorage.getItem('kickPlateEnabled');
     const kickPlateEnabled = savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true;
+    const savedSealThresholdEnabled = localStorage.getItem('sealThresholdEnabled');
+    const sealThresholdEnabled = savedSealThresholdEnabled !== null ? savedSealThresholdEnabled === 'true' : false;
     
-    settings = { gapOption: 8, paneCount: 1, kickPlateEnabled: kickPlateEnabled };
+    settings = {
+        gapOption: 8,
+        paneCount: 1,
+        kickPlateEnabled: kickPlateEnabled,
+        sealThresholdEnabled: sealThresholdEnabled
+    };
     document.getElementById('gapOption').value = '8';
     document.getElementById('paneCount').value = '1';
     
@@ -689,6 +703,10 @@ function selectCalculator(type) {
     const kickPlateToggle = document.getElementById('kickPlateToggle');
     if (kickPlateToggle) {
         kickPlateToggle.checked = kickPlateEnabled;
+    }
+    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
+    if (sealThresholdToggle) {
+        sealThresholdToggle.checked = sealThresholdEnabled;
     }
     
     // Update kick plate visibility (hide for windows)
@@ -722,16 +740,24 @@ function openSettings() {
     if (kickPlateToggle) {
         kickPlateToggle.checked = settings.kickPlateEnabled !== false;
     }
+    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
+    if (sealThresholdToggle) {
+        sealThresholdToggle.checked = settings.sealThresholdEnabled === true;
+    }
     
-    // Hide rako and kick plate settings for window calculators
+    // Hide rako, kick plate and seal threshold settings for window calculators
     const gapOptionSetting = document.getElementById('gapOptionSetting');
     const kickPlateSetting = document.getElementById('kickPlateSetting');
+    const sealThresholdSetting = document.getElementById('sealThresholdSetting');
     
     if (gapOptionSetting) {
         gapOptionSetting.style.display = isWindowCalculator ? 'none' : '';
     }
     if (kickPlateSetting) {
         kickPlateSetting.style.display = isWindowCalculator ? 'none' : '';
+    }
+    if (sealThresholdSetting) {
+        sealThresholdSetting.style.display = isWindowCalculator ? 'none' : '';
     }
 
     // Keep formula set options and selection in sync for all users
@@ -797,9 +823,11 @@ function applySettings() {
     settings.gapOption = gapValue === 'saneeraus' ? 'saneeraus' : parseInt(gapValue);
     settings.paneCount = parseInt(document.getElementById('paneCount').value);
     settings.kickPlateEnabled = document.getElementById('kickPlateToggle').checked;
+    settings.sealThresholdEnabled = !!document.getElementById('sealThresholdToggle')?.checked;
     
-    // Save kick plate setting to localStorage
+    // Save settings to localStorage
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
+    localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled);
     
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
     
@@ -1077,6 +1105,30 @@ function calculate() {
     displayResults(results);
 }
 
+function getGapFormulaSuffix() {
+    if (settings.gapOption === 'saneeraus') return 'saneeraus';
+    if (settings.gapOption === 10 || settings.gapOption === '10mm' || settings.gapOption === '10') return '10mm';
+    if (settings.gapOption === 15 || settings.gapOption === '15mm' || settings.gapOption === '15') return '15mm';
+    return '8mm';
+}
+
+function getUretaaniHeightAdjust(activeFormulas, fallbackValue) {
+    const gapSuffix = getGapFormulaSuffix();
+    const normalKey = `uretaani_${gapSuffix}`;
+    const sealKey = `tiiviste_uretaani_${gapSuffix}`;
+
+    if (settings.sealThresholdEnabled) {
+        return activeFormulas[sealKey] ?? activeFormulas[normalKey] ?? fallbackValue;
+    }
+    return activeFormulas[normalKey] ?? fallbackValue;
+}
+
+function getSealPotkuHeightAdjust(activeFormulas, type) {
+    const gapSuffix = getGapFormulaSuffix();
+    const key = `tiiviste_potku_${type}_${gapSuffix}`;
+    return activeFormulas[key];
+}
+
 // Calculate Janisol Pariovi
 function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) {
     const results = {
@@ -1134,23 +1186,17 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
         // Uretaanipalat (Urethane pieces)
-        let uretaaniHeightAdjust;
-        if (settings.gapOption === '10mm') {
-            uretaaniHeightAdjust = jf.uretaani_10mm || jf.uretaani_korkeus;
-        } else if (settings.gapOption === '15mm') {
-            uretaaniHeightAdjust = jf.uretaani_15mm || jf.uretaani_korkeus;
-        } else if (settings.gapOption === 'saneeraus') {
-            uretaaniHeightAdjust = jf.uretaani_saneeraus || jf.uretaani_korkeus;
-        } else {
-            uretaaniHeightAdjust = jf.uretaani_8mm || jf.uretaani_korkeus;
-        }
+        const uretaaniHeightAdjust = getUretaaniHeightAdjust(jf, jf.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
         results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
         
         // Potkupellit - Käyntiovi (Kick plates - Main door)
     let mainInnerHeight, mainOuterHeight;
-    if (settings.gapOption === 'saneeraus') {
+    if (settings.sealThresholdEnabled) {
+        mainInnerHeight = kickHeight + (getSealPotkuHeightAdjust(jf, 'inner') ?? (jf.potku_kaynti_sisa_korkeus + innerHeightAdjust));
+        mainOuterHeight = kickHeight + (getSealPotkuHeightAdjust(jf, 'outer') ?? (jf.potku_kaynti_ulko_korkeus + outerHeightAdjust));
+    } else if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
         mainInnerHeight = kickHeight + (jf.rako_saneeraus_inner || -25);
         mainOuterHeight = kickHeight + (jf.rako_saneeraus_outer || 0);
@@ -1169,7 +1215,10 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     
     // Potkupellit - Lisäovi (Kick plates - Side door)
     let sideInnerHeight, sideOuterHeight;
-    if (settings.gapOption === 'saneeraus') {
+    if (settings.sealThresholdEnabled) {
+        sideInnerHeight = kickHeight + (getSealPotkuHeightAdjust(jf, 'inner') ?? (jf.potku_lisa_sisa_korkeus + innerHeightAdjust));
+        sideOuterHeight = kickHeight + (getSealPotkuHeightAdjust(jf, 'outer') ?? (jf.potku_lisa_ulko_korkeus + outerHeightAdjust));
+    } else if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
         sideInnerHeight = kickHeight + (jf.rako_saneeraus_inner || -25);
         sideOuterHeight = kickHeight + (jf.rako_saneeraus_outer || 0);
@@ -1188,8 +1237,10 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     }
     
     // Harjalistat (Brush strips)
-    results.harjalista.push(mainWidth + jf.harjalista);
-    results.harjalista.push(sideWidth + jf.harjalista);
+    if (!settings.sealThresholdEnabled) {
+        results.harjalista.push(mainWidth + jf.harjalista);
+        results.harjalista.push(sideWidth + jf.harjalista);
+    }
     
     return results;
 }
@@ -1236,22 +1287,16 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
         // Uretaanipalat
-        let uretaaniHeightAdjust;
-        if (settings.gapOption === '10mm') {
-            uretaaniHeightAdjust = jkf.uretaani_10mm || jf.uretaani_korkeus;
-        } else if (settings.gapOption === '15mm') {
-            uretaaniHeightAdjust = jkf.uretaani_15mm || jf.uretaani_korkeus;
-        } else if (settings.gapOption === 'saneeraus') {
-            uretaaniHeightAdjust = jkf.uretaani_saneeraus || jf.uretaani_korkeus;
-        } else {
-            uretaaniHeightAdjust = jkf.uretaani_8mm || jf.uretaani_korkeus;
-        }
+        const uretaaniHeightAdjust = getUretaaniHeightAdjust(jkf, jf.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
         
         // Potkupellit
         let innerHeight, outerHeight;
-        if (settings.gapOption === 'saneeraus') {
+        if (settings.sealThresholdEnabled) {
+            innerHeight = kickHeight + (getSealPotkuHeightAdjust(jkf, 'inner') ?? (jf.potku_kaynti_sisa_korkeus + innerHeightAdjust));
+            outerHeight = kickHeight + (getSealPotkuHeightAdjust(jkf, 'outer') ?? (jf.potku_kaynti_ulko_korkeus + outerHeightAdjust));
+        } else if (settings.gapOption === 'saneeraus') {
             // Saneerauskynnys: Use values from admin panel
             innerHeight = kickHeight + (jkf.rako_saneeraus_inner || -25);
             outerHeight = kickHeight + (jkf.rako_saneeraus_outer || 0);
@@ -1270,7 +1315,9 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
     }
     
     // Harjalistat
-    results.harjalista.push(mainWidth + jf.harjalista);
+    if (!settings.sealThresholdEnabled) {
+        results.harjalista.push(mainWidth + jf.harjalista);
+    }
     
     return results;
 }
@@ -1332,23 +1379,17 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
         // Uretaanipalat
-        let uretaaniHeightAdjust;
-        if (settings.gapOption === '10mm') {
-            uretaaniHeightAdjust = ef.uretaani_10mm || ef.uretaani_korkeus;
-        } else if (settings.gapOption === '15mm') {
-            uretaaniHeightAdjust = ef.uretaani_15mm || ef.uretaani_korkeus;
-        } else if (settings.gapOption === 'saneeraus') {
-            uretaaniHeightAdjust = ef.uretaani_saneeraus || ef.uretaani_korkeus;
-        } else {
-            uretaaniHeightAdjust = ef.uretaani_8mm || ef.uretaani_korkeus;
-        }
+        const uretaaniHeightAdjust = getUretaaniHeightAdjust(ef, ef.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
         results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
         
         // Potkupellit - Käyntiovi
     let mainInnerHeight, mainOuterHeight;
-    if (settings.gapOption === 'saneeraus') {
+    if (settings.sealThresholdEnabled) {
+        mainInnerHeight = kickHeight + (getSealPotkuHeightAdjust(ef, 'inner') ?? (ef.potku_kaynti_sisa_korkeus + innerHeightAdjust));
+        mainOuterHeight = kickHeight + (getSealPotkuHeightAdjust(ef, 'outer') ?? (ef.potku_kaynti_ulko_korkeus + outerHeightAdjust));
+    } else if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
         mainInnerHeight = kickHeight + (ef.rako_saneeraus_inner || -25);
         mainOuterHeight = kickHeight + (ef.rako_saneeraus_outer || 0);
@@ -1367,7 +1408,10 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     
     // Potkupellit - Lisäovi
     let sideInnerHeight, sideOuterHeight;
-    if (settings.gapOption === 'saneeraus') {
+    if (settings.sealThresholdEnabled) {
+        sideInnerHeight = kickHeight + (getSealPotkuHeightAdjust(ef, 'inner') ?? (ef.potku_lisa_sisa_korkeus + innerHeightAdjust));
+        sideOuterHeight = kickHeight + (getSealPotkuHeightAdjust(ef, 'outer') ?? (ef.potku_lisa_ulko_korkeus + outerHeightAdjust));
+    } else if (settings.gapOption === 'saneeraus') {
         // Saneerauskynnys: Use values from admin panel
         sideInnerHeight = kickHeight + (ef.rako_saneeraus_inner || -25);
         sideOuterHeight = kickHeight + (ef.rako_saneeraus_outer || 0);
@@ -1386,8 +1430,10 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     }
     
     // Harjalistat
-    results.harjalista.push(mainWidth + ef.harjalista);
-    results.harjalista.push(sideWidth + ef.harjalista);
+    if (!settings.sealThresholdEnabled) {
+        results.harjalista.push(mainWidth + ef.harjalista);
+        results.harjalista.push(sideWidth + ef.harjalista);
+    }
     
     return results;
 }
@@ -1434,22 +1480,16 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
         // Uretaanipalat
-        let uretaaniHeightAdjust;
-        if (settings.gapOption === '10mm') {
-            uretaaniHeightAdjust = ekf.uretaani_10mm || ef.uretaani_korkeus;
-        } else if (settings.gapOption === '15mm') {
-            uretaaniHeightAdjust = ekf.uretaani_15mm || ef.uretaani_korkeus;
-        } else if (settings.gapOption === 'saneeraus') {
-            uretaaniHeightAdjust = ekf.uretaani_saneeraus || ef.uretaani_korkeus;
-        } else {
-            uretaaniHeightAdjust = ekf.uretaani_8mm || ef.uretaani_korkeus;
-        }
+        const uretaaniHeightAdjust = getUretaaniHeightAdjust(ekf, ef.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
         
         // Potkupellit
         let innerHeight, outerHeight;
-        if (settings.gapOption === 'saneeraus') {
+        if (settings.sealThresholdEnabled) {
+            innerHeight = kickHeight + (getSealPotkuHeightAdjust(ekf, 'inner') ?? (ef.potku_kaynti_sisa_korkeus + innerHeightAdjust));
+            outerHeight = kickHeight + (getSealPotkuHeightAdjust(ekf, 'outer') ?? (ef.potku_kaynti_ulko_korkeus + outerHeightAdjust));
+        } else if (settings.gapOption === 'saneeraus') {
             // Saneerauskynnys: Use values from admin panel
             innerHeight = kickHeight + (ekf.rako_saneeraus_inner || -25);
             outerHeight = kickHeight + (ekf.rako_saneeraus_outer || 0);
@@ -1468,7 +1508,9 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
     }
     
     // Harjalistat
-    results.harjalista.push(mainWidth + ef.harjalista);
+    if (!settings.sealThresholdEnabled) {
+        results.harjalista.push(mainWidth + ef.harjalista);
+    }
     
     return results;
 }
@@ -1569,12 +1611,14 @@ function displayResults(results) {
             html += '</div></div>';
         }
         
-        // Harjalista
-        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
-        results.harjalista.forEach(item => {
-            html += `<div class="result-item">${item}</div>`;
-        });
-        html += '</div></div>';
+        // Harjalista (hidden when seal threshold is enabled)
+        if (!settings.sealThresholdEnabled) {
+            html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
+            results.harjalista.forEach(item => {
+                html += `<div class="result-item">${item}</div>`;
+            });
+            html += '</div></div>';
+        }
     }
     
     html += '</div>';
@@ -1821,6 +1865,9 @@ function loadPreset(name) {
     
     // Apply settings from preset
     settings = { ...preset.settings };
+    if (settings.sealThresholdEnabled === undefined) {
+        settings.sealThresholdEnabled = false;
+    }
     document.getElementById('gapOption').value = settings.gapOption;
     document.getElementById('paneCount').value = settings.paneCount;
     
@@ -1829,7 +1876,12 @@ function loadPreset(name) {
     if (kickPlateToggle) {
         kickPlateToggle.checked = settings.kickPlateEnabled;
     }
+    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
+    if (sealThresholdToggle) {
+        sealThresholdToggle.checked = settings.sealThresholdEnabled === true;
+    }
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled); // Ensure localStorage is updated
+    localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled === true);
     
     applySettings(); // Apply all settings, which also calls updatePaneInputs and calculate
     
@@ -2195,7 +2247,19 @@ function getDefaultFormulas() {
             uretaani_8mm: -126,
             uretaani_10mm: -126,
             uretaani_15mm: -126,
-            uretaani_saneeraus: -126
+            uretaani_saneeraus: -126,
+            tiiviste_uretaani_8mm: -126,
+            tiiviste_uretaani_10mm: -126,
+            tiiviste_uretaani_15mm: -126,
+            tiiviste_uretaani_saneeraus: -126,
+            tiiviste_potku_inner_8mm: -67,
+            tiiviste_potku_outer_8mm: -18,
+            tiiviste_potku_inner_10mm: -35,
+            tiiviste_potku_outer_10mm: -11,
+            tiiviste_potku_inner_15mm: -40,
+            tiiviste_potku_outer_15mm: -16,
+            tiiviste_potku_inner_saneeraus: -25,
+            tiiviste_potku_outer_saneeraus: 0
         },
         janisol_kayntiovi: {
             rako_10_inner: 32,
@@ -2207,7 +2271,19 @@ function getDefaultFormulas() {
             uretaani_8mm: -126,
             uretaani_10mm: -126,
             uretaani_15mm: -126,
-            uretaani_saneeraus: -126
+            uretaani_saneeraus: -126,
+            tiiviste_uretaani_8mm: -126,
+            tiiviste_uretaani_10mm: -126,
+            tiiviste_uretaani_15mm: -126,
+            tiiviste_uretaani_saneeraus: -126,
+            tiiviste_potku_inner_8mm: -67,
+            tiiviste_potku_outer_8mm: -18,
+            tiiviste_potku_inner_10mm: -35,
+            tiiviste_potku_outer_10mm: -11,
+            tiiviste_potku_inner_15mm: -40,
+            tiiviste_potku_outer_15mm: -16,
+            tiiviste_potku_inner_saneeraus: -25,
+            tiiviste_potku_outer_saneeraus: 0
         },
         economy_pariovi: {
             lasilista_pysty: 38,
@@ -2232,7 +2308,19 @@ function getDefaultFormulas() {
             uretaani_8mm: -121,
             uretaani_10mm: -121,
             uretaani_15mm: -121,
-            uretaani_saneeraus: -121
+            uretaani_saneeraus: -121,
+            tiiviste_uretaani_8mm: -121,
+            tiiviste_uretaani_10mm: -121,
+            tiiviste_uretaani_15mm: -121,
+            tiiviste_uretaani_saneeraus: -121,
+            tiiviste_potku_inner_8mm: -65,
+            tiiviste_potku_outer_8mm: -20,
+            tiiviste_potku_inner_10mm: -33,
+            tiiviste_potku_outer_10mm: -13,
+            tiiviste_potku_inner_15mm: -38,
+            tiiviste_potku_outer_15mm: -18,
+            tiiviste_potku_inner_saneeraus: -25,
+            tiiviste_potku_outer_saneeraus: 0
         },
         economy_kayntiovi: {
             rako_10_inner: 32,
@@ -2244,7 +2332,19 @@ function getDefaultFormulas() {
             uretaani_8mm: -121,
             uretaani_10mm: -121,
             uretaani_15mm: -121,
-            uretaani_saneeraus: -121
+            uretaani_saneeraus: -121,
+            tiiviste_uretaani_8mm: -121,
+            tiiviste_uretaani_10mm: -121,
+            tiiviste_uretaani_15mm: -121,
+            tiiviste_uretaani_saneeraus: -121,
+            tiiviste_potku_inner_8mm: -65,
+            tiiviste_potku_outer_8mm: -20,
+            tiiviste_potku_inner_10mm: -33,
+            tiiviste_potku_outer_10mm: -13,
+            tiiviste_potku_inner_15mm: -38,
+            tiiviste_potku_outer_15mm: -18,
+            tiiviste_potku_inner_saneeraus: -25,
+            tiiviste_potku_outer_saneeraus: 0
         },
         janisol_ikkuna: {
             lasilista_pysty: 41,
@@ -2632,7 +2732,19 @@ function collectFormulasFromPanel() {
             uretaani_8mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_8mm').value),
             uretaani_10mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_10mm').value),
             uretaani_15mm: parseFloat(document.getElementById('janisol_pariovi_uretaani_15mm').value),
-            uretaani_saneeraus: parseFloat(document.getElementById('janisol_pariovi_uretaani_saneeraus').value)
+            uretaani_saneeraus: parseFloat(document.getElementById('janisol_pariovi_uretaani_saneeraus').value),
+            tiiviste_uretaani_8mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_uretaani_8mm').value),
+            tiiviste_uretaani_10mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_uretaani_10mm').value),
+            tiiviste_uretaani_15mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_uretaani_15mm').value),
+            tiiviste_uretaani_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_uretaani_saneeraus').value),
+            tiiviste_potku_inner_8mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_8mm').value),
+            tiiviste_potku_outer_8mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_8mm').value),
+            tiiviste_potku_inner_10mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_10mm').value),
+            tiiviste_potku_outer_10mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_10mm').value),
+            tiiviste_potku_inner_15mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_15mm').value),
+            tiiviste_potku_outer_15mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_15mm').value),
+            tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_saneeraus').value),
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_saneeraus').value)
         },
         janisol_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_inner').value),
@@ -2644,7 +2756,19 @@ function collectFormulasFromPanel() {
             uretaani_8mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_8mm').value),
             uretaani_10mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_10mm').value),
             uretaani_15mm: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_15mm').value),
-            uretaani_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_saneeraus').value)
+            uretaani_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_uretaani_saneeraus').value),
+            tiiviste_uretaani_8mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_uretaani_8mm').value),
+            tiiviste_uretaani_10mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_uretaani_10mm').value),
+            tiiviste_uretaani_15mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_uretaani_15mm').value),
+            tiiviste_uretaani_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_uretaani_saneeraus').value),
+            tiiviste_potku_inner_8mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_8mm').value),
+            tiiviste_potku_outer_8mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_8mm').value),
+            tiiviste_potku_inner_10mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_10mm').value),
+            tiiviste_potku_outer_10mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_10mm').value),
+            tiiviste_potku_inner_15mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_15mm').value),
+            tiiviste_potku_outer_15mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_15mm').value),
+            tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_saneeraus').value),
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_saneeraus').value)
         },
         economy_pariovi: {
             lasilista_pysty: parseFloat(document.getElementById('economy_pariovi_lasilista_pysty').value),
@@ -2669,7 +2793,19 @@ function collectFormulasFromPanel() {
             uretaani_8mm: parseFloat(document.getElementById('economy_pariovi_uretaani_8mm').value),
             uretaani_10mm: parseFloat(document.getElementById('economy_pariovi_uretaani_10mm').value),
             uretaani_15mm: parseFloat(document.getElementById('economy_pariovi_uretaani_15mm').value),
-            uretaani_saneeraus: parseFloat(document.getElementById('economy_pariovi_uretaani_saneeraus').value)
+            uretaani_saneeraus: parseFloat(document.getElementById('economy_pariovi_uretaani_saneeraus').value),
+            tiiviste_uretaani_8mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_uretaani_8mm').value),
+            tiiviste_uretaani_10mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_uretaani_10mm').value),
+            tiiviste_uretaani_15mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_uretaani_15mm').value),
+            tiiviste_uretaani_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_uretaani_saneeraus').value),
+            tiiviste_potku_inner_8mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_8mm').value),
+            tiiviste_potku_outer_8mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_8mm').value),
+            tiiviste_potku_inner_10mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_10mm').value),
+            tiiviste_potku_outer_10mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_10mm').value),
+            tiiviste_potku_inner_15mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_15mm').value),
+            tiiviste_potku_outer_15mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_15mm').value),
+            tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_saneeraus').value),
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_saneeraus').value)
         },
         economy_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_10_inner').value),
@@ -2681,7 +2817,19 @@ function collectFormulasFromPanel() {
             uretaani_8mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_8mm').value),
             uretaani_10mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_10mm').value),
             uretaani_15mm: parseFloat(document.getElementById('economy_kayntiovi_uretaani_15mm').value),
-            uretaani_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_uretaani_saneeraus').value)
+            uretaani_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_uretaani_saneeraus').value),
+            tiiviste_uretaani_8mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_uretaani_8mm').value),
+            tiiviste_uretaani_10mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_uretaani_10mm').value),
+            tiiviste_uretaani_15mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_uretaani_15mm').value),
+            tiiviste_uretaani_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_uretaani_saneeraus').value),
+            tiiviste_potku_inner_8mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_8mm').value),
+            tiiviste_potku_outer_8mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_8mm').value),
+            tiiviste_potku_inner_10mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_10mm').value),
+            tiiviste_potku_outer_10mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_10mm').value),
+            tiiviste_potku_inner_15mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_15mm').value),
+            tiiviste_potku_outer_15mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_15mm').value),
+            tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_saneeraus').value),
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_saneeraus').value)
         },
         janisol_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),

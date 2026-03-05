@@ -582,7 +582,8 @@ h5 {
 }
 
 .admin-accordion-content.active {
-    max-height: 2000px;
+    max-height: none;
+    overflow: visible;
     padding: 24px;
 }
 
