@@ -1577,6 +1577,54 @@ function calculateEconomyIkkuna(paneWidths, paneHeights) {
     return results;
 }
 
+function isLasilistaSectionTitle(title) {
+    return String(title || '').trim().toLowerCase().startsWith('lasilista');
+}
+
+function getLasilistaSectionTitle(sectionTitle, itemData) {
+    const originalTitle = String(sectionTitle || '').trim();
+    if (!isLasilistaSectionTitle(originalTitle)) {
+        return originalTitle;
+    }
+
+    // Keep explicit size in old/custom data as-is (e.g. "Lasilista 12mm").
+    if (/^lasilista\s+\d+\s*mm$/i.test(originalTitle)) {
+        return originalTitle;
+    }
+
+    const size = String(itemData?.lasilistaSize || '').trim();
+    return size ? `Lasilista ${size}` : 'Lasilista';
+}
+
+function parseLasilistaRow(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+
+    const cleaned = raw.replace(/mm/gi, '').trim();
+    const matchWithCount = cleaned.match(/^(-?\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+)$/);
+    if (matchWithCount) {
+        const length = Number(matchWithCount[1].replace(',', '.'));
+        const count = Number(matchWithCount[2]);
+        if (Number.isFinite(length) && Number.isFinite(count)) {
+            return { length, count };
+        }
+    }
+
+    const matchSingle = cleaned.match(/^(-?\d+(?:[.,]\d+)?)$/);
+    if (matchSingle) {
+        const length = Number(matchSingle[1].replace(',', '.'));
+        if (Number.isFinite(length)) {
+            return { length, count: 1 };
+        }
+    }
+
+    return null;
+}
+
+function sortByFinnishNumberString(a, b) {
+    return b.localeCompare(a, 'fi', { numeric: true, sensitivity: 'base' });
+}
+
 // Display results with combined duplicates
 function displayResults(results) {
     const resultsDiv = document.getElementById('results');
@@ -2101,7 +2149,8 @@ function copyMittaResults(jobNumber, itemName, event) {
     text += '-'.repeat(40) + '\n\n';
 
     mitta.data.forEach(section => {
-        text += section.title + '\n';
+        const sectionTitle = getLasilistaSectionTitle(section.title, mitta);
+        text += sectionTitle + '\n';
         section.items.forEach(resultItem => {
             const valuePart = resultItem.value ? `: ${resultItem.value}` : '';
             text += `  ${resultItem.label}${valuePart}\n`;
@@ -2895,8 +2944,9 @@ function confirmExportToPDF() {
                 doc.addPage();
                 yPosM = 20;
             }
+            const sectionTitle = getLasilistaSectionTitle(section.title, mitta);
             doc.setFont(undefined, 'bold');
-            doc.text(section.title, 25, yPosM);
+            doc.text(sectionTitle, 25, yPosM);
             yPosM += 7;
             doc.setFont(undefined, 'normal');
 
@@ -3043,6 +3093,10 @@ function transferResults() {
     // Clear previous values
     document.getElementById('transferJobNumber').value = '';
     document.getElementById('transferItemName').value = '';
+    const sizeSelect = document.getElementById('transferLasilistaSize');
+    if (sizeSelect) {
+        sizeSelect.value = '';
+    }
     
     // Open modal
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
@@ -3053,9 +3107,10 @@ function transferResults() {
 function confirmTransferToMitat() {
     const jobNumber = document.getElementById('transferJobNumber').value.trim();
     const itemName = document.getElementById('transferItemName').value.trim();
+    const lasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
     
-    if (!jobNumber || !itemName) {
-        showToast('Täytä molemmat kentät!', 'warning');
+    if (!jobNumber || !itemName || !lasilistaSize) {
+        showToast('Täytä kaikki kentät!', 'warning');
         return;
     }
     
@@ -3072,6 +3127,7 @@ function confirmTransferToMitat() {
     const results = {
         calculator: currentCalculator,
         timestamp: new Date().toISOString(),
+        lasilistaSize: lasilistaSize,
         data: []
     };
     
@@ -3131,6 +3187,7 @@ function loadMittatView() {
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const clearAllBtn = document.getElementById('clearAllMitatBtn');
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
+    const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
     if (clearAllBtn) {
         clearAllBtn.style.display = isAdmin ? '' : 'none';
     }
@@ -3138,6 +3195,11 @@ function loadMittatView() {
         togglePackingBtn.classList.toggle('btn-primary', !isPackingListMode);
         togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
         togglePackingBtn.textContent = isPackingListMode ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
+    }
+    if (toggleLasilistaPdfBtn) {
+        toggleLasilistaPdfBtn.classList.toggle('btn-info', !isLasilistaPdfMode);
+        toggleLasilistaPdfBtn.classList.toggle('btn-success', isLasilistaPdfMode);
+        toggleLasilistaPdfBtn.textContent = isLasilistaPdfMode ? '✅ Lasilistat PDF -tila päällä' : '📄 Lasilistat PDF';
     }
     
     // Check if empty
@@ -3178,6 +3240,14 @@ function loadMittatView() {
             html += `<button class="btn btn-sm ${selectClass}" onclick="event.stopPropagation(); selectPackingJob('${sanitizeForAttribute(jobNumber)}')">${selectText}</button>`;
             if (isSelectedJob) {
                 html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadPackingList('${sanitizeForAttribute(jobNumber)}')">Lataa pakkausluettelo</button>`;
+            }
+        } else if (isLasilistaPdfMode) {
+            const isSelectedJob = selectedLasilistaPdfJobNumber === jobNumber;
+            const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
+            const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
+            html += `<button class="btn btn-sm ${selectClass}" onclick="event.stopPropagation(); selectLasilistaPdfJob('${sanitizeForAttribute(jobNumber)}')">${selectText}</button>`;
+            if (isSelectedJob) {
+                html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadLasilistaSummaryPdf('${sanitizeForAttribute(jobNumber)}')">Lataa Lasilistat PDF</button>`;
             }
         }
         html += `</div>`;
@@ -3229,6 +3299,15 @@ function loadMittatView() {
                 html += `${packingChecked ? '✓' : ''}`;
                 html += `</div>`;
                 html += `<span class="mitat-checkpoint-separator">/</span>`;
+            } else if (isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
+                const pdfKey = `${jobNumber}||${itemName}`;
+                const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
+                const pdfClass = pdfChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+                html += `<span class="mitat-mini-label">lasilistat PDF</span>`;
+                html += `<div class="${pdfClass}" title="Valitse lasilistojen PDF:ään" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
+                html += `${pdfChecked ? '✓' : ''}`;
+                html += `</div>`;
+                html += `<span class="mitat-checkpoint-separator">/</span>`;
             }
             html += `<span class="mitat-mini-label">lasilistat</span>`;
             html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
@@ -3259,8 +3338,9 @@ function loadMittatView() {
             // Render results (hidden by default)
             html += `<div class="mitat-details" id="${uniqueId}" style="display: none;">`;
             item.data.forEach(section => {
+                const sectionTitle = getLasilistaSectionTitle(section.title, item);
                 html += `<div class="mitat-result-section">`;
-                html += `<h6>${section.title}</h6>`;
+                html += `<h6>${sectionTitle}</h6>`;
                 html += `<div class="mitat-result-items">`;
                 
                 section.items.forEach(resultItem => {
@@ -3349,6 +3429,9 @@ let currentNoteButtonElement = null;
 let isPackingListMode = false;
 let selectedPackingJobNumber = null;
 let selectedPackingItems = {};
+let isLasilistaPdfMode = false;
+let selectedLasilistaPdfJobNumber = null;
+let selectedLasilistaPdfItems = {};
 
 function sanitizeForAttribute(value) {
     return String(value).replace(/'/g, "\\'");
@@ -3360,6 +3443,12 @@ function formatFinnishDate(date) {
 
 function togglePackingListMode() {
     isPackingListMode = !isPackingListMode;
+
+    if (isPackingListMode) {
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+    }
 
     if (!isPackingListMode) {
         selectedPackingJobNumber = null;
@@ -3401,6 +3490,178 @@ function togglePackingItem(jobNumber, itemName) {
     }
 
     loadMittatView();
+}
+
+function toggleLasilistaPdfMode() {
+    isLasilistaPdfMode = !isLasilistaPdfMode;
+
+    if (isLasilistaPdfMode) {
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+    } else {
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+    }
+
+    loadMittatView();
+}
+
+function selectLasilistaPdfJob(jobNumber) {
+    if (!isLasilistaPdfMode) return;
+
+    if (selectedLasilistaPdfJobNumber === jobNumber) {
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+    } else {
+        selectedLasilistaPdfJobNumber = jobNumber;
+        selectedLasilistaPdfItems = {};
+    }
+
+    loadMittatView();
+}
+
+function toggleLasilistaPdfItem(jobNumber, itemName) {
+    if (!isLasilistaPdfMode || selectedLasilistaPdfJobNumber !== jobNumber) return;
+
+    const itemKey = `${jobNumber}||${itemName}`;
+    selectedLasilistaPdfItems[itemKey] = !selectedLasilistaPdfItems[itemKey];
+
+    if (!selectedLasilistaPdfItems[itemKey]) {
+        delete selectedLasilistaPdfItems[itemKey];
+    }
+
+    loadMittatView();
+}
+
+function collectCombinedLasilistaRows(jobNumber, selectedItemNames) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const jobData = mittatData[jobNumber] || {};
+    const grouped = {};
+
+    selectedItemNames.forEach((itemName) => {
+        const itemData = jobData[itemName];
+        if (!itemData || !Array.isArray(itemData.data)) return;
+
+        const lasilistaSection = itemData.data.find((section) => isLasilistaSectionTitle(section.title));
+        if (!lasilistaSection || !Array.isArray(lasilistaSection.items)) return;
+
+        const size = String(itemData.lasilistaSize || '').trim() || 'määrittämätön';
+        if (!grouped[size]) {
+            grouped[size] = {};
+        }
+
+        lasilistaSection.items.forEach((resultItem) => {
+            const parsed = parseLasilistaRow(resultItem?.label || '');
+            if (!parsed) return;
+            const lengthKey = String(parsed.length);
+            grouped[size][lengthKey] = (grouped[size][lengthKey] || 0) + parsed.count;
+        });
+    });
+
+    return grouped;
+}
+
+async function generateLasilistaSummaryPdf(jobNumber, groupedRows) {
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+        throw new Error('jsPDF ei ole saatavilla.');
+    }
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const dateText = formatFinnishDate(new Date());
+    let y = 24;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.text('LASILISTAT', pageWidth / 2, y, { align: 'center' });
+    y += 11;
+
+    doc.setFontSize(12);
+    doc.text(`TYÖNRO: ${jobNumber}`, 20, y);
+    doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
+    y += 9;
+
+    const sizeKeys = Object.keys(groupedRows).sort((a, b) =>
+        a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
+    );
+
+    sizeKeys.forEach((size) => {
+        const lengths = Object.keys(groupedRows[size]).sort((a, b) => {
+            const aNum = Number(a);
+            const bNum = Number(b);
+            if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+                return bNum - aNum;
+            }
+            return sortByFinnishNumberString(a, b);
+        });
+
+        if (lengths.length === 0) return;
+
+        if (y > pageHeight - 30) {
+            doc.addPage();
+            y = 20;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(`Lasilista ${size}`, 20, y);
+        y += 8;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(12);
+        lengths.forEach((lengthKey) => {
+            if (y > pageHeight - 20) {
+                doc.addPage();
+                y = 20;
+            }
+            const count = groupedRows[size][lengthKey];
+            const lengthText = Number.isFinite(Number(lengthKey))
+                ? String(Number(lengthKey))
+                : lengthKey;
+            doc.text(`${lengthText} x ${count}`, 28, y);
+            y += 7;
+        });
+
+        y += 3;
+    });
+
+    const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cleanDate = dateText.replace(/\./g, '-');
+    doc.save(`lasilistat_${cleanJob}_${cleanDate}.pdf`);
+}
+
+async function downloadLasilistaSummaryPdf(jobNumber) {
+    if (!isLasilistaPdfMode || !jobNumber) {
+        showToast('Valitse ensin työnumero.', 'warning');
+        return;
+    }
+
+    const selectedItemNames = Object.keys(selectedLasilistaPdfItems)
+        .filter((key) => key.startsWith(`${jobNumber}||`) && selectedLasilistaPdfItems[key])
+        .map((key) => key.split('||')[1]);
+
+    if (selectedItemNames.length === 0) {
+        showToast('Valitse vähintään yksi ovi tai ikkuna.', 'warning');
+        return;
+    }
+
+    const groupedRows = collectCombinedLasilistaRows(jobNumber, selectedItemNames);
+    const hasRows = Object.values(groupedRows).some((rowsByLength) => Object.keys(rowsByLength).length > 0);
+    if (!hasRows) {
+        showToast('Valituista tuotteista ei löytynyt lasilistoja.', 'warning');
+        return;
+    }
+
+    try {
+        await generateLasilistaSummaryPdf(jobNumber, groupedRows);
+        showToast('Lasilistat PDF ladattu.', 'success');
+    } catch (error) {
+        console.error('❌ Lasilistat PDF -luonti epäonnistui:', error);
+        showToast('Lasilistat PDF -luonti epäonnistui.', 'error');
+    }
 }
 
 async function loadImageAsDataUrl(imagePath) {
@@ -3751,6 +4012,16 @@ function deleteJobMitat(jobNumber) {
             }
         });
     }
+    if (selectedLasilistaPdfJobNumber === jobNumber) {
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+    } else {
+        Object.keys(selectedLasilistaPdfItems).forEach((key) => {
+            if (key.startsWith(`${jobNumber}||`)) {
+                delete selectedLasilistaPdfItems[key];
+            }
+        });
+    }
     
     loadMittatView();
     showToast(`Työ ${jobNumber} poistettu`, 'info');
@@ -3803,6 +4074,10 @@ function deleteMitta(jobNumber, itemName) {
         if (selectedPackingItems[packingKey]) {
             delete selectedPackingItems[packingKey];
         }
+        const lasilistaPdfKey = `${jobNumber}||${itemName}`;
+        if (selectedLasilistaPdfItems[lasilistaPdfKey]) {
+            delete selectedLasilistaPdfItems[lasilistaPdfKey];
+        }
         
         // Also remove notes
         const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
@@ -3822,6 +4097,10 @@ function deleteMitta(jobNumber, itemName) {
             if (selectedPackingJobNumber === jobNumber) {
                 selectedPackingJobNumber = null;
                 selectedPackingItems = {};
+            }
+            if (selectedLasilistaPdfJobNumber === jobNumber) {
+                selectedLasilistaPdfJobNumber = null;
+                selectedLasilistaPdfItems = {};
             }
         }
 
@@ -3852,6 +4131,9 @@ function clearAllMitat() {
     selectedPackingJobNumber = null;
     selectedPackingItems = {};
     isPackingListMode = false;
+    selectedLasilistaPdfJobNumber = null;
+    selectedLasilistaPdfItems = {};
+    isLasilistaPdfMode = false;
     loadMittatView();
     showToast('Kaikki mitat tyhjennetty', 'info');
 }
