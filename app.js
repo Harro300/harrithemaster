@@ -335,13 +335,18 @@ function setupRealtimeListeners() {
                     mittatNotes: data.mittatNotes || {}
                 });
 
-                // Refresh Mitat view if visible
+                const isOwnUpdate = data.updatedBy === currentUser?.email;
+
+                // Refresh Mitat view if visible.
+                // Skip self-originated updates to avoid double-render flicker:
+                // local actions already update UI immediately, while remote
+                // updates from other users should still re-render in real time.
                 const mittatView = document.getElementById('mittatView');
-                if (mittatView && !mittatView.classList.contains('d-none')) {
+                if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
                     loadMittatView();
                 }
 
-                if (!isFirstLoadMitat && data.updatedBy !== currentUser?.email) {
+                if (!isFirstLoadMitat && !isOwnUpdate) {
                     showToast('Mitat-sivu päivitetty reaaliajassa', 'info');
                 }
                 isFirstLoadMitat = false;
@@ -3693,6 +3698,7 @@ async function generatePackingListPdf(jobNumber, selectedItemNames) {
     const rowLeftX = 24;
     const rowRightX = 188;
     const rowHeight = 16;
+    const itemRowFontSize = 22.4; // 20% smaller than previous 28
     const bottomReserve = 55;
     let rowY = 176;
 
@@ -3734,7 +3740,7 @@ async function generatePackingListPdf(jobNumber, selectedItemNames) {
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(28);
+        doc.setFontSize(itemRowFontSize);
         doc.text(itemName.toUpperCase(), rowLeftX, rowY);
         doc.text('1 KPL', rowRightX, rowY, { align: 'right' });
         rowY += rowHeight;
