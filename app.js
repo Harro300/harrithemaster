@@ -112,6 +112,7 @@ function getMitatStateFromLocalStorage() {
         checkedMitat: JSON.parse(localStorage.getItem('checkedMitat') || '{}'),
         doneMitat: JSON.parse(localStorage.getItem('doneMitat') || '{}'),
         packedMitat: JSON.parse(localStorage.getItem('packedMitat') || '{}'),
+        packedPackageNumbers: JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}'),
         mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}')
     };
 }
@@ -121,6 +122,7 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('checkedMitat', JSON.stringify(state.checkedMitat || {}));
     localStorage.setItem('doneMitat', JSON.stringify(state.doneMitat || {}));
     localStorage.setItem('packedMitat', JSON.stringify(state.packedMitat || {}));
+    localStorage.setItem('packedPackageNumbers', JSON.stringify(state.packedPackageNumbers || {}));
     localStorage.setItem('mittatNotes', JSON.stringify(state.mittatNotes || {}));
 }
 
@@ -332,6 +334,7 @@ function setupRealtimeListeners() {
                     checkedMitat: data.checkedMitat || {},
                     doneMitat: data.doneMitat || {},
                     packedMitat: data.packedMitat || {},
+                    packedPackageNumbers: data.packedPackageNumbers || {},
                     mittatNotes: data.mittatNotes || {}
                 });
 
@@ -344,6 +347,10 @@ function setupRealtimeListeners() {
                 const mittatView = document.getElementById('mittatView');
                 if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
                     loadMittatView();
+                }
+                const paketitView = document.getElementById('paketitView');
+                if (paketitView && !paketitView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
+                    loadPaketitView();
                 }
 
                 if (!isFirstLoadMitat && !isOwnUpdate) {
@@ -437,11 +444,15 @@ function updateAdminAccessUI() {
 
     const laskinToggleMain = document.getElementById('btn-view-laskin');
     const laskinToggleMitat = document.getElementById('btn-view-laskin-2');
+    const laskinTogglePaketit = document.getElementById('btn-view-laskin-3');
     if (laskinToggleMain) {
         laskinToggleMain.style.display = isCoordinator ? 'none' : '';
     }
     if (laskinToggleMitat) {
         laskinToggleMitat.style.display = isCoordinator ? 'none' : '';
+    }
+    if (laskinTogglePaketit) {
+        laskinTogglePaketit.style.display = isCoordinator ? 'none' : '';
     }
 }
 
@@ -571,39 +582,45 @@ if (document.readyState === 'loading') {
 }
 
 // Logout
-// Switch between Laskin and Mitat views
+// Switch between Laskin, Mitat and Paketit views
 function switchView(view) {
     const calculatorScreen = document.getElementById('calculatorScreen');
     const mittatView = document.getElementById('mittatView');
+    const paketitView = document.getElementById('paketitView');
 
     if (isCoordinator && view === 'laskin') {
         showToast('Koordinaattori-käyttäjällä on pääsy vain Mitat-sivulle.', 'warning');
         view = 'mitat';
     }
-    
-    // Toggle views
+
+    if (calculatorScreen) calculatorScreen.classList.add('d-none');
+    if (mittatView) mittatView.classList.add('d-none');
+    if (paketitView) paketitView.classList.add('d-none');
+
     if (view === 'laskin') {
-        calculatorScreen.classList.remove('d-none');
-        mittatView.classList.add('d-none');
-        
-        // Update toggle buttons - both sets
-        document.getElementById('btn-view-laskin').classList.add('active');
-        document.getElementById('btn-view-mitat').classList.remove('active');
-        document.getElementById('btn-view-laskin-2').classList.add('active');
-        document.getElementById('btn-view-mitat-2').classList.remove('active');
+        if (calculatorScreen) calculatorScreen.classList.remove('d-none');
     } else if (view === 'mitat') {
-        calculatorScreen.classList.add('d-none');
-        mittatView.classList.remove('d-none');
-        
-        // Load mitat data
+        if (mittatView) mittatView.classList.remove('d-none');
         loadMittatView();
-        
-        // Update toggle buttons - both sets
-        document.getElementById('btn-view-laskin').classList.remove('active');
-        document.getElementById('btn-view-mitat').classList.add('active');
-        document.getElementById('btn-view-laskin-2').classList.remove('active');
-        document.getElementById('btn-view-mitat-2').classList.add('active');
+    } else if (view === 'paketit') {
+        if (paketitView) paketitView.classList.remove('d-none');
+        loadPaketitView();
     }
+
+    const allViews = ['laskin', 'mitat', 'paketit'];
+    const toggleGroups = [
+        ['btn-view-laskin', 'btn-view-mitat', 'btn-view-paketit'],
+        ['btn-view-laskin-2', 'btn-view-mitat-2', 'btn-view-paketit-2'],
+        ['btn-view-laskin-3', 'btn-view-mitat-3', 'btn-view-paketit-3']
+    ];
+    toggleGroups.forEach((group) => {
+        group.forEach((buttonId, index) => {
+            const button = document.getElementById(buttonId);
+            if (button) {
+                button.classList.toggle('active', allViews[index] === view);
+            }
+        });
+    });
 }
 
 async function logout() {
@@ -630,6 +647,10 @@ async function logout() {
     // Update UI
     document.getElementById('calculatorScreen').classList.add('d-none');
     document.getElementById('mittatView').classList.add('d-none');
+    const paketitView = document.getElementById('paketitView');
+    if (paketitView) {
+        paketitView.classList.add('d-none');
+    }
     document.getElementById('loginScreen').classList.remove('d-none');
     document.getElementById('email').value = '';
     document.getElementById('password').value = '';
@@ -3324,7 +3345,7 @@ function loadMittatView() {
             html += `${doneChecked ? '✓' : ''}`;
             html += `</div>`;
             if (doneChecked && packedMitat[checkKey]) {
-                html += `<span class="mitat-packed-label">(pakattu!)</span>`;
+                html += `<span class="mitat-packed-label">(Pakattu!)</span>`;
             }
             html += `</div>`;
             html += `<div class="d-flex align-items-center gap-2">`;
@@ -3421,6 +3442,91 @@ function restoreMitatOpenState(state) {
             itemIcon.classList.add('rotated');
         }
     });
+}
+
+function loadPaketitView() {
+    const container = document.getElementById('paketitContainer');
+    if (!container) return;
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+
+    const packedByJob = {};
+    Object.keys(mittatData).forEach((jobNumber) => {
+        const itemNames = Object.keys(mittatData[jobNumber] || {});
+        const packedItems = itemNames
+            .filter((itemName) => packedMitat[`${jobNumber}-${itemName}`])
+            .map((itemName) => {
+                const checkKey = `${jobNumber}-${itemName}`;
+                const packageNumber = Number(packedPackageNumbers[checkKey]);
+                return {
+                    itemName,
+                    packageNumber: Number.isFinite(packageNumber) && packageNumber > 0 ? packageNumber : null
+                };
+            });
+        if (packedItems.length > 0) {
+            packedByJob[jobNumber] = packedItems.sort((a, b) => {
+                const aPkg = a.packageNumber ?? Number.MAX_SAFE_INTEGER;
+                const bPkg = b.packageNumber ?? Number.MAX_SAFE_INTEGER;
+                if (aPkg !== bPkg) return aPkg - bPkg;
+                return a.itemName.localeCompare(b.itemName, 'fi', { numeric: true, sensitivity: 'base' });
+            });
+        }
+    });
+
+    const jobNumbers = Object.keys(packedByJob).sort((a, b) =>
+        a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
+    );
+
+    if (jobNumbers.length === 0) {
+        container.innerHTML = '<p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>';
+        return;
+    }
+
+    let html = '';
+    jobNumbers.forEach((jobNumber) => {
+        const jobId = `paketit-job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        const packedItems = packedByJob[jobNumber];
+        const numberedPackageCount = new Set(
+            packedItems
+                .map((item) => item.packageNumber)
+                .filter((value) => Number.isFinite(value) && value > 0)
+        ).size;
+        const hasUnnumberedItems = packedItems.some((item) => !item.packageNumber);
+        const packageCount = numberedPackageCount + (hasUnnumberedItems ? 1 : 0);
+
+        html += `<div class="mitat-job-section">`;
+        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')">`;
+        html += `<div class="d-flex align-items-center gap-2">`;
+        html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
+        html += `<span class="mitat-mini-label">(${packedItems.length} PAKATTU / ${packageCount} PAKETTIA)</span>`;
+        html += `</div>`;
+        html += `<div class="d-flex align-items-center gap-2">`;
+        if (isAdmin) {
+            html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${sanitizeForAttribute(jobNumber)}')">🗑️</button>`;
+        }
+        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
+        html += `</div>`;
+        html += `</div>`;
+
+        html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
+        packedItems.forEach((packedItem) => {
+            const packageText = packedItem.packageNumber ? `(Paketti ${packedItem.packageNumber})` : '(Pakattu!)';
+            html += `<div class="mitat-item-section">`;
+            html += `<div class="mitat-item-header-main">`;
+            html += `<div class="d-flex align-items-center gap-2">`;
+            html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
+            html += `<span class="mitat-packed-label">${packageText}</span>`;
+            html += `</div>`;
+            html += `</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+        html += `</div>`;
+    });
+
+    container.innerHTML = html;
 }
 
 // ============================================
@@ -3779,13 +3885,30 @@ async function downloadPackingList(jobNumber) {
     try {
         await generatePackingListPdf(jobNumber, selectedItemNames);
         const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+        const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+        const existingPackageNumbers = Object.entries(packedPackageNumbers)
+            .filter(([key, value]) => key.startsWith(`${jobNumber}-`) && Number(value) > 0)
+            .map(([, value]) => Number(value));
+        const nextPackageNumber = existingPackageNumbers.length > 0
+            ? Math.max(...existingPackageNumbers) + 1
+            : 1;
+
         selectedItemNames.forEach((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;
             packedMitat[checkKey] = true;
+            packedPackageNumbers[checkKey] = nextPackageNumber;
         });
         localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+        localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
         syncMitatStateToFirestore();
-        loadMittatView();
+        const mittatView = document.getElementById('mittatView');
+        const paketitView = document.getElementById('paketitView');
+        if (mittatView && !mittatView.classList.contains('d-none')) {
+            loadMittatView();
+        }
+        if (paketitView && !paketitView.classList.contains('d-none')) {
+            loadPaketitView();
+        }
         showToast('Pakkausluettelo ladattu.', 'success');
     } catch (error) {
         console.error('❌ Pakkausluettelon PDF-luonti epäonnistui:', error);
@@ -3919,6 +4042,7 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
     const isDone = !doneMitat[checkKey];
     if (isDone && !checkedMitat[checkKey]) {
         showToast('Merkitse ensin lasilistat ennen tehty-merkintää.', 'warning');
@@ -3930,9 +4054,11 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
         delete doneMitat[checkKey];
         // If item is no longer "done", remove packed marker as well.
         delete packedMitat[checkKey];
+        delete packedPackageNumbers[checkKey];
     }
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+    localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
     syncMitatStateToFirestore();
 
     // Update checkbox UI in-place so open panels don't collapse
@@ -3986,6 +4112,7 @@ function deleteJobMitat(jobNumber) {
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
     const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
     const itemNames = Object.keys(mittatData[jobNumber]);
     
@@ -3994,6 +4121,7 @@ function deleteJobMitat(jobNumber) {
         delete checkedMitat[checkKey];
         delete doneMitat[checkKey];
         delete packedMitat[checkKey];
+        delete packedPackageNumbers[checkKey];
         delete mittatNotes[`item-${jobNumber}-${itemName}`];
     });
     
@@ -4005,6 +4133,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
+    localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     syncMitatStateToFirestore();
 
@@ -4076,6 +4205,12 @@ function deleteMitta(jobNumber, itemName) {
             localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
         }
 
+        const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+        if (Object.prototype.hasOwnProperty.call(packedPackageNumbers, checkKey)) {
+            delete packedPackageNumbers[checkKey];
+            localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
+        }
+
         const packingKey = `${jobNumber}||${itemName}`;
         if (selectedPackingItems[packingKey]) {
             delete selectedPackingItems[packingKey];
@@ -4132,6 +4267,7 @@ function clearAllMitat() {
     localStorage.removeItem('checkedMitat');
     localStorage.removeItem('doneMitat');
     localStorage.removeItem('packedMitat');
+    localStorage.removeItem('packedPackageNumbers');
     localStorage.removeItem('mittatNotes');
     syncMitatStateToFirestore();
     selectedPackingJobNumber = null;
