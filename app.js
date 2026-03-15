@@ -1613,13 +1613,25 @@ function getLasilistaSectionTitle(sectionTitle, itemData) {
         return originalTitle;
     }
 
-    // Keep explicit size in old/custom data as-is (e.g. "Lasilista 12mm").
-    if (/^lasilista\s+\d+\s*mm$/i.test(originalTitle)) {
+    const color = String(itemData?.lasilistaColor || '').trim();
+    const withColor = (baseTitle) => {
+        if (!color) return baseTitle;
+        if (/\([^()]+\)\s*$/i.test(baseTitle)) return baseTitle;
+        return `${baseTitle} (${color})`;
+    };
+
+    // Keep fully explicit old/custom title as-is.
+    if (/^lasilista\s+\d+\s*mm\s*\(.+\)$/i.test(originalTitle)) {
         return originalTitle;
     }
 
+    // Keep explicit size in old/custom data as-is (e.g. "Lasilista 12mm").
+    if (/^lasilista\s+\d+\s*mm$/i.test(originalTitle)) {
+        return withColor(originalTitle);
+    }
+
     const size = String(itemData?.lasilistaSize || '').trim();
-    return size ? `Lasilista ${size}` : 'Lasilista';
+    return withColor(size ? `Lasilista ${size}` : 'Lasilista');
 }
 
 function parseLasilistaRow(text) {
@@ -3106,6 +3118,72 @@ function confirmExportToPDF() {
 // MITAT VIEW - Transfer Results Functionality
 // ============================================
 
+function getJobDefaultLasilistaColor(jobNumber) {
+    const normalizedJobNumber = String(jobNumber || '').trim();
+    if (!normalizedJobNumber) return '';
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const jobData = mittatData[normalizedJobNumber];
+    if (!jobData || typeof jobData !== 'object') return '';
+
+    let latestColor = '';
+    let latestTimestamp = Number.NEGATIVE_INFINITY;
+    let fallbackColor = '';
+
+    Object.values(jobData).forEach((itemData) => {
+        const color = String(itemData?.lasilistaColor || '').trim();
+        if (!color) return;
+
+        if (!fallbackColor) {
+            fallbackColor = color;
+        }
+
+        const timestamp = Date.parse(String(itemData?.timestamp || ''));
+        if (Number.isFinite(timestamp) && timestamp > latestTimestamp) {
+            latestTimestamp = timestamp;
+            latestColor = color;
+        }
+    });
+
+    return latestColor || fallbackColor;
+}
+
+function prefillTransferLasilistaColor() {
+    const jobInput = document.getElementById('transferJobNumber');
+    const colorInput = document.getElementById('transferLasilistaColor');
+    if (!jobInput || !colorInput) return;
+
+    const jobNumber = jobInput.value.trim();
+    const currentColor = colorInput.value.trim();
+    const wasAutofilled = colorInput.dataset.autofilled === '1';
+
+    if (!jobNumber) {
+        if (wasAutofilled) {
+            colorInput.value = '';
+        }
+        colorInput.dataset.autofilled = '0';
+        return;
+    }
+
+    const suggestedColor = getJobDefaultLasilistaColor(jobNumber);
+    if (!suggestedColor) {
+        if (wasAutofilled) {
+            colorInput.value = '';
+            colorInput.dataset.autofilled = '0';
+        }
+        return;
+    }
+
+    if (!currentColor || wasAutofilled) {
+        colorInput.value = suggestedColor;
+        colorInput.dataset.autofilled = '1';
+    }
+}
+
+function normalizeLasilistaColor(colorValue) {
+    return String(colorValue || '').trim().toUpperCase();
+}
+
 // Open transfer modal
 function transferResults() {
     const resultsDiv = document.getElementById('results');
@@ -3123,6 +3201,24 @@ function transferResults() {
     if (sizeSelect) {
         sizeSelect.value = '';
     }
+    const colorInput = document.getElementById('transferLasilistaColor');
+    if (colorInput) {
+        colorInput.value = '';
+        colorInput.dataset.autofilled = '0';
+    }
+
+    const jobInput = document.getElementById('transferJobNumber');
+    if (jobInput && !jobInput.dataset.colorPrefillBound) {
+        jobInput.addEventListener('input', prefillTransferLasilistaColor);
+        jobInput.addEventListener('change', prefillTransferLasilistaColor);
+        jobInput.dataset.colorPrefillBound = '1';
+    }
+    if (colorInput && !colorInput.dataset.autofillTrackBound) {
+        colorInput.addEventListener('input', () => {
+            colorInput.dataset.autofilled = '0';
+        });
+        colorInput.dataset.autofillTrackBound = '1';
+    }
     
     // Open modal
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
@@ -3134,6 +3230,7 @@ function confirmTransferToMitat() {
     const jobNumber = document.getElementById('transferJobNumber').value.trim();
     const itemName = document.getElementById('transferItemName').value.trim();
     const lasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
+    const lasilistaColor = normalizeLasilistaColor(document.getElementById('transferLasilistaColor')?.value || '');
     
     if (!jobNumber || !itemName || !lasilistaSize) {
         showToast('Täytä kaikki kentät!', 'warning');
@@ -3154,6 +3251,7 @@ function confirmTransferToMitat() {
         calculator: currentCalculator,
         timestamp: new Date().toISOString(),
         lasilistaSize: lasilistaSize,
+        lasilistaColor: lasilistaColor,
         data: []
     };
     
@@ -3673,7 +3771,7 @@ function collectCombinedLasilistaRows(jobNumber, selectedItemNames) {
     return grouped;
 }
 
-async function generateLasilistaSummaryPdf(jobNumber, groupedRows) {
+async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColor = '') {
     const { jsPDF } = window.jspdf || {};
     if (!jsPDF) {
         throw new Error('jsPDF ei ole saatavilla.');
@@ -3691,7 +3789,8 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows) {
     y += 11;
 
     doc.setFontSize(12);
-    doc.text(`TYÖNRO: ${jobNumber}`, 20, y);
+    const jobLine = lasilistaColor ? `TYÖNRO: ${jobNumber} / ${lasilistaColor}` : `TYÖNRO: ${jobNumber}`;
+    doc.text(jobLine, 20, y);
     doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
     y += 9;
 
@@ -3759,6 +3858,19 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
         return;
     }
 
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const jobData = mittatData[jobNumber] || {};
+    const selectedColors = Array.from(new Set(
+        selectedItemNames
+            .map((itemName) => String(jobData[itemName]?.lasilistaColor || '').trim())
+            .filter((color) => color !== '')
+    ));
+
+    if (selectedColors.length > 1) {
+        showToast('Et voi yhdistää eri värisiä lasilistoja samaan Lasilistat PDF -tiedostoon.', 'warning');
+        return;
+    }
+
     const groupedRows = collectCombinedLasilistaRows(jobNumber, selectedItemNames);
     const hasRows = Object.values(groupedRows).some((rowsByLength) => Object.keys(rowsByLength).length > 0);
     if (!hasRows) {
@@ -3767,7 +3879,7 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
     }
 
     try {
-        await generateLasilistaSummaryPdf(jobNumber, groupedRows);
+        await generateLasilistaSummaryPdf(jobNumber, groupedRows, selectedColors[0] || '');
         showToast('Lasilistat PDF ladattu.', 'success');
     } catch (error) {
         console.error('❌ Lasilistat PDF -luonti epäonnistui:', error);
