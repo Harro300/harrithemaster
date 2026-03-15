@@ -3902,7 +3902,7 @@ async function loadImageAsDataUrl(imagePath) {
     });
 }
 
-async function generatePackingListPdf(jobNumber, selectedItemNames) {
+async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) {
     const { jsPDF } = window.jspdf || {};
     if (!jsPDF) {
         throw new Error('jsPDF ei ole saatavilla.');
@@ -3942,6 +3942,7 @@ async function generatePackingListPdf(jobNumber, selectedItemNames) {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(infoFontSize);
         doc.text(dateText, 22, 135);
+        doc.text(packerName, 84, 135);
         doc.text(jobNumber, 145, 135);
     };
 
@@ -3994,8 +3995,19 @@ async function downloadPackingList(jobNumber) {
         return;
     }
 
+    const packerNameInput = window.prompt('Anna pakkaajan nimi:');
+    if (packerNameInput === null) {
+        showToast('Pakkausluettelon luonti peruttu.', 'info');
+        return;
+    }
+    const packerName = packerNameInput.trim();
+    if (!packerName) {
+        showToast('Anna pakkaajan nimi.', 'warning');
+        return;
+    }
+
     try {
-        await generatePackingListPdf(jobNumber, selectedItemNames);
+        await generatePackingListPdf(jobNumber, selectedItemNames, packerName);
         const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
         const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
         const existingPackageNumbers = Object.entries(packedPackageNumbers)
