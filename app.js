@@ -3118,66 +3118,93 @@ function confirmExportToPDF() {
 // MITAT VIEW - Transfer Results Functionality
 // ============================================
 
-function getJobDefaultLasilistaColor(jobNumber) {
+function getJobLatestTransferDefaults(jobNumber) {
     const normalizedJobNumber = String(jobNumber || '').trim();
-    if (!normalizedJobNumber) return '';
+    if (!normalizedJobNumber) {
+        return { itemName: '', lasilistaSize: '', lasilistaColor: '' };
+    }
 
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const jobData = mittatData[normalizedJobNumber];
-    if (!jobData || typeof jobData !== 'object') return '';
+    if (!jobData || typeof jobData !== 'object') {
+        return { itemName: '', lasilistaSize: '', lasilistaColor: '' };
+    }
 
-    let latestColor = '';
+    let latestItemName = '';
+    let latestItemData = null;
     let latestTimestamp = Number.NEGATIVE_INFINITY;
-    let fallbackColor = '';
+    let fallbackItemName = '';
+    let fallbackItemData = null;
 
-    Object.values(jobData).forEach((itemData) => {
-        const color = String(itemData?.lasilistaColor || '').trim();
-        if (!color) return;
+    Object.entries(jobData).forEach(([itemName, itemData]) => {
+        if (!itemData || typeof itemData !== 'object') return;
 
-        if (!fallbackColor) {
-            fallbackColor = color;
-        }
+        // Fallback to latest observed object order if timestamps are missing/invalid.
+        fallbackItemName = String(itemName || '').trim();
+        fallbackItemData = itemData;
 
         const timestamp = Date.parse(String(itemData?.timestamp || ''));
         if (Number.isFinite(timestamp) && timestamp > latestTimestamp) {
             latestTimestamp = timestamp;
-            latestColor = color;
+            latestItemName = String(itemName || '').trim();
+            latestItemData = itemData;
         }
     });
 
-    return latestColor || fallbackColor;
+    const chosenItemName = latestItemName || fallbackItemName;
+    const chosenItemData = latestItemData || fallbackItemData || {};
+
+    return {
+        itemName: chosenItemName,
+        lasilistaSize: String(chosenItemData?.lasilistaSize || '').trim(),
+        lasilistaColor: String(chosenItemData?.lasilistaColor || '').trim()
+    };
 }
 
-function prefillTransferLasilistaColor() {
+function applyTransferFieldAutofill(field, suggestedValue) {
+    if (!field) return;
+
+    const currentValue = String(field.value || '').trim();
+    const wasAutofilled = field.dataset.autofilled === '1';
+
+    if (!suggestedValue) {
+        if (wasAutofilled) {
+            field.value = '';
+            field.dataset.autofilled = '0';
+        }
+        return;
+    }
+
+    if (!currentValue || wasAutofilled) {
+        field.value = suggestedValue;
+        field.dataset.autofilled = '1';
+    }
+}
+
+function prefillTransferFields() {
     const jobInput = document.getElementById('transferJobNumber');
+    const itemNameInput = document.getElementById('transferItemName');
+    const sizeSelect = document.getElementById('transferLasilistaSize');
     const colorInput = document.getElementById('transferLasilistaColor');
-    if (!jobInput || !colorInput) return;
+    if (!jobInput || !itemNameInput || !sizeSelect || !colorInput) return;
 
     const jobNumber = jobInput.value.trim();
-    const currentColor = colorInput.value.trim();
-    const wasAutofilled = colorInput.dataset.autofilled === '1';
 
     if (!jobNumber) {
-        if (wasAutofilled) {
-            colorInput.value = '';
-        }
-        colorInput.dataset.autofilled = '0';
+        [itemNameInput, sizeSelect, colorInput].forEach((field) => {
+            if (field.dataset.autofilled === '1') {
+                field.value = '';
+            }
+            field.dataset.autofilled = '0';
+        });
         return;
     }
 
-    const suggestedColor = getJobDefaultLasilistaColor(jobNumber);
-    if (!suggestedColor) {
-        if (wasAutofilled) {
-            colorInput.value = '';
-            colorInput.dataset.autofilled = '0';
-        }
-        return;
-    }
+    const defaults = getJobLatestTransferDefaults(jobNumber);
 
-    if (!currentColor || wasAutofilled) {
-        colorInput.value = suggestedColor;
-        colorInput.dataset.autofilled = '1';
-    }
+    applyTransferFieldAutofill(itemNameInput, defaults.itemName);
+    applyTransferFieldAutofill(sizeSelect, defaults.lasilistaSize);
+    applyTransferFieldAutofill(colorInput, defaults.lasilistaColor);
 }
 
 function normalizeLasilistaColor(colorValue) {
@@ -3196,10 +3223,15 @@ function transferResults() {
     
     // Clear previous values
     document.getElementById('transferJobNumber').value = '';
-    document.getElementById('transferItemName').value = '';
+    const itemNameInput = document.getElementById('transferItemName');
+    if (itemNameInput) {
+        itemNameInput.value = '';
+        itemNameInput.dataset.autofilled = '0';
+    }
     const sizeSelect = document.getElementById('transferLasilistaSize');
     if (sizeSelect) {
         sizeSelect.value = '';
+        sizeSelect.dataset.autofilled = '0';
     }
     const colorInput = document.getElementById('transferLasilistaColor');
     if (colorInput) {
@@ -3208,10 +3240,22 @@ function transferResults() {
     }
 
     const jobInput = document.getElementById('transferJobNumber');
-    if (jobInput && !jobInput.dataset.colorPrefillBound) {
-        jobInput.addEventListener('input', prefillTransferLasilistaColor);
-        jobInput.addEventListener('change', prefillTransferLasilistaColor);
-        jobInput.dataset.colorPrefillBound = '1';
+    if (jobInput && !jobInput.dataset.transferPrefillBound) {
+        jobInput.addEventListener('input', prefillTransferFields);
+        jobInput.addEventListener('change', prefillTransferFields);
+        jobInput.dataset.transferPrefillBound = '1';
+    }
+    if (itemNameInput && !itemNameInput.dataset.autofillTrackBound) {
+        itemNameInput.addEventListener('input', () => {
+            itemNameInput.dataset.autofilled = '0';
+        });
+        itemNameInput.dataset.autofillTrackBound = '1';
+    }
+    if (sizeSelect && !sizeSelect.dataset.autofillTrackBound) {
+        sizeSelect.addEventListener('change', () => {
+            sizeSelect.dataset.autofilled = '0';
+        });
+        sizeSelect.dataset.autofillTrackBound = '1';
     }
     if (colorInput && !colorInput.dataset.autofillTrackBound) {
         colorInput.addEventListener('input', () => {
@@ -3335,8 +3379,36 @@ function loadMittatView() {
     // Build HTML
     let html = '';
     
-    // Sort job numbers
-    const jobNumbers = Object.keys(mittatData).sort();
+    // Sort job numbers by latest added/updated item timestamp:
+    // oldest first, newest last (newest appears on the bottom row).
+    const getJobLatestTimestamp = (jobNumber) => {
+        const jobData = mittatData[jobNumber];
+        if (!jobData || typeof jobData !== 'object') return Number.NEGATIVE_INFINITY;
+
+        let latestTimestamp = Number.NEGATIVE_INFINITY;
+        let fallbackTimestamp = Number.NEGATIVE_INFINITY;
+
+        Object.values(jobData).forEach((itemData) => {
+            if (!itemData || typeof itemData !== 'object') return;
+
+            // Fallback to latest observed object order when timestamp is missing/invalid.
+            fallbackTimestamp += 1;
+
+            const parsedTimestamp = Date.parse(String(itemData?.timestamp || ''));
+            if (Number.isFinite(parsedTimestamp) && parsedTimestamp > latestTimestamp) {
+                latestTimestamp = parsedTimestamp;
+            }
+        });
+
+        return Number.isFinite(latestTimestamp) ? latestTimestamp : fallbackTimestamp;
+    };
+
+    const jobNumbers = Object.keys(mittatData).sort((a, b) => {
+        const aLatest = getJobLatestTimestamp(a);
+        const bLatest = getJobLatestTimestamp(b);
+        if (aLatest !== bLatest) return aLatest - bLatest;
+        return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+    });
     
     jobNumbers.forEach(jobNumber => {
         const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
