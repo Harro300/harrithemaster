@@ -277,11 +277,11 @@
                         </select>
                         <div class="form-text">Kaavasetin vaihto on sallittu kaikille käyttäjille. Uusien kaavasettien luonti vaatii admin-oikeudet.</div>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="umpioviSetting">
                         <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">Dark Mode</label>
+                            <label class="form-label mb-0">Umpiovi</label>
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="darkModeToggle" onchange="toggleDarkMode()">
+                                <input class="form-check-input" type="checkbox" id="umpioviToggle" onchange="applySettings()">
                             </div>
                         </div>
                     </div>
@@ -726,6 +726,105 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        <div class="formula-group">
+                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_leveys" class="formula-input" value="115">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_leveys" class="formula-input" value="165">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_8mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_10mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_15mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_sisa_saneeraus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_8mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_10mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_15mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_lisa_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi sisä leveys:</label>
+                                <span>Lisäoven leveys +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_lisa_sisa_leveys" class="formula-input" value="140">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_lisa_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi ulko leveys:</label>
+                                <span>Lisäoven leveys +</span>
+                                <input type="number" id="janisol_pariovi_umpiovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -868,6 +967,81 @@
                             <div class="formula-row">
                                 <label>Saneerauskynnys - Ulkopelti:</label>
                                 <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        <div class="formula-group">
+                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_leveys" class="formula-input" value="115">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_leveys" class="formula-input" value="165">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_8mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_10mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_15mm" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_sisa_saneeraus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_8mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_10mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_15mm" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-18">
                                 <span>mm</span>
                             </div>
                         </div>
@@ -1112,6 +1286,105 @@
                                 <span>mm</span>
                             </div>
                         </div>
+                        <div class="formula-group">
+                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_leveys" class="formula-input" value="110">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_leveys" class="formula-input" value="160">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_8mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_10mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_15mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_sisa_saneeraus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_8mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_10mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_15mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_lisa_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi sisä leveys:</label>
+                                <span>Lisäoven leveys +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_lisa_sisa_leveys" class="formula-input" value="135">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_lisa_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Lisäovi ulko leveys:</label>
+                                <span>Lisäoven leveys +</span>
+                                <input type="number" id="economy_pariovi_umpiovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1254,6 +1527,81 @@
                             <div class="formula-row">
                                 <label>Saneerauskynnys - Ulkopelti:</label>
                                 <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
+                                <span>mm</span>
+                            </div>
+                        </div>
+                        <div class="formula-group">
+                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_leveys" class="formula-input" value="110">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Oven leveys +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_leveys" class="formula-input" value="160">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_8mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_10mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_15mm" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_sisa_saneeraus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>8 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_8mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>10 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_10mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>15 mm rako - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_15mm" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Saneerauskynnys - Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-20">
                                 <span>mm</span>
                             </div>
                         </div>
@@ -1406,7 +1754,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R9"></script>
+    <script src="app.js?v=20260304R17"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

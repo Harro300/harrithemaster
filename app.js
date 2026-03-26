@@ -4,7 +4,8 @@ let settings = {
     gapOption: 8,
     paneCount: 1,
     kickPlateEnabled: true,
-    sealThresholdEnabled: false
+    sealThresholdEnabled: false,
+    umpioviEnabled: false
 };
 
 // Firebase state
@@ -396,16 +397,7 @@ function stopRealtimeListeners() {
     console.log('✅ Kuuntelijat lopetettu');
 }
 
-// Dark mode initialization
 document.addEventListener('DOMContentLoaded', function() {
-    // Load dark mode preference
-    const darkMode = localStorage.getItem('darkMode') === 'true';
-    if (darkMode) {
-        document.body.classList.add('dark-mode');
-        const toggle = document.getElementById('darkModeToggle');
-        if (toggle) toggle.checked = true;
-    }
-    
     // Load kick plate setting
     const kickPlateEnabled = localStorage.getItem('kickPlateEnabled');
     if (kickPlateEnabled !== null) {
@@ -425,16 +417,91 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sealThresholdEnabled !== null) {
         settings.sealThresholdEnabled = sealThresholdEnabled === 'true';
     }
+
+    const umpioviEnabled = localStorage.getItem('umpioviEnabled');
+    if (umpioviEnabled !== null) {
+        settings.umpioviEnabled = umpioviEnabled === 'true';
+    }
     
     // Initialize Firebase Auth listener
     initializeFirebaseAuth();
     
     // Update settings info display
     updateSettingsInfo();
+    updateCalculatorInputVisibility();
+    bindSettingsLiveUpdateHandlers();
 });
 
 // Valid passwords
 const VALID_PASSWORDS = ['Soma<3', '1234'];
+
+function isWindowCalculatorType(type = currentCalculator) {
+    return Boolean(type && type.includes('ikkuna'));
+}
+
+function isDoorCalculatorType(type = currentCalculator) {
+    return Boolean(type && !type.includes('ikkuna'));
+}
+
+function isUmpioviNoResultsMode() {
+    return isDoorCalculatorType() &&
+        settings.umpioviEnabled === true &&
+        settings.kickPlateEnabled === false &&
+        settings.sealThresholdEnabled === true;
+}
+
+function updateCalculatorInputVisibility() {
+    const isWindowCalculator = isWindowCalculatorType();
+    const isPariovi = currentCalculator && currentCalculator.includes('pariovi');
+    const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
+
+    const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
+    const sideDoorContainer = document.getElementById('sideDoorWidthContainer');
+    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+    const paneInputsContainer = document.getElementById('paneHeightInputs');
+
+    if (mainWidthContainer) {
+        if (isWindowCalculator && settings.paneCount > 1) {
+            mainWidthContainer.style.display = 'none';
+        } else {
+            mainWidthContainer.style.display = '';
+        }
+    }
+
+    if (sideDoorContainer) {
+        if (isWindowCalculator) {
+            sideDoorContainer.style.display = 'none';
+        } else {
+            sideDoorContainer.style.display = isPariovi ? 'block' : 'none';
+        }
+    }
+
+    if (kickPlateContainer) {
+        if (isWindowCalculator) {
+            kickPlateContainer.style.display = 'none';
+        } else {
+            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
+        }
+    }
+
+    if (paneInputsContainer) {
+        paneInputsContainer.style.display = isUmpiovi ? 'none' : '';
+    }
+}
+
+function bindSettingsLiveUpdateHandlers() {
+    const settingIds = ['gapOption', 'paneCount', 'kickPlateToggle', 'sealThresholdToggle', 'umpioviToggle'];
+
+    settingIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || el.dataset.liveApplyBound === '1') return;
+
+        // Ensure result updates immediately from settings controls.
+        el.addEventListener('input', applySettings);
+        el.addEventListener('change', applySettings);
+        el.dataset.liveApplyBound = '1';
+    });
+}
 
 function updateAdminAccessUI() {
     const adminLockButton = document.getElementById('adminLockButton');
@@ -674,14 +741,6 @@ function selectCalculator(type) {
     
     const isWindowCalculator = type.includes('ikkuna');
     
-    // Show/hide side door input
-    const sideDoorContainer = document.getElementById('sideDoorWidthContainer');
-    if (type.includes('pariovi')) {
-        sideDoorContainer.style.display = 'block';
-    } else {
-        sideDoorContainer.style.display = 'none';
-    }
-    
     // For window calculators, change label text and adjust layout
     const mainDoorInput = document.getElementById('mainDoorWidth');
     const mainDoorLabel = document.getElementById('mainDoorWidthLabel');
@@ -700,27 +759,20 @@ function selectCalculator(type) {
     
     // Settings button is always visible now (windows also have settings)
     
-    // For window calculators with multiple panes, hide the main width input
-    const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
-    if (mainWidthContainer) {
-        if (isWindowCalculator && settings.paneCount > 1) {
-            mainWidthContainer.style.display = 'none';
-        } else {
-            mainWidthContainer.style.display = '';
-        }
-    }
-    
-    // Reset settings (but keep kick plate and seal threshold toggles)
+    // Reset settings (but keep door toggles)
     const savedKickPlateEnabled = localStorage.getItem('kickPlateEnabled');
     const kickPlateEnabled = savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true;
     const savedSealThresholdEnabled = localStorage.getItem('sealThresholdEnabled');
     const sealThresholdEnabled = savedSealThresholdEnabled !== null ? savedSealThresholdEnabled === 'true' : false;
+    const savedUmpioviEnabled = localStorage.getItem('umpioviEnabled');
+    const umpioviEnabled = savedUmpioviEnabled !== null ? savedUmpioviEnabled === 'true' : false;
     
     settings = {
         gapOption: 8,
         paneCount: 1,
         kickPlateEnabled: kickPlateEnabled,
-        sealThresholdEnabled: sealThresholdEnabled
+        sealThresholdEnabled: sealThresholdEnabled,
+        umpioviEnabled: umpioviEnabled
     };
     document.getElementById('gapOption').value = '8';
     document.getElementById('paneCount').value = '1';
@@ -734,18 +786,13 @@ function selectCalculator(type) {
     if (sealThresholdToggle) {
         sealThresholdToggle.checked = sealThresholdEnabled;
     }
-    
-    // Update kick plate visibility (hide for windows)
-    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
-    if (kickPlateContainer) {
-        if (isWindowCalculator) {
-            kickPlateContainer.style.display = 'none';
-        } else {
-            kickPlateContainer.style.display = kickPlateEnabled ? '' : 'none';
-        }
+    const umpioviToggle = document.getElementById('umpioviToggle');
+    if (umpioviToggle) {
+        umpioviToggle.checked = umpioviEnabled;
     }
     
     updatePaneInputs();
+    updateCalculatorInputVisibility();
     updateSettingsInfo();
     
     // Calculate initial results
@@ -756,11 +803,7 @@ function selectCalculator(type) {
 function openSettings() {
     const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
-    
-    // Update dark mode toggle state
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    darkModeToggle.checked = document.body.classList.contains('dark-mode');
-    
+
     // Update kick plate toggle state
     const kickPlateToggle = document.getElementById('kickPlateToggle');
     if (kickPlateToggle) {
@@ -770,14 +813,22 @@ function openSettings() {
     if (sealThresholdToggle) {
         sealThresholdToggle.checked = settings.sealThresholdEnabled === true;
     }
+    const umpioviToggle = document.getElementById('umpioviToggle');
+    if (umpioviToggle) {
+        umpioviToggle.checked = settings.umpioviEnabled === true;
+    }
     
-    // Hide rako, kick plate and seal threshold settings for window calculators
+    // Hide door-specific settings for window calculators
     const gapOptionSetting = document.getElementById('gapOptionSetting');
+    const umpioviSetting = document.getElementById('umpioviSetting');
     const kickPlateSetting = document.getElementById('kickPlateSetting');
     const sealThresholdSetting = document.getElementById('sealThresholdSetting');
     
     if (gapOptionSetting) {
         gapOptionSetting.style.display = isWindowCalculator ? 'none' : '';
+    }
+    if (umpioviSetting) {
+        umpioviSetting.style.display = isWindowCalculator ? 'none' : '';
     }
     if (kickPlateSetting) {
         kickPlateSetting.style.display = isWindowCalculator ? 'none' : '';
@@ -790,19 +841,6 @@ function openSettings() {
     loadFormulaSetsList();
     
     modal.show();
-}
-
-// Toggle dark mode
-function toggleDarkMode() {
-    const isDark = document.getElementById('darkModeToggle').checked;
-    
-    if (isDark) {
-        document.body.classList.add('dark-mode');
-        localStorage.setItem('darkMode', 'true');
-    } else {
-        document.body.classList.remove('dark-mode');
-        localStorage.setItem('darkMode', 'false');
-    }
 }
 
 // Update settings info display
@@ -850,34 +888,15 @@ function applySettings() {
     settings.paneCount = parseInt(document.getElementById('paneCount').value);
     settings.kickPlateEnabled = document.getElementById('kickPlateToggle').checked;
     settings.sealThresholdEnabled = !!document.getElementById('sealThresholdToggle')?.checked;
+    settings.umpioviEnabled = !!document.getElementById('umpioviToggle')?.checked;
     
     // Save settings to localStorage
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
     localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled);
-    
-    const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
-    
-    // Show/hide kick plate height input (always hide for window calculators)
-    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
-    if (kickPlateContainer) {
-        if (isWindowCalculator) {
-            kickPlateContainer.style.display = 'none'; // Always hide for windows
-        } else {
-            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
-        }
-    }
-    
-    // For window calculators with multiple panes, hide the main width input
-    const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
-    if (mainWidthContainer) {
-        if (isWindowCalculator && settings.paneCount > 1) {
-            mainWidthContainer.style.display = 'none';
-        } else {
-            mainWidthContainer.style.display = '';
-        }
-    }
+    localStorage.setItem('umpioviEnabled', settings.umpioviEnabled);
     
     updatePaneInputs();
+    updateCalculatorInputVisibility();
     updateSettingsInfo();
     calculate();
 }
@@ -908,6 +927,13 @@ function fillFieldsBelow(currentIndex, fieldType) {
 function updatePaneInputs() {
     const container = document.getElementById('paneHeightInputs');
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isUmpioviMode = isDoorCalculatorType() && settings.umpioviEnabled === true;
+
+    if (isUmpioviMode) {
+        container.className = 'col-md-6 col-lg-3';
+        container.innerHTML = '';
+        return;
+    }
     
     // For window calculators with multiple panes, show width + height for each
     if (isWindowCalculator && settings.paneCount > 1) {
@@ -1071,27 +1097,39 @@ function calculate() {
     const kickPlateHeight = parseInt(document.getElementById('kickPlateHeight').value) || 0;
     
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isUmpioviMode = isDoorCalculatorType() && settings.umpioviEnabled === true;
+
+    if (isUmpioviNoResultsMode()) {
+        document.getElementById('results').innerHTML = '<p class="text-muted">Umpiovi + Tiivistekynnys ilman potkupeltiä: ei laskettavia mittoja.</p>';
+        return;
+    }
     
     const paneHeights = [];
     const paneWidths = [];
     
-    // For window calculators with multiple panes, collect widths and heights
-    if (isWindowCalculator && settings.paneCount > 1) {
-        for (let i = 1; i <= settings.paneCount; i++) {
-            const width = parseInt(document.getElementById(`paneWidth${i}`).value) || 0;
-            const height = parseInt(document.getElementById(`paneHeight${i}`).value) || 0;
-            paneWidths.push(width);
-            paneHeights.push(height);
-        }
-    } else {
-        // For doors or single pane windows, collect heights only
-        for (let i = 1; i <= settings.paneCount; i++) {
-            const height = parseInt(document.getElementById(`paneHeight${i}`).value) || 0;
-            paneHeights.push(height);
-        }
-        // For single pane windows, use mainDoorWidth as the only width
-        if (isWindowCalculator) {
-            paneWidths.push(mainDoorWidth);
+    // Umpiovi mode does not use pane inputs.
+    if (!isUmpioviMode) {
+        // For window calculators with multiple panes, collect widths and heights
+        if (isWindowCalculator && settings.paneCount > 1) {
+            for (let i = 1; i <= settings.paneCount; i++) {
+                const widthEl = document.getElementById(`paneWidth${i}`);
+                const heightEl = document.getElementById(`paneHeight${i}`);
+                const width = parseInt(widthEl?.value) || 0;
+                const height = parseInt(heightEl?.value) || 0;
+                paneWidths.push(width);
+                paneHeights.push(height);
+            }
+        } else {
+            // For doors or single pane windows, collect heights only
+            for (let i = 1; i <= settings.paneCount; i++) {
+                const heightEl = document.getElementById(`paneHeight${i}`);
+                const height = parseInt(heightEl?.value) || 0;
+                paneHeights.push(height);
+            }
+            // For single pane windows, use mainDoorWidth as the only width
+            if (isWindowCalculator) {
+                paneWidths.push(mainDoorWidth);
+            }
         }
     }
     
@@ -1115,15 +1153,23 @@ function calculate() {
     
     // Calculate based on calculator type
     if (currentCalculator === 'janisol-pariovi') {
-        results = calculateJanisolPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
+        results = isUmpioviMode
+            ? calculateUmpioviResults(mainDoorWidth, sideDoorWidth, kickPlateHeight, 'janisol-pariovi')
+            : calculateJanisolPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'janisol-kayntiovi') {
-        results = calculateJanisolKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
+        results = isUmpioviMode
+            ? calculateUmpioviResults(mainDoorWidth, 0, kickPlateHeight, 'janisol-kayntiovi')
+            : calculateJanisolKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'janisol-ikkuna') {
         results = calculateJanisolIkkuna(paneWidths, paneHeights);
     } else if (currentCalculator === 'economy-pariovi') {
-        results = calculateEconomyPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
+        results = isUmpioviMode
+            ? calculateUmpioviResults(mainDoorWidth, sideDoorWidth, kickPlateHeight, 'economy-pariovi')
+            : calculateEconomyPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-kayntiovi') {
-        results = calculateEconomyKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
+        results = isUmpioviMode
+            ? calculateUmpioviResults(mainDoorWidth, 0, kickPlateHeight, 'economy-kayntiovi')
+            : calculateEconomyKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-ikkuna') {
         results = calculateEconomyIkkuna(paneWidths, paneHeights);
     }
@@ -1153,6 +1199,79 @@ function getSealPotkuHeightAdjust(activeFormulas, type) {
     const gapSuffix = getGapFormulaSuffix();
     const key = `tiiviste_potku_${type}_${gapSuffix}`;
     return activeFormulas[key];
+}
+
+function getUmpioviFormulaSet(calculatorType, formulas) {
+    if (calculatorType === 'janisol-pariovi') return formulas.janisol_pariovi;
+    if (calculatorType === 'janisol-kayntiovi') return formulas.janisol_kayntiovi;
+    if (calculatorType === 'economy-pariovi') return formulas.economy_pariovi;
+    if (calculatorType === 'economy-kayntiovi') return formulas.economy_kayntiovi;
+    return null;
+}
+
+function getUmpioviHarjalistaAdjust(calculatorType, formulas) {
+    if (calculatorType.startsWith('janisol')) return formulas?.janisol_pariovi?.harjalista ?? 141;
+    return formulas?.economy_pariovi?.harjalista ?? 141;
+}
+
+function calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calculatorType) {
+    const formulas = getActiveFormulas();
+    const activeFormulaSet = getUmpioviFormulaSet(calculatorType, formulas);
+    const harjalistaAdjust = getUmpioviHarjalistaAdjust(calculatorType, formulas);
+
+    const isPariovi = calculatorType && calculatorType.includes('pariovi');
+    const leaves = isPariovi
+        ? [{ width: mainWidth, type: 'main' }, { width: sideWidth, type: 'side' }]
+        : [{ width: mainWidth, type: 'main' }];
+
+    const results = {
+        lasilista: [],
+        uretaani: [],
+        potkupelti: [],
+        harjalista: leaves.map((leaf) => leaf.width + harjalistaAdjust)
+    };
+
+    if (settings.kickPlateEnabled) {
+        const isJanisol = calculatorType.startsWith('janisol');
+        const fallbackInnerHeight = isJanisol ? -67 : -65;
+        const fallbackInnerWidth = isJanisol ? 115 : 110;
+        const fallbackOuterHeight = isJanisol ? -18 : -20;
+        const fallbackOuterWidth = isJanisol ? 165 : 160;
+        const gapSuffix = getGapFormulaSuffix();
+
+        leaves.forEach((leaf) => {
+            const width = leaf.width;
+            const useSideFormulas = isPariovi && leaf.type === 'side';
+
+            const gapInnerHeight = activeFormulaSet?.[`umpiovi_potku_sisa_${gapSuffix}`];
+            const gapOuterHeight = activeFormulaSet?.[`umpiovi_potku_ulko_${gapSuffix}`];
+
+            const innerHeightAdjust = useSideFormulas
+                ? (gapInnerHeight ?? activeFormulaSet?.umpiovi_potku_lisa_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_korkeus ?? fallbackInnerHeight)
+                : (gapInnerHeight ?? activeFormulaSet?.umpiovi_potku_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_korkeus ?? fallbackInnerHeight);
+            const innerWidthAdjust = useSideFormulas
+                ? (activeFormulaSet?.umpiovi_potku_lisa_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_leveys ?? fallbackInnerWidth)
+                : (activeFormulaSet?.umpiovi_potku_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_leveys ?? fallbackInnerWidth);
+            const outerHeightAdjust = useSideFormulas
+                ? (gapOuterHeight ?? activeFormulaSet?.umpiovi_potku_lisa_ulko_korkeus ?? activeFormulaSet?.umpiovi_potku_ulko_korkeus ?? fallbackOuterHeight)
+                : (gapOuterHeight ?? activeFormulaSet?.umpiovi_potku_ulko_korkeus ?? fallbackOuterHeight);
+            const outerWidthAdjust = useSideFormulas
+                ? (activeFormulaSet?.umpiovi_potku_lisa_ulko_leveys ?? activeFormulaSet?.umpiovi_potku_ulko_leveys ?? fallbackOuterWidth)
+                : (activeFormulaSet?.umpiovi_potku_ulko_leveys ?? fallbackOuterWidth);
+
+            // Inner kickplate (Umpiovi formula pair)
+            results.potkupelti.push(`${kickHeight + innerHeightAdjust} x ${width + innerWidthAdjust}`);
+
+            // Outer kickplate (Umpiovi-specific formula pair)
+            let outerWidth = width + outerWidthAdjust;
+            if (kickHeight > 310) {
+                outerWidth -= 5;
+            }
+            results.potkupelti.push(`${kickHeight + outerHeightAdjust} x ${outerWidth}`);
+        });
+    }
+
+    return results;
 }
 
 // Calculate Janisol Pariovi
@@ -1667,20 +1786,23 @@ function sortByFinnishNumberString(a, b) {
 function displayResults(results) {
     const resultsDiv = document.getElementById('results');
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isUmpioviMode = isDoorCalculatorType() && settings.umpioviEnabled === true;
     let html = '<div class="row">';
     
-    // Lasilista
-    html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Lasilista</h5>';
-    const combinedLasilista = combineResults(results.lasilista);
-    combinedLasilista.forEach(item => {
-        html += `<div class="result-item">${item}</div>`;
-    });
-    html += '</div></div>';
+    if (!isUmpioviMode) {
+        // Lasilista
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Lasilista</h5>';
+        const combinedLasilista = combineResults(results.lasilista);
+        combinedLasilista.forEach(item => {
+            html += `<div class="result-item">${item}</div>`;
+        });
+        html += '</div></div>';
+    }
     
     // For window calculators, only show glass strips
     if (!isWindowCalculator) {
         // Uretaani (only show if kick plates are enabled)
-        if (settings.kickPlateEnabled && results.uretaani.length > 0) {
+        if (!isUmpioviMode && settings.kickPlateEnabled && results.uretaani.length > 0) {
             html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
             results.uretaani.forEach(item => {
                 html += `<div class="result-item">${item}</div>`;
@@ -1697,8 +1819,8 @@ function displayResults(results) {
             html += '</div></div>';
         }
         
-        // Harjalista (hidden when seal threshold is enabled)
-        if (!settings.sealThresholdEnabled) {
+        // Harjalista (normally hidden with seal threshold, but shown in umpiovi mode)
+        if (isUmpioviMode || !settings.sealThresholdEnabled) {
             html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
             results.harjalista.forEach(item => {
                 html += `<div class="result-item">${item}</div>`;
@@ -1954,6 +2076,9 @@ function loadPreset(name) {
     if (settings.sealThresholdEnabled === undefined) {
         settings.sealThresholdEnabled = false;
     }
+    if (settings.umpioviEnabled === undefined) {
+        settings.umpioviEnabled = false;
+    }
     document.getElementById('gapOption').value = settings.gapOption;
     document.getElementById('paneCount').value = settings.paneCount;
     
@@ -1966,16 +2091,17 @@ function loadPreset(name) {
     if (sealThresholdToggle) {
         sealThresholdToggle.checked = settings.sealThresholdEnabled === true;
     }
+    const umpioviToggle = document.getElementById('umpioviToggle');
+    if (umpioviToggle) {
+        umpioviToggle.checked = settings.umpioviEnabled === true;
+    }
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled); // Ensure localStorage is updated
     localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled === true);
+    localStorage.setItem('umpioviEnabled', settings.umpioviEnabled === true);
     
     applySettings(); // Apply all settings, which also calls updatePaneInputs and calculate
     
-    // Ensure kick plate field is hidden for window calculators (double-check)
-    const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
-    if (kickPlateContainer && isWindowCalculator) {
-        kickPlateContainer.style.display = 'none';
-    }
+    updateCalculatorInputVisibility();
     
     // Load pane heights and widths
     if (isWindowCalculator && settings.paneCount > 1) {
@@ -2346,7 +2472,23 @@ function getDefaultFormulas() {
             tiiviste_potku_inner_15mm: -40,
             tiiviste_potku_outer_15mm: -16,
             tiiviste_potku_inner_saneeraus: -25,
-            tiiviste_potku_outer_saneeraus: 0
+            tiiviste_potku_outer_saneeraus: 0,
+            umpiovi_potku_sisa_korkeus: -67,
+            umpiovi_potku_sisa_leveys: 115,
+            umpiovi_potku_ulko_korkeus: -18,
+            umpiovi_potku_ulko_leveys: 165,
+            umpiovi_potku_sisa_8mm: -67,
+            umpiovi_potku_sisa_10mm: -67,
+            umpiovi_potku_sisa_15mm: -67,
+            umpiovi_potku_sisa_saneeraus: -67,
+            umpiovi_potku_ulko_8mm: -18,
+            umpiovi_potku_ulko_10mm: -18,
+            umpiovi_potku_ulko_15mm: -18,
+            umpiovi_potku_ulko_saneeraus: -18,
+            umpiovi_potku_lisa_sisa_korkeus: -67,
+            umpiovi_potku_lisa_sisa_leveys: 140,
+            umpiovi_potku_lisa_ulko_korkeus: -18,
+            umpiovi_potku_lisa_ulko_leveys: 140
         },
         janisol_kayntiovi: {
             rako_10_inner: 32,
@@ -2370,7 +2512,19 @@ function getDefaultFormulas() {
             tiiviste_potku_inner_15mm: -40,
             tiiviste_potku_outer_15mm: -16,
             tiiviste_potku_inner_saneeraus: -25,
-            tiiviste_potku_outer_saneeraus: 0
+            tiiviste_potku_outer_saneeraus: 0,
+            umpiovi_potku_sisa_korkeus: -67,
+            umpiovi_potku_sisa_leveys: 115,
+            umpiovi_potku_ulko_korkeus: -18,
+            umpiovi_potku_ulko_leveys: 165,
+            umpiovi_potku_sisa_8mm: -67,
+            umpiovi_potku_sisa_10mm: -67,
+            umpiovi_potku_sisa_15mm: -67,
+            umpiovi_potku_sisa_saneeraus: -67,
+            umpiovi_potku_ulko_8mm: -18,
+            umpiovi_potku_ulko_10mm: -18,
+            umpiovi_potku_ulko_15mm: -18,
+            umpiovi_potku_ulko_saneeraus: -18
         },
         economy_pariovi: {
             lasilista_pysty: 38,
@@ -2407,7 +2561,23 @@ function getDefaultFormulas() {
             tiiviste_potku_inner_15mm: -38,
             tiiviste_potku_outer_15mm: -18,
             tiiviste_potku_inner_saneeraus: -25,
-            tiiviste_potku_outer_saneeraus: 0
+            tiiviste_potku_outer_saneeraus: 0,
+            umpiovi_potku_sisa_korkeus: -65,
+            umpiovi_potku_sisa_leveys: 110,
+            umpiovi_potku_ulko_korkeus: -20,
+            umpiovi_potku_ulko_leveys: 160,
+            umpiovi_potku_sisa_8mm: -65,
+            umpiovi_potku_sisa_10mm: -65,
+            umpiovi_potku_sisa_15mm: -65,
+            umpiovi_potku_sisa_saneeraus: -65,
+            umpiovi_potku_ulko_8mm: -20,
+            umpiovi_potku_ulko_10mm: -20,
+            umpiovi_potku_ulko_15mm: -20,
+            umpiovi_potku_ulko_saneeraus: -20,
+            umpiovi_potku_lisa_sisa_korkeus: -65,
+            umpiovi_potku_lisa_sisa_leveys: 135,
+            umpiovi_potku_lisa_ulko_korkeus: -20,
+            umpiovi_potku_lisa_ulko_leveys: 135
         },
         economy_kayntiovi: {
             rako_10_inner: 32,
@@ -2431,7 +2601,19 @@ function getDefaultFormulas() {
             tiiviste_potku_inner_15mm: -38,
             tiiviste_potku_outer_15mm: -18,
             tiiviste_potku_inner_saneeraus: -25,
-            tiiviste_potku_outer_saneeraus: 0
+            tiiviste_potku_outer_saneeraus: 0,
+            umpiovi_potku_sisa_korkeus: -65,
+            umpiovi_potku_sisa_leveys: 110,
+            umpiovi_potku_ulko_korkeus: -20,
+            umpiovi_potku_ulko_leveys: 160,
+            umpiovi_potku_sisa_8mm: -65,
+            umpiovi_potku_sisa_10mm: -65,
+            umpiovi_potku_sisa_15mm: -65,
+            umpiovi_potku_sisa_saneeraus: -65,
+            umpiovi_potku_ulko_8mm: -20,
+            umpiovi_potku_ulko_10mm: -20,
+            umpiovi_potku_ulko_15mm: -20,
+            umpiovi_potku_ulko_saneeraus: -20
         },
         janisol_ikkuna: {
             lasilista_pysty: 41,
@@ -2831,7 +3013,23 @@ function collectFormulasFromPanel() {
             tiiviste_potku_inner_15mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_15mm').value),
             tiiviste_potku_outer_15mm: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_15mm').value),
             tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_inner_saneeraus').value),
-            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_saneeraus').value)
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_potku_outer_saneeraus').value),
+            umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_korkeus').value),
+            umpiovi_potku_sisa_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_leveys').value),
+            umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_korkeus').value),
+            umpiovi_potku_ulko_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_leveys').value),
+            umpiovi_potku_sisa_8mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_8mm').value),
+            umpiovi_potku_sisa_10mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_10mm').value),
+            umpiovi_potku_sisa_15mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_15mm').value),
+            umpiovi_potku_sisa_saneeraus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_sisa_saneeraus').value),
+            umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_8mm').value),
+            umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_10mm').value),
+            umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_15mm').value),
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_ulko_saneeraus').value),
+            umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_sisa_korkeus').value),
+            umpiovi_potku_lisa_sisa_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_sisa_leveys').value),
+            umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_ulko_korkeus').value),
+            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_ulko_leveys').value)
         },
         janisol_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_inner').value),
@@ -2855,7 +3053,19 @@ function collectFormulasFromPanel() {
             tiiviste_potku_inner_15mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_15mm').value),
             tiiviste_potku_outer_15mm: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_15mm').value),
             tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_inner_saneeraus').value),
-            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_saneeraus').value)
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_potku_outer_saneeraus').value),
+            umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_korkeus').value),
+            umpiovi_potku_sisa_leveys: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_leveys').value),
+            umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_korkeus').value),
+            umpiovi_potku_ulko_leveys: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_leveys').value),
+            umpiovi_potku_sisa_8mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_8mm').value),
+            umpiovi_potku_sisa_10mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_10mm').value),
+            umpiovi_potku_sisa_15mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_15mm').value),
+            umpiovi_potku_sisa_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_sisa_saneeraus').value),
+            umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_8mm').value),
+            umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_10mm').value),
+            umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_15mm').value),
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_saneeraus').value)
         },
         economy_pariovi: {
             lasilista_pysty: parseFloat(document.getElementById('economy_pariovi_lasilista_pysty').value),
@@ -2892,7 +3102,23 @@ function collectFormulasFromPanel() {
             tiiviste_potku_inner_15mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_15mm').value),
             tiiviste_potku_outer_15mm: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_15mm').value),
             tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_inner_saneeraus').value),
-            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_saneeraus').value)
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_pariovi_tiiviste_potku_outer_saneeraus').value),
+            umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_korkeus').value),
+            umpiovi_potku_sisa_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_leveys').value),
+            umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_korkeus').value),
+            umpiovi_potku_ulko_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_leveys').value),
+            umpiovi_potku_sisa_8mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_8mm').value),
+            umpiovi_potku_sisa_10mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_10mm').value),
+            umpiovi_potku_sisa_15mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_15mm').value),
+            umpiovi_potku_sisa_saneeraus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_sisa_saneeraus').value),
+            umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_8mm').value),
+            umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_10mm').value),
+            umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_15mm').value),
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_ulko_saneeraus').value),
+            umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_sisa_korkeus').value),
+            umpiovi_potku_lisa_sisa_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_sisa_leveys').value),
+            umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_ulko_korkeus').value),
+            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_ulko_leveys').value)
         },
         economy_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_10_inner').value),
@@ -2916,7 +3142,19 @@ function collectFormulasFromPanel() {
             tiiviste_potku_inner_15mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_15mm').value),
             tiiviste_potku_outer_15mm: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_15mm').value),
             tiiviste_potku_inner_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_inner_saneeraus').value),
-            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_saneeraus').value)
+            tiiviste_potku_outer_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_potku_outer_saneeraus').value),
+            umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_korkeus').value),
+            umpiovi_potku_sisa_leveys: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_leveys').value),
+            umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_korkeus').value),
+            umpiovi_potku_ulko_leveys: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_leveys').value),
+            umpiovi_potku_sisa_8mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_8mm').value),
+            umpiovi_potku_sisa_10mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_10mm').value),
+            umpiovi_potku_sisa_15mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_15mm').value),
+            umpiovi_potku_sisa_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_sisa_saneeraus').value),
+            umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_8mm').value),
+            umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_10mm').value),
+            umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_15mm').value),
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_saneeraus').value)
         },
         janisol_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),
@@ -3215,8 +3453,9 @@ function normalizeLasilistaColor(colorValue) {
 function transferResults() {
     const resultsDiv = document.getElementById('results');
     const sections = resultsDiv.querySelectorAll('.result-section');
+    const isNoResultsTransferMode = isUmpioviNoResultsMode();
     
-    if (sections.length === 0) {
+    if (sections.length === 0 && !isNoResultsTransferMode) {
         showToast('Ei tuloksia siirrettäväksi. Syötä ensin mitat.', 'warning');
         return;
     }
@@ -3275,8 +3514,9 @@ function confirmTransferToMitat() {
     const itemName = document.getElementById('transferItemName').value.trim();
     const lasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
     const lasilistaColor = normalizeLasilistaColor(document.getElementById('transferLasilistaColor')?.value || '');
+    const isNoResultsTransferMode = isUmpioviNoResultsMode();
     
-    if (!jobNumber || !itemName || !lasilistaSize) {
+    if (!jobNumber || !itemName || (!isNoResultsTransferMode && !lasilistaSize)) {
         showToast('Täytä kaikki kentät!', 'warning');
         return;
     }
@@ -3285,7 +3525,7 @@ function confirmTransferToMitat() {
     const resultsDiv = document.getElementById('results');
     const sections = resultsDiv.querySelectorAll('.result-section');
     
-    if (sections.length === 0) {
+    if (sections.length === 0 && !isNoResultsTransferMode) {
         showToast('Ei tuloksia siirrettäväksi.', 'warning');
         return;
     }
@@ -3296,6 +3536,7 @@ function confirmTransferToMitat() {
         timestamp: new Date().toISOString(),
         lasilistaSize: lasilistaSize,
         lasilistaColor: lasilistaColor,
+        metadataOnly: isNoResultsTransferMode,
         data: []
     };
     
