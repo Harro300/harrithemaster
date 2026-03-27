@@ -848,22 +848,21 @@ function updateSettingsInfo() {
     
     if (!settingsInfoEl) return;
     
-    // Hide for window calculators (no gap setting)
-    if (isWindowCalculator) {
-        settingsInfoEl.style.visibility = 'hidden';
-    } else {
-        settingsInfoEl.style.visibility = 'visible';
-        
-        // Update gap setting text
-        if (gapSettingEl) {
-            let gapText = '';
-            if (settings.gapOption === 'saneeraus') {
-                gapText = 'Saneerauskynnys';
-            } else {
-                gapText = `${settings.gapOption} mm rako`;
-            }
-            gapSettingEl.textContent = gapText;
+    settingsInfoEl.style.visibility = 'visible';
+    
+    const gapRow = gapSettingEl ? gapSettingEl.parentElement : null;
+    if (gapRow) {
+        gapRow.style.display = isWindowCalculator ? 'none' : '';
+    }
+    
+    if (!isWindowCalculator && gapSettingEl) {
+        let gapText = '';
+        if (settings.gapOption === 'saneeraus') {
+            gapText = 'Saneerauskynnys';
+        } else {
+            gapText = `${settings.gapOption} mm rako`;
         }
+        gapSettingEl.textContent = gapText;
     }
     
     // Update formula set text (always shown)
@@ -875,6 +874,14 @@ function updateSettingsInfo() {
             formulaSetEl.textContent = activeSetName;
         }
     }
+
+    const potkupeltiInfo = document.getElementById('settingsInfoPotkupelti');
+    const tiivisteInfo = document.getElementById('settingsInfoTiivistekynnys');
+    const umpioviInfo = document.getElementById('settingsInfoUmpiovi');
+
+    if (potkupeltiInfo) potkupeltiInfo.style.display = settings.kickPlateEnabled ? '' : 'none';
+    if (tiivisteInfo) tiivisteInfo.style.display = settings.sealThresholdEnabled ? '' : 'none';
+    if (umpioviInfo) umpioviInfo.style.display = settings.umpioviEnabled ? '' : 'none';
 }
 
 // Apply settings
