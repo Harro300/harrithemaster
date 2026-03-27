@@ -477,11 +477,7 @@ function updateCalculatorInputVisibility() {
     }
 
     if (kickPlateContainer) {
-        if (isWindowCalculator) {
-            kickPlateContainer.style.display = 'none';
-        } else {
-            kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
-        }
+        kickPlateContainer.style.display = settings.kickPlateEnabled ? '' : 'none';
     }
 
     if (paneInputsContainer) {
@@ -831,7 +827,7 @@ function openSettings() {
         umpioviSetting.style.display = isWindowCalculator ? 'none' : '';
     }
     if (kickPlateSetting) {
-        kickPlateSetting.style.display = isWindowCalculator ? 'none' : '';
+        kickPlateSetting.style.display = '';
     }
     if (sealThresholdSetting) {
         sealThresholdSetting.style.display = isWindowCalculator ? 'none' : '';
@@ -1144,7 +1140,7 @@ function calculate() {
         return;
     }
     
-    if (!isWindowCalculator && settings.kickPlateEnabled && kickPlateHeight < 100) {
+    if (settings.kickPlateEnabled && kickPlateHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
             return;
     }
@@ -1161,7 +1157,7 @@ function calculate() {
             ? calculateUmpioviResults(mainDoorWidth, 0, kickPlateHeight, 'janisol-kayntiovi')
             : calculateJanisolKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'janisol-ikkuna') {
-        results = calculateJanisolIkkuna(paneWidths, paneHeights);
+        results = calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight);
     } else if (currentCalculator === 'economy-pariovi') {
         results = isUmpioviMode
             ? calculateUmpioviResults(mainDoorWidth, sideDoorWidth, kickPlateHeight, 'economy-pariovi')
@@ -1171,7 +1167,7 @@ function calculate() {
             ? calculateUmpioviResults(mainDoorWidth, 0, kickPlateHeight, 'economy-kayntiovi')
             : calculateEconomyKayntiovi(mainDoorWidth, kickPlateHeight, paneHeights);
     } else if (currentCalculator === 'economy-ikkuna') {
-        results = calculateEconomyIkkuna(paneWidths, paneHeights);
+        results = calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight);
     }
     
     displayResults(results);
@@ -1661,7 +1657,7 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
 }
 
 // Calculate Janisol Ikkuna (Windows only - glass strips only)
-function calculateJanisolIkkuna(paneWidths, paneHeights) {
+function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1669,30 +1665,39 @@ function calculateJanisolIkkuna(paneWidths, paneHeights) {
         harjalista: []
     };
     
-    // Get formulas (use Janisol Ikkuna formulas)
     const formulas = getActiveFormulas();
     const jif = formulas.janisol_ikkuna;
     
-    // Lasilistat - Use Janisol Ikkuna formulas
     paneHeights.forEach((height, index) => {
-        const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
+        const width = paneWidths[index] || paneWidths[0];
         
-        // 2 vertical strips per pane
-        const verticalLength = height + jif.lasilista_pysty;  // height + 41mm (default)
+        const verticalLength = height + jif.lasilista_pysty;
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
-        // 2 horizontal strips per pane
-        const horizontalLength = width + jif.lasilista_vaaka;  // width + 3mm (default)
+        const horizontalLength = width + jif.lasilista_vaaka;
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
+    
+    if (settings.kickPlateEnabled && kickPlateHeight) {
+        const widths = paneWidths.length > 0 ? paneWidths : [0];
+        widths.forEach(width => {
+            const innerH = kickPlateHeight + (jif.potku_sisa_korkeus || -67);
+            const innerW = width + (jif.potku_sisa_leveys || 115);
+            results.potkupelti.push(`${innerH} x ${innerW}`);
+            
+            const outerH = kickPlateHeight + (jif.potku_ulko_korkeus || -18);
+            const outerW = width + (jif.potku_ulko_leveys || 165);
+            results.potkupelti.push(`${outerH} x ${outerW}`);
+        });
+    }
     
     return results;
 }
 
 // Calculate Economy Ikkuna (Windows only - glass strips only)
-function calculateEconomyIkkuna(paneWidths, paneHeights) {
+function calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1700,24 +1705,33 @@ function calculateEconomyIkkuna(paneWidths, paneHeights) {
         harjalista: []
     };
     
-    // Get formulas (use Economy Ikkuna formulas)
     const formulas = getActiveFormulas();
     const eif = formulas.economy_ikkuna;
     
-    // Lasilistat - Use Economy Ikkuna formulas
     paneHeights.forEach((height, index) => {
-        const width = paneWidths[index] || paneWidths[0]; // Use first width if not specified
+        const width = paneWidths[index] || paneWidths[0];
         
-        // 2 vertical strips per pane
-        const verticalLength = height + eif.lasilista_pysty;  // height + 38mm (default)
+        const verticalLength = height + eif.lasilista_pysty;
         results.lasilista.push(verticalLength);
         results.lasilista.push(verticalLength);
         
-        // 2 horizontal strips per pane
-        const horizontalLength = width + eif.lasilista_vaaka;  // width - 2mm (default)
+        const horizontalLength = width + eif.lasilista_vaaka;
         results.lasilista.push(horizontalLength);
         results.lasilista.push(horizontalLength);
     });
+    
+    if (settings.kickPlateEnabled && kickPlateHeight) {
+        const widths = paneWidths.length > 0 ? paneWidths : [0];
+        widths.forEach(width => {
+            const innerH = kickPlateHeight + (eif.potku_sisa_korkeus || -65);
+            const innerW = width + (eif.potku_sisa_leveys || 110);
+            results.potkupelti.push(`${innerH} x ${innerW}`);
+            
+            const outerH = kickPlateHeight + (eif.potku_ulko_korkeus || -20);
+            const outerW = width + (eif.potku_ulko_leveys || 160);
+            results.potkupelti.push(`${outerH} x ${outerW}`);
+        });
+    }
     
     return results;
 }
@@ -1799,27 +1813,26 @@ function displayResults(results) {
         html += '</div></div>';
     }
     
-    // For window calculators, only show glass strips
+    // Uretaani (only for doors, not windows)
+    if (!isWindowCalculator && !isUmpioviMode && settings.kickPlateEnabled && results.uretaani.length > 0) {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
+        results.uretaani.forEach(item => {
+            html += `<div class="result-item">${item}</div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Potkupelti (doors and windows when kickplate enabled)
+    if (settings.kickPlateEnabled && results.potkupelti.length > 0) {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
+        results.potkupelti.forEach(item => {
+            html += `<div class="result-item">${item}</div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    // Harjalista (only for doors)
     if (!isWindowCalculator) {
-        // Uretaani (only show if kick plates are enabled)
-        if (!isUmpioviMode && settings.kickPlateEnabled && results.uretaani.length > 0) {
-            html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
-            results.uretaani.forEach(item => {
-                html += `<div class="result-item">${item}</div>`;
-            });
-            html += '</div></div>';
-        }
-        
-        // Potkupelti (only show if kick plates are enabled)
-        if (settings.kickPlateEnabled && results.potkupelti.length > 0) {
-            html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Potkupelti</h5>';
-            results.potkupelti.forEach(item => {
-                html += `<div class="result-item">${item}</div>`;
-            });
-            html += '</div></div>';
-        }
-        
-        // Harjalista (normally hidden with seal threshold, but shown in umpiovi mode)
         if (isUmpioviMode || !settings.sealThresholdEnabled) {
             html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Harjalista</h5>';
             results.harjalista.forEach(item => {
@@ -2617,11 +2630,19 @@ function getDefaultFormulas() {
         },
         janisol_ikkuna: {
             lasilista_pysty: 41,
-            lasilista_vaaka: 3
+            lasilista_vaaka: 3,
+            potku_sisa_korkeus: -67,
+            potku_sisa_leveys: 115,
+            potku_ulko_korkeus: -18,
+            potku_ulko_leveys: 165
         },
         economy_ikkuna: {
             lasilista_pysty: 38,
-            lasilista_vaaka: -2
+            lasilista_vaaka: -2,
+            potku_sisa_korkeus: -65,
+            potku_sisa_leveys: 110,
+            potku_ulko_korkeus: -20,
+            potku_ulko_leveys: 160
         }
     };
 }
@@ -3158,11 +3179,19 @@ function collectFormulasFromPanel() {
         },
         janisol_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),
-            lasilista_vaaka: parseFloat(document.getElementById('janisol_ikkuna_lasilista_vaaka').value)
+            lasilista_vaaka: parseFloat(document.getElementById('janisol_ikkuna_lasilista_vaaka').value),
+            potku_sisa_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_korkeus').value),
+            potku_sisa_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_leveys').value),
+            potku_ulko_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_korkeus').value),
+            potku_ulko_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_leveys').value)
         },
         economy_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('economy_ikkuna_lasilista_pysty').value),
-            lasilista_vaaka: parseFloat(document.getElementById('economy_ikkuna_lasilista_vaaka').value)
+            lasilista_vaaka: parseFloat(document.getElementById('economy_ikkuna_lasilista_vaaka').value),
+            potku_sisa_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_korkeus').value),
+            potku_sisa_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_leveys').value),
+            potku_ulko_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_korkeus').value),
+            potku_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_leveys').value)
         }
     };
 }

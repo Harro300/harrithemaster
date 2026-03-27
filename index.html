@@ -1615,7 +1615,7 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
-                        <p class="text-muted mb-3">Ikkunalaskuri - vain lasilistat</p>
+                        <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
                         <div class="formula-group">
                             <h6>📏 Lasilista-kaavat</h6>
@@ -1632,6 +1632,34 @@
                                 <span>mm</span>
                             </div>
                         </div>
+
+                        <div class="formula-group">
+                            <h6>🦶 Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_ikkuna_potku_sisa_korkeus" class="formula-input" value="-67">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="janisol_ikkuna_potku_sisa_leveys" class="formula-input" value="115">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="janisol_ikkuna_potku_ulko_korkeus" class="formula-input" value="-18">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="janisol_ikkuna_potku_ulko_leveys" class="formula-input" value="165">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1642,7 +1670,7 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
-                        <p class="text-muted mb-3">Ikkunalaskuri - vain lasilistat</p>
+                        <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
                         <div class="formula-group">
                             <h6>📏 Lasilista-kaavat</h6>
@@ -1658,7 +1686,35 @@
                                 <input type="number" id="economy_ikkuna_lasilista_vaaka" class="formula-input" value="-2">
                                 <span>mm</span>
                             </div>
-                </div>
+                        </div>
+
+                        <div class="formula-group">
+                            <h6>🦶 Potkupelti</h6>
+                            <div class="formula-row">
+                                <label>Sisä korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_ikkuna_potku_sisa_korkeus" class="formula-input" value="-65">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Sisä leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="economy_ikkuna_potku_sisa_leveys" class="formula-input" value="110">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko korkeus:</label>
+                                <span>Potkupellin korkeus +</span>
+                                <input type="number" id="economy_ikkuna_potku_ulko_korkeus" class="formula-input" value="-20">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Ulko leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="economy_ikkuna_potku_ulko_leveys" class="formula-input" value="160">
+                                <span>mm</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1754,7 +1810,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R17"></script>
+    <script src="app.js?v=20260304R18"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>
