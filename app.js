@@ -1688,16 +1688,19 @@ function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight) {
     });
     
     if (settings.kickPlateEnabled && kickPlateHeight) {
-        const widths = paneWidths.length > 0 ? paneWidths : [0];
-        widths.forEach(width => {
-            const innerH = kickPlateHeight + (jif.potku_sisa_korkeus || -67);
-            const innerW = width + (jif.potku_sisa_leveys || 115);
-            results.potkupelti.push(`${innerH} x ${innerW}`);
-            
-            const outerH = kickPlateHeight + (jif.potku_ulko_korkeus || -18);
-            const outerW = width + (jif.potku_ulko_leveys || 165);
-            results.potkupelti.push(`${outerH} x ${outerW}`);
-        });
+        const width = paneWidths.length > 0 ? paneWidths[0] : 0;
+
+        const uretaaniH = kickPlateHeight + (jif.uretaani_korkeus || -126);
+        const uretaaniW = width + (jif.uretaani_leveys || 46);
+        results.uretaani.push(`${uretaaniH} x ${uretaaniW}`);
+
+        const innerH = kickPlateHeight + (jif.potku_sisa_korkeus || -67);
+        const innerW = width + (jif.potku_sisa_leveys || 115);
+        results.potkupelti.push(`${innerH} x ${innerW}`);
+
+        const outerH = kickPlateHeight + (jif.potku_ulko_korkeus || -18);
+        const outerW = width + (jif.potku_ulko_leveys || 165);
+        results.potkupelti.push(`${outerH} x ${outerW}`);
     }
     
     return results;
@@ -1728,16 +1731,19 @@ function calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight) {
     });
     
     if (settings.kickPlateEnabled && kickPlateHeight) {
-        const widths = paneWidths.length > 0 ? paneWidths : [0];
-        widths.forEach(width => {
-            const innerH = kickPlateHeight + (eif.potku_sisa_korkeus || -65);
-            const innerW = width + (eif.potku_sisa_leveys || 110);
-            results.potkupelti.push(`${innerH} x ${innerW}`);
-            
-            const outerH = kickPlateHeight + (eif.potku_ulko_korkeus || -20);
-            const outerW = width + (eif.potku_ulko_leveys || 160);
-            results.potkupelti.push(`${outerH} x ${outerW}`);
-        });
+        const width = paneWidths.length > 0 ? paneWidths[0] : 0;
+
+        const uretaaniH = kickPlateHeight + (eif.uretaani_korkeus || -121);
+        const uretaaniW = width + (eif.uretaani_leveys || 41);
+        results.uretaani.push(`${uretaaniH} x ${uretaaniW}`);
+
+        const innerH = kickPlateHeight + (eif.potku_sisa_korkeus || -65);
+        const innerW = width + (eif.potku_sisa_leveys || 110);
+        results.potkupelti.push(`${innerH} x ${innerW}`);
+
+        const outerH = kickPlateHeight + (eif.potku_ulko_korkeus || -20);
+        const outerW = width + (eif.potku_ulko_leveys || 160);
+        results.potkupelti.push(`${outerH} x ${outerW}`);
     }
     
     return results;
@@ -1820,8 +1826,8 @@ function displayResults(results) {
         html += '</div></div>';
     }
     
-    // Uretaani (only for doors, not windows)
-    if (!isWindowCalculator && !isUmpioviMode && settings.kickPlateEnabled && results.uretaani.length > 0) {
+    // Uretaani (doors and windows when kickplate enabled)
+    if (!isUmpioviMode && settings.kickPlateEnabled && results.uretaani.length > 0) {
         html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Uretaani</h5>';
         results.uretaani.forEach(item => {
             html += `<div class="result-item">${item}</div>`;
@@ -2638,6 +2644,8 @@ function getDefaultFormulas() {
         janisol_ikkuna: {
             lasilista_pysty: 41,
             lasilista_vaaka: 3,
+            uretaani_korkeus: -126,
+            uretaani_leveys: 46,
             potku_sisa_korkeus: -67,
             potku_sisa_leveys: 115,
             potku_ulko_korkeus: -18,
@@ -2646,6 +2654,8 @@ function getDefaultFormulas() {
         economy_ikkuna: {
             lasilista_pysty: 38,
             lasilista_vaaka: -2,
+            uretaani_korkeus: -121,
+            uretaani_leveys: 41,
             potku_sisa_korkeus: -65,
             potku_sisa_leveys: 110,
             potku_ulko_korkeus: -20,
@@ -3187,6 +3197,8 @@ function collectFormulasFromPanel() {
         janisol_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),
             lasilista_vaaka: parseFloat(document.getElementById('janisol_ikkuna_lasilista_vaaka').value),
+            uretaani_korkeus: parseFloat(document.getElementById('janisol_ikkuna_uretaani_korkeus').value),
+            uretaani_leveys: parseFloat(document.getElementById('janisol_ikkuna_uretaani_leveys').value),
             potku_sisa_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_korkeus').value),
             potku_sisa_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_leveys').value),
             potku_ulko_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_korkeus').value),
@@ -3195,6 +3207,8 @@ function collectFormulasFromPanel() {
         economy_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('economy_ikkuna_lasilista_pysty').value),
             lasilista_vaaka: parseFloat(document.getElementById('economy_ikkuna_lasilista_vaaka').value),
+            uretaani_korkeus: parseFloat(document.getElementById('economy_ikkuna_uretaani_korkeus').value),
+            uretaani_leveys: parseFloat(document.getElementById('economy_ikkuna_uretaani_leveys').value),
             potku_sisa_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_korkeus').value),
             potku_sisa_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_leveys').value),
             potku_ulko_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_korkeus').value),
@@ -3545,6 +3559,103 @@ function transferResults() {
 }
 
 // Confirm and save to Mitat
+function mergeMeasurementItems(existingItems, incomingItems) {
+    const countMap = new Map();
+    const order = [];
+    const nonParseable = [];
+
+    function addItems(items) {
+        (items || []).forEach(item => {
+            const parsed = parseLasilistaRow(item.label);
+            if (parsed) {
+                const key = String(parsed.length);
+                if (countMap.has(key)) {
+                    countMap.set(key, countMap.get(key) + parsed.count);
+                } else {
+                    countMap.set(key, parsed.count);
+                    order.push(key);
+                }
+            } else {
+                nonParseable.push({ label: item.label, value: item.value || '' });
+            }
+        });
+    }
+
+    addItems(existingItems);
+    addItems(incomingItems);
+
+    const result = order.map(key => {
+        const count = countMap.get(key);
+        const label = count > 1 ? `${key} x ${count}` : key;
+        return { label, value: '' };
+    });
+
+    return result.concat(nonParseable);
+}
+
+function mergeResults(existing, incoming) {
+    const merged = {
+        calculator: existing.calculator,
+        timestamp: incoming.timestamp,
+        lasilistaSize: existing.lasilistaSize,
+        lasilistaColor: existing.lasilistaColor || incoming.lasilistaColor,
+        metadataOnly: existing.metadataOnly && incoming.metadataOnly,
+        data: JSON.parse(JSON.stringify(existing.data || []))
+    };
+
+    const existingSize = (existing.lasilistaSize || '').trim();
+    const incomingSize = (incoming.lasilistaSize || '').trim();
+    const sameLasilistaSize = existingSize === incomingSize;
+
+    (incoming.data || []).forEach(incomingSection => {
+        const isLasilista = isLasilistaSectionTitle(incomingSection.title);
+
+        if (isLasilista) {
+            let matchingSection = null;
+
+            if (incomingSize) {
+                const expectedTitle = `Lasilista ${incomingSize}`;
+                matchingSection = merged.data.find(s =>
+                    s.title.trim().toLowerCase() === expectedTitle.toLowerCase()
+                );
+            }
+
+            if (!matchingSection && sameLasilistaSize) {
+                matchingSection = merged.data.find(s => isLasilistaSectionTitle(s.title));
+            }
+
+            if (matchingSection) {
+                matchingSection.items = mergeMeasurementItems(matchingSection.items, incomingSection.items);
+            } else {
+                const newSection = JSON.parse(JSON.stringify(incomingSection));
+                if (incomingSize && !/\d+\s*mm/i.test(newSection.title)) {
+                    newSection.title = `Lasilista ${incomingSize}`;
+                }
+                if (existingSize) {
+                    merged.data.forEach(s => {
+                        if (isLasilistaSectionTitle(s.title) && !/\d+\s*mm/i.test(s.title)) {
+                            s.title = `Lasilista ${existingSize}`;
+                        }
+                    });
+                }
+                merged.data.push(newSection);
+                merged.lasilistaSize = '';
+            }
+        } else {
+            const existingSection = merged.data.find(s => s.title === incomingSection.title);
+            if (existingSection) {
+                existingSection.items = existingSection.items.concat(
+                    JSON.parse(JSON.stringify(incomingSection.items))
+                );
+            } else {
+                merged.data.push(JSON.parse(JSON.stringify(incomingSection)));
+            }
+        }
+    });
+
+    return merged;
+}
+
 function confirmTransferToMitat() {
     const jobNumber = document.getElementById('transferJobNumber').value.trim();
     const itemName = document.getElementById('transferItemName').value.trim();
@@ -3607,8 +3718,20 @@ function confirmTransferToMitat() {
         mittatData[jobNumber] = {};
     }
     
-    // Save results under job number and item name
-    mittatData[jobNumber][itemName] = results;
+    // Check if item already exists - offer merge or replace
+    if (mittatData[jobNumber][itemName]) {
+        const action = confirm(
+            `"${itemName}" on jo tallennettu työnumerolle ${jobNumber}.\n\n` +
+            `OK = Yhdistä mitat\nPeruuta = Korvaa vanhat mitat`
+        );
+        if (action) {
+            mittatData[jobNumber][itemName] = mergeResults(mittatData[jobNumber][itemName], results);
+        } else {
+            mittatData[jobNumber][itemName] = results;
+        }
+    } else {
+        mittatData[jobNumber][itemName] = results;
+    }
     
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
