@@ -4253,18 +4253,22 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const dateText = formatFinnishDate(new Date());
-    let y = 24;
+    const textScale = 2.2;
+    const lasilistaRowsScale = 1.4;
+    const scaled = (value) => value * textScale;
+    let y = scaled(24);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(22);
+    doc.setFontSize(scaled(22));
     doc.text('LASILISTAT', pageWidth / 2, y, { align: 'center' });
-    y += 11;
+    y += scaled(11);
 
-    doc.setFontSize(12);
+    doc.setFontSize(scaled(12));
     const jobLine = lasilistaColor ? `TYÖNRO: ${jobNumber} / ${lasilistaColor}` : `TYÖNRO: ${jobNumber}`;
     doc.text(jobLine, 20, y);
+    y += scaled(9);
     doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
-    y += 9;
+    y += scaled(9);
 
     const sizeKeys = Object.keys(groupedRows).sort((a, b) =>
         a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
@@ -4282,32 +4286,32 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
 
         if (lengths.length === 0) return;
 
-        if (y > pageHeight - 30) {
+        if (y > pageHeight - scaled(30)) {
             doc.addPage();
-            y = 20;
+            y = scaled(20);
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
+        doc.setFontSize(scaled(14 * lasilistaRowsScale));
         doc.text(`Lasilista ${size}`, 20, y);
-        y += 8;
+        y += scaled(8);
 
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(scaled(12 * lasilistaRowsScale));
         lengths.forEach((lengthKey) => {
-            if (y > pageHeight - 20) {
+            if (y > pageHeight - scaled(20)) {
                 doc.addPage();
-                y = 20;
+                y = scaled(20);
             }
             const count = groupedRows[size][lengthKey];
             const lengthText = Number.isFinite(Number(lengthKey))
                 ? String(Number(lengthKey))
                 : lengthKey;
             doc.text(`${lengthText} x ${count}`, 28, y);
-            y += 7;
+            y += scaled(9.8);
         });
 
-        y += 3;
+        y += scaled(3);
     });
 
     const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
