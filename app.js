@@ -3555,6 +3555,31 @@ function normalizeLasilistaColor(colorValue) {
     return String(colorValue || '').trim().toUpperCase();
 }
 
+function populateJobNumberSuggestions() {
+    const datalist = document.getElementById('jobNumberSuggestions');
+    if (!datalist) return;
+    datalist.innerHTML = '';
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const jobEntries = Object.entries(mittatData)
+        .map(([jobNum, items]) => {
+            let latest = 0;
+            Object.values(items).forEach(item => {
+                const ts = Date.parse(String(item?.timestamp || ''));
+                if (Number.isFinite(ts) && ts > latest) latest = ts;
+            });
+            return { jobNum, latest };
+        })
+        .sort((a, b) => b.latest - a.latest)
+        .slice(0, 6);
+
+    jobEntries.forEach(({ jobNum }) => {
+        const opt = document.createElement('option');
+        opt.value = jobNum;
+        datalist.appendChild(opt);
+    });
+}
+
 // Open transfer modal
 function transferResults() {
     const resultsDiv = document.getElementById('results');
@@ -3609,7 +3634,8 @@ function transferResults() {
         colorInput.dataset.autofillTrackBound = '1';
     }
     
-    // Open modal
+    populateJobNumberSuggestions();
+
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
     modal.show();
 }

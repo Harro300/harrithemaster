@@ -412,7 +412,8 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="transferJobNumber" class="form-label">Työ-numero</label>
-                        <input type="text" class="form-control" id="transferJobNumber" placeholder="esim. 123-26" required>
+                        <input type="text" class="form-control" id="transferJobNumber" placeholder="esim. 123-26" required autocomplete="off" list="jobNumberSuggestions">
+                        <datalist id="jobNumberSuggestions"></datalist>
                         <div class="form-text">Anna työn numero, jonka alle mitat tallennetaan.</div>
                     </div>
                     <div class="mb-3">
@@ -1845,7 +1846,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R22"></script>
+    <script src="app.js?v=20260304R23"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>
