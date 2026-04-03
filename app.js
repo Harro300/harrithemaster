@@ -7,6 +7,7 @@ let settings = {
     sealThresholdEnabled: false,
     umpioviEnabled: false
 };
+const calculatorInputCache = {};
 
 // Firebase state
 let firebaseInitialized = false;
@@ -725,7 +726,26 @@ async function logout() {
 }
 
 // Select calculator
+function saveCalculatorInputs() {
+    if (!currentCalculator) return;
+    const entry = {
+        mainDoorWidth: document.getElementById('mainDoorWidth')?.value,
+        sideDoorWidth: document.getElementById('sideDoorWidth')?.value,
+        kickPlateHeight: document.getElementById('kickPlateHeight')?.value,
+        gapOption: settings.gapOption,
+        paneCount: settings.paneCount,
+        paneHeights: [],
+        paneWidths: []
+    };
+    for (let i = 1; i <= settings.paneCount; i++) {
+        entry.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '800');
+        entry.paneWidths.push(document.getElementById(`paneWidth${i}`)?.value || '800');
+    }
+    calculatorInputCache[currentCalculator] = entry;
+}
+
 function selectCalculator(type) {
+    saveCalculatorInputs();
     currentCalculator = type;
     
     // Update button states
@@ -736,26 +756,33 @@ function selectCalculator(type) {
     document.getElementById(`btn-${type}`).classList.add('active');
     
     const isWindowCalculator = type.includes('ikkuna');
+    const cached = calculatorInputCache[type];
     
-    // For window calculators, change label text and adjust layout
     const mainDoorInput = document.getElementById('mainDoorWidth');
     const mainDoorLabel = document.getElementById('mainDoorWidthLabel');
     
     if (mainDoorInput && mainDoorLabel) {
         if (isWindowCalculator) {
             mainDoorLabel.textContent = 'Ruudun leveys (mm)';
-            mainDoorInput.value = '800';  // Default window width
             mainDoorInput.min = '100';
+            mainDoorInput.value = cached ? cached.mainDoorWidth : '800';
         } else {
             mainDoorLabel.textContent = 'Käyntioven leveys (mm)';
-            mainDoorInput.value = '795';  // Default door width
             mainDoorInput.min = '500';
+            mainDoorInput.value = cached ? cached.mainDoorWidth : '795';
         }
     }
     
-    // Settings button is always visible now (windows also have settings)
+    const sideDoorInput = document.getElementById('sideDoorWidth');
+    if (sideDoorInput && cached) {
+        sideDoorInput.value = cached.sideDoorWidth;
+    }
     
-    // Reset settings (but keep door toggles)
+    const kickPlateInput = document.getElementById('kickPlateHeight');
+    if (kickPlateInput && cached) {
+        kickPlateInput.value = cached.kickPlateHeight;
+    }
+    
     const savedKickPlateEnabled = localStorage.getItem('kickPlateEnabled');
     const kickPlateEnabled = savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true;
     const savedSealThresholdEnabled = localStorage.getItem('sealThresholdEnabled');
@@ -764,16 +791,15 @@ function selectCalculator(type) {
     const umpioviEnabled = savedUmpioviEnabled !== null ? savedUmpioviEnabled === 'true' : false;
     
     settings = {
-        gapOption: 8,
-        paneCount: 1,
+        gapOption: cached ? cached.gapOption : 8,
+        paneCount: cached ? cached.paneCount : 1,
         kickPlateEnabled: kickPlateEnabled,
         sealThresholdEnabled: sealThresholdEnabled,
         umpioviEnabled: umpioviEnabled
     };
-    document.getElementById('gapOption').value = '8';
-    document.getElementById('paneCount').value = '1';
+    document.getElementById('gapOption').value = String(settings.gapOption);
+    document.getElementById('paneCount').value = String(settings.paneCount);
     
-    // Update kick plate toggle state
     const kickPlateToggle = document.getElementById('kickPlateToggle');
     if (kickPlateToggle) {
         kickPlateToggle.checked = kickPlateEnabled;
@@ -788,10 +814,20 @@ function selectCalculator(type) {
     }
     
     updatePaneInputs();
+    
+    if (cached) {
+        cached.paneHeights.forEach((val, i) => {
+            const el = document.getElementById(`paneHeight${i + 1}`);
+            if (el) el.value = val;
+        });
+        cached.paneWidths.forEach((val, i) => {
+            const el = document.getElementById(`paneWidth${i + 1}`);
+            if (el) el.value = val;
+        });
+    }
+    
     updateCalculatorInputVisibility();
     updateSettingsInfo();
-    
-    // Calculate initial results
     calculate();
 }
 
@@ -898,7 +934,27 @@ function applySettings() {
     localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled);
     localStorage.setItem('umpioviEnabled', settings.umpioviEnabled);
     
+    const savedPaneValues = [];
+    for (let i = 1; i <= settings.paneCount; i++) {
+        savedPaneValues.push({
+            height: document.getElementById(`paneHeight${i}`)?.value,
+            width: document.getElementById(`paneWidth${i}`)?.value
+        });
+    }
+
     updatePaneInputs();
+
+    savedPaneValues.forEach((val, i) => {
+        if (val.height) {
+            const el = document.getElementById(`paneHeight${i + 1}`);
+            if (el) el.value = val.height;
+        }
+        if (val.width) {
+            const el = document.getElementById(`paneWidth${i + 1}`);
+            if (el) el.value = val.width;
+        }
+    });
+
     updateCalculatorInputVisibility();
     updateSettingsInfo();
     calculate();
