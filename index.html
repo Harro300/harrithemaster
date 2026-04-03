@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teräsovi Mittaohjelmisto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260304R7">
+    <link rel="stylesheet" href="styles.css?v=20260304R8">
 </head>
 <body>
     <!-- Login Screen -->
@@ -499,8 +499,12 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content active">
-                        <div class="formula-group">
-                            <h6>Lasilistat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Lasilistat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pystylista:</label>
                                 <span>Ruudun korkeus +</span>
@@ -513,10 +517,15 @@
                                 <input type="number" id="janisol_pariovi_lasilista_vaaka" class="formula-input" value="3">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Uretaanipalat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Uretaanipalat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -529,10 +538,15 @@
                                 <input type="number" id="janisol_pariovi_uretaani_leveys" class="formula-input" value="46">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Potkupellit - Käyntiovi</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Potkupellit - Käyntiovi</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -559,8 +573,12 @@
                             </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Potkupellit - Lisäovi</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Potkupellit - Lisäovi</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -585,20 +603,30 @@
                                 <input type="number" id="janisol_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
                                 <span>mm (-5 jos >310)</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Harjalistat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Harjalistat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pituus:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="janisol_pariovi_harjalista" class="formula-input" value="141">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Potkupellit</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_pariovi_rako_10_inner" class="formula-input" value="32">
@@ -629,10 +657,15 @@
                                 <input type="number" id="janisol_pariovi_rako_saneeraus_outer" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -657,10 +690,15 @@
                                 <input type="number" id="janisol_pariovi_uretaani_saneeraus" class="formula-input" value="-126">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -685,10 +723,15 @@
                                 <input type="number" id="janisol_pariovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-126">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_pariovi_tiiviste_potku_inner_8mm" class="formula-input" value="-67">
@@ -729,9 +772,14 @@
                                 <input type="number" id="janisol_pariovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
-                        <div class="formula-group">
-                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🚪 Umpiovi - Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -828,6 +876,7 @@
                                 <input type="number" id="janisol_pariovi_umpiovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -841,8 +890,12 @@
                     <div class="admin-accordion-content">
                         <p class="text-muted mb-3">Samat peruskaavat kuin Pariovi, ilman lisäovea</p>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Potkupellit</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_kayntiovi_rako_10_inner" class="formula-input" value="32">
@@ -873,10 +926,15 @@
                                 <input type="number" id="janisol_kayntiovi_rako_saneeraus_outer" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -901,10 +959,15 @@
                                 <input type="number" id="janisol_kayntiovi_uretaani_saneeraus" class="formula-input" value="-126">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -929,10 +992,15 @@
                                 <input type="number" id="janisol_kayntiovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-126">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Sisäpelti:</label>
                                 <input type="number" id="janisol_kayntiovi_tiiviste_potku_inner_8mm" class="formula-input" value="-67">
@@ -973,9 +1041,14 @@
                                 <input type="number" id="janisol_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
-                        <div class="formula-group">
-                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🚪 Umpiovi - Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1048,6 +1121,7 @@
                                 <input type="number" id="janisol_kayntiovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-18">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1059,8 +1133,12 @@
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
-                        <div class="formula-group">
-                            <h6>Lasilistat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Lasilistat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pystylista:</label>
                                 <span>Ruudun korkeus +</span>
@@ -1073,10 +1151,15 @@
                                 <input type="number" id="economy_pariovi_lasilista_vaaka" class="formula-input" value="-2">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Uretaanipalat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Uretaanipalat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1089,10 +1172,15 @@
                                 <input type="number" id="economy_pariovi_uretaani_leveys" class="formula-input" value="41">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Potkupellit - Käyntiovi</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Potkupellit - Käyntiovi</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1117,10 +1205,15 @@
                                 <input type="number" id="economy_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="160">
                                 <span>mm (-5 jos >310)</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Potkupellit - Lisäovi</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Potkupellit - Lisäovi</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1145,20 +1238,30 @@
                                 <input type="number" id="economy_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
                                 <span>mm (-5 jos >310)</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>Harjalistat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>Harjalistat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pituus:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="economy_pariovi_harjalista" class="formula-input" value="141">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="economy_pariovi_rako_10_inner" class="formula-input" value="32">
@@ -1189,10 +1292,15 @@
                                 <input type="number" id="economy_pariovi_rako_saneeraus_outer" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1217,10 +1325,15 @@
                                 <input type="number" id="economy_pariovi_uretaani_saneeraus" class="formula-input" value="-121">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1245,10 +1358,15 @@
                                 <input type="number" id="economy_pariovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-121">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Sisäpelti:</label>
                                 <input type="number" id="economy_pariovi_tiiviste_potku_inner_8mm" class="formula-input" value="-65">
@@ -1289,9 +1407,14 @@
                                 <input type="number" id="economy_pariovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
-                        <div class="formula-group">
-                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🚪 Umpiovi - Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1388,6 +1511,7 @@
                                 <input type="number" id="economy_pariovi_umpiovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1401,8 +1525,12 @@
                     <div class="admin-accordion-content">
                         <p class="text-muted mb-3">Samat peruskaavat kuin Economy Pariovi, ilman lisäovea</p>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Potkupellit</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Potkupellit</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>10 mm rako - Sisäpelti:</label>
                                 <input type="number" id="economy_kayntiovi_rako_10_inner" class="formula-input" value="32">
@@ -1433,10 +1561,15 @@
                                 <input type="number" id="economy_kayntiovi_rako_saneeraus_outer" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                         
-                        <div class="formula-group">
-                            <h6>⚙️ Rako-asetukset - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1461,10 +1594,15 @@
                                 <input type="number" id="economy_kayntiovi_uretaani_saneeraus" class="formula-input" value="-121">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Uretaani korkeus</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Uretaani:</label>
                                 <span>Potkupellin korkeus</span>
@@ -1489,10 +1627,15 @@
                                 <input type="number" id="economy_kayntiovi_tiiviste_uretaani_saneeraus" class="formula-input" value="-121">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧩 Tiivistekynnys - Potkupellin korkeudet</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>8 mm rako - Sisäpelti:</label>
                                 <input type="number" id="economy_kayntiovi_tiiviste_potku_inner_8mm" class="formula-input" value="-65">
@@ -1533,9 +1676,14 @@
                                 <input type="number" id="economy_kayntiovi_tiiviste_potku_outer_saneeraus" class="formula-input" value="0">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
-                        <div class="formula-group">
-                            <h6>🚪 Umpiovi - Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🚪 Umpiovi - Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1608,6 +1756,7 @@
                                 <input type="number" id="economy_kayntiovi_umpiovi_potku_ulko_saneeraus" class="formula-input" value="-20">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1621,8 +1770,12 @@
                     <div class="admin-accordion-content">
                         <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
-                        <div class="formula-group">
-                            <h6>📏 Lasilista-kaavat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>📏 Lasilista-kaavat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pystysuora lasilista:</label>
                                 <span>Ruudun korkeus +</span>
@@ -1635,10 +1788,15 @@
                                 <input type="number" id="janisol_ikkuna_lasilista_vaaka" class="formula-input" value="3">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧱 Uretaani</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧱 Uretaani</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1651,10 +1809,15 @@
                                 <input type="number" id="janisol_ikkuna_uretaani_leveys" class="formula-input" value="46">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🦶 Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🦶 Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1679,6 +1842,7 @@
                                 <input type="number" id="janisol_ikkuna_potku_ulko_leveys" class="formula-input" value="165">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1692,8 +1856,12 @@
                     <div class="admin-accordion-content">
                         <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
-                        <div class="formula-group">
-                            <h6>📏 Lasilista-kaavat</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>📏 Lasilista-kaavat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Pystysuora lasilista:</label>
                                 <span>Ruudun korkeus +</span>
@@ -1706,10 +1874,15 @@
                                 <input type="number" id="economy_ikkuna_lasilista_vaaka" class="formula-input" value="-2">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🧱 Uretaani</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🧱 Uretaani</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1722,10 +1895,15 @@
                                 <input type="number" id="economy_ikkuna_uretaani_leveys" class="formula-input" value="41">
                                 <span>mm</span>
                             </div>
+                            </div>
                         </div>
 
-                        <div class="formula-group">
-                            <h6>🦶 Potkupelti</h6>
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                                <span>🦶 Potkupelti</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
                             <div class="formula-row">
                                 <label>Sisä korkeus:</label>
                                 <span>Potkupellin korkeus +</span>
@@ -1749,6 +1927,7 @@
                                 <span>Ruudun leveys +</span>
                                 <input type="number" id="economy_ikkuna_potku_ulko_leveys" class="formula-input" value="160">
                                 <span>mm</span>
+                            </div>
                             </div>
                         </div>
                     </div>
@@ -1846,7 +2025,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R23"></script>
+    <script src="app.js?v=20260304R24"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

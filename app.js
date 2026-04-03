@@ -2516,6 +2516,14 @@ function toggleAdminAccordion(header) {
     }
 }
 
+function toggleFormulaSubAccordion(header) {
+    const content = header.nextElementSibling;
+    const icon = header.querySelector('.formula-sub-icon');
+    content.classList.toggle('active');
+    icon.style.transform = content.classList.contains('active')
+        ? 'rotate(180deg)' : 'rotate(0deg)';
+}
+
 // Get default formulas
 function getDefaultFormulas() {
     return {
