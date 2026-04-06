@@ -4523,7 +4523,7 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
         doc.text('PAKKAAJA:', 84, 118);
         doc.text('TYÖNRO:', 145, 118);
 
-        doc.setFont('helvetica', 'normal');
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(infoFontSize);
         doc.text(dateText, 22, 135);
         doc.text(packerName, 84, 135);
