@@ -418,7 +418,11 @@
                     </div>
                     <div class="mb-3">
                         <label for="transferItemName" class="form-label">Mittojen nimi</label>
-                        <input type="text" class="form-control" id="transferItemName" placeholder="esim. ovi 1" required>
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="transferItemName" placeholder="esim. ovi 1" required>
+                            <input type="number" class="form-control" id="transferItemCount" min="1" max="99" value="1" style="max-width: 80px; text-align: center;">
+                            <span class="input-group-text" style="font-size: 12px;">KPL</span>
+                        </div>
                         <div class="form-text">Anna nimi mittatiedoille (esim. ovi 1, ikkuna A).</div>
                     </div>
                     <div class="mb-3">
@@ -2025,7 +2029,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R24"></script>
+    <script src="app.js?v=20260304R26"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

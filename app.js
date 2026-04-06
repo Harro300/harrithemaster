@@ -3616,6 +3616,8 @@ function transferResults() {
         colorInput.value = '';
         colorInput.dataset.autofilled = '0';
     }
+    const countInput = document.getElementById('transferItemCount');
+    if (countInput) countInput.value = 1;
 
     const jobInput = document.getElementById('transferJobNumber');
     if (jobInput && !jobInput.dataset.transferPrefillBound) {
@@ -3800,6 +3802,8 @@ function confirmTransferToMitat() {
         results.data.push({ title, items });
     });
     
+    const itemCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferItemCount')?.value) || 1));
+
     // Load existing mitat from localStorage
     let mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     
@@ -3807,21 +3811,34 @@ function confirmTransferToMitat() {
     if (!mittatData[jobNumber]) {
         mittatData[jobNumber] = {};
     }
-    
-    // Check if item already exists - offer merge or replace
-    if (mittatData[jobNumber][itemName]) {
-        const action = confirm(
-            `"${itemName}" on jo tallennettu työnumerolle ${jobNumber}.\n\n` +
-            `OK = Yhdistä mitat\nPeruuta = Korvaa vanhat mitat`
-        );
-        if (action) {
-            mittatData[jobNumber][itemName] = mergeResults(mittatData[jobNumber][itemName], results);
-        } else {
-            mittatData[jobNumber][itemName] = results;
-        }
+
+    const namesToSave = [];
+    if (itemCount === 1) {
+        namesToSave.push(itemName);
     } else {
-        mittatData[jobNumber][itemName] = results;
+        for (let i = 1; i <= itemCount; i++) {
+            namesToSave.push(`${itemName} (${i}.)`);
+        }
     }
+
+    namesToSave.forEach(finalName => {
+        const resultsCopy = JSON.parse(JSON.stringify(results));
+        resultsCopy.timestamp = new Date().toISOString();
+
+        if (mittatData[jobNumber][finalName]) {
+            const action = confirm(
+                `"${finalName}" on jo tallennettu työnumerolle ${jobNumber}.\n\n` +
+                `OK = Yhdistä mitat\nPeruuta = Korvaa vanhat mitat`
+            );
+            if (action) {
+                mittatData[jobNumber][finalName] = mergeResults(mittatData[jobNumber][finalName], resultsCopy);
+            } else {
+                mittatData[jobNumber][finalName] = resultsCopy;
+            }
+        } else {
+            mittatData[jobNumber][finalName] = resultsCopy;
+        }
+    });
     
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
@@ -3831,9 +3848,10 @@ function confirmTransferToMitat() {
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
     modal.hide();
     
-    showToast(`Mitat siirretty: ${jobNumber} - ${itemName}`, 'success');
+    const countLabel = itemCount > 1 ? ` (${itemCount} kpl)` : '';
+    showToast(`Mitat siirretty: ${jobNumber} - ${itemName}${countLabel}`, 'success');
     
-    console.log('✅ Mitat tallennettu:', { jobNumber, itemName, results });
+    console.log('✅ Mitat tallennettu:', { jobNumber, itemName, itemCount, results });
 }
 
 // Load and display Mitat view
@@ -3909,7 +3927,7 @@ function loadMittatView() {
         const hasJobNote = mittatNotes[jobNoteKey] && mittatNotes[jobNoteKey].trim() !== '';
         const jobNoteClass = hasJobNote ? 'btn-note-active' : 'btn-note-empty';
         
-        const itemNames = Object.keys(mittatData[jobNumber]).sort();
+        const itemNames = Object.keys(mittatData[jobNumber]).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' }));
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
@@ -4518,7 +4536,21 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
         a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
     );
 
-    sortedItems.forEach((itemName) => {
+    const kplPattern = /^(.*?)\s*\(\d+\.\)$/;
+    const grouped = [];
+    const groupedMap = {};
+    sortedItems.forEach((name) => {
+        const match = name.match(kplPattern);
+        const baseName = match ? match[1].trim() : name;
+        if (groupedMap[baseName] !== undefined) {
+            grouped[groupedMap[baseName]].count++;
+        } else {
+            groupedMap[baseName] = grouped.length;
+            grouped.push({ name: baseName, count: 1 });
+        }
+    });
+
+    grouped.forEach(({ name, count }) => {
         if (rowY > pageHeight - bottomReserve) {
             doc.addPage();
             rowY = 30;
@@ -4526,8 +4558,8 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(itemRowFontSize);
-        doc.text(itemName.toUpperCase(), rowLeftX, rowY);
-        doc.text('1 KPL', rowRightX, rowY, { align: 'right' });
+        doc.text(name.toUpperCase(), rowLeftX, rowY);
+        doc.text(`${count} KPL`, rowRightX, rowY, { align: 'right' });
         rowY += rowHeight;
     });
 
