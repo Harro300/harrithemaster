@@ -1833,7 +1833,12 @@ function getLasilistaSectionTitle(sectionTitle, itemData) {
     }
 
     const size = String(itemData?.lasilistaSize || '').trim();
-    return withColor(size ? `Lasilista ${size}` : 'Lasilista');
+    if (size) return withColor(`Lasilista ${size}`);
+
+    const titleSize = parseSizeFromSectionTitle(originalTitle);
+    if (titleSize) return withColor(`Lasilista ${titleSize}`);
+
+    return withColor('Lasilista');
 }
 
 function parseLasilistaRow(text) {
@@ -3608,8 +3613,14 @@ function transferResults() {
     }
     const sizeSelect = document.getElementById('transferLasilistaSize');
     if (sizeSelect) {
-        sizeSelect.value = '';
-        sizeSelect.dataset.autofilled = '0';
+        const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
+        if (isUmpiovi) {
+            sizeSelect.value = 'ei-lasilistaa';
+            sizeSelect.dataset.autofilled = '1';
+        } else {
+            sizeSelect.value = '';
+            sizeSelect.dataset.autofilled = '0';
+        }
     }
     const colorInput = document.getElementById('transferLasilistaColor');
     if (colorInput) {
@@ -3689,7 +3700,7 @@ function mergeResults(existing, incoming) {
     const merged = {
         calculator: existing.calculator,
         timestamp: incoming.timestamp,
-        lasilistaSize: existing.lasilistaSize,
+        lasilistaSize: existing.lasilistaSize || incoming.lasilistaSize,
         lasilistaColor: existing.lasilistaColor || incoming.lasilistaColor,
         metadataOnly: existing.metadataOnly && incoming.metadataOnly,
         data: JSON.parse(JSON.stringify(existing.data || []))
@@ -3731,7 +3742,16 @@ function mergeResults(existing, incoming) {
                     });
                 }
                 merged.data.push(newSection);
-                merged.lasilistaSize = '';
+
+                const uniqueSizes = new Set();
+                merged.data.forEach(s => {
+                    if (!isLasilistaSectionTitle(s.title)) return;
+                    const parsed = parseSizeFromSectionTitle(s.title);
+                    if (parsed) uniqueSizes.add(parsed.toLowerCase());
+                });
+                merged.lasilistaSize = uniqueSizes.size === 1
+                    ? [...uniqueSizes][0]
+                    : '';
             }
         } else {
             const existingSection = merged.data.find(s => s.title === incomingSection.title);
@@ -3751,11 +3771,12 @@ function mergeResults(existing, incoming) {
 function confirmTransferToMitat() {
     const jobNumber = document.getElementById('transferJobNumber').value.trim();
     const itemName = document.getElementById('transferItemName').value.trim();
-    const lasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
+    const rawLasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
+    const lasilistaSize = rawLasilistaSize === 'ei-lasilistaa' ? '' : rawLasilistaSize;
     const lasilistaColor = normalizeLasilistaColor(document.getElementById('transferLasilistaColor')?.value || '');
     const isNoResultsTransferMode = isUmpioviNoResultsMode();
     
-    if (!jobNumber || !itemName || (!isNoResultsTransferMode && !lasilistaSize)) {
+    if (!jobNumber || !itemName || (!isNoResultsTransferMode && !rawLasilistaSize)) {
         showToast('Täytä kaikki kentät!', 'warning');
         return;
     }
@@ -4323,6 +4344,11 @@ function toggleLasilistaPdfItem(jobNumber, itemName) {
     loadMittatView();
 }
 
+function parseSizeFromSectionTitle(title) {
+    const match = String(title || '').match(/lasilista\s+(\d+\s*mm)/i);
+    return match ? match[1].replace(/\s+/g, '') : '';
+}
+
 function collectCombinedLasilistaRows(jobNumber, selectedItemNames) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const jobData = mittatData[jobNumber] || {};
@@ -4332,19 +4358,25 @@ function collectCombinedLasilistaRows(jobNumber, selectedItemNames) {
         const itemData = jobData[itemName];
         if (!itemData || !Array.isArray(itemData.data)) return;
 
-        const lasilistaSection = itemData.data.find((section) => isLasilistaSectionTitle(section.title));
-        if (!lasilistaSection || !Array.isArray(lasilistaSection.items)) return;
+        const lasilistaSections = itemData.data.filter((section) => isLasilistaSectionTitle(section.title));
+        if (lasilistaSections.length === 0) return;
 
-        const size = String(itemData.lasilistaSize || '').trim() || 'määrittämätön';
-        if (!grouped[size]) {
-            grouped[size] = {};
-        }
+        lasilistaSections.forEach((section) => {
+            if (!Array.isArray(section.items)) return;
 
-        lasilistaSection.items.forEach((resultItem) => {
-            const parsed = parseLasilistaRow(resultItem?.label || '');
-            if (!parsed) return;
-            const lengthKey = String(parsed.length);
-            grouped[size][lengthKey] = (grouped[size][lengthKey] || 0) + parsed.count;
+            const displayTitle = getLasilistaSectionTitle(section.title, itemData);
+            const size = parseSizeFromSectionTitle(displayTitle) || 'määrittämätön';
+
+            if (!grouped[size]) {
+                grouped[size] = {};
+            }
+
+            section.items.forEach((resultItem) => {
+                const parsed = parseLasilistaRow(resultItem?.label || '');
+                if (!parsed) return;
+                const lengthKey = String(parsed.length);
+                grouped[size][lengthKey] = (grouped[size][lengthKey] || 0) + parsed.count;
+            });
         });
     });
 
