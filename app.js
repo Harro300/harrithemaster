@@ -4012,6 +4012,18 @@ function loadMittatView() {
             html += `<div class="mitat-item-header-main">`;
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
+            const safeJobAttr = sanitizeForAttribute(jobNumber);
+            const safeItemAttr = sanitizeForAttribute(itemName);
+            html += `<div class="dropdown mitat-item-actions">`;
+            html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
+            html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+            html += `<li class="d-flex align-items-center gap-2">`;
+            html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
+            html += `<input type="number" class="form-control form-control-sm clone-count-input" value="1" min="1" max="99">`;
+            html += `<span class="small">x</span>`;
+            html += `</li>`;
+            html += `</ul>`;
+            html += `</div>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
             if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
                 const packingKey = `${jobNumber}||${itemName}`;
@@ -4668,6 +4680,53 @@ async function downloadPackingList(jobNumber) {
         console.error('❌ Pakkausluettelon PDF-luonti epäonnistui:', error);
         showToast('Pakkausluettelon luonti epäonnistui.', 'error');
     }
+}
+
+function cloneMitatItem(jobNumber, itemName, btn) {
+    const menu = btn.closest('.dropdown-menu');
+    const countInput = menu?.querySelector('.clone-count-input');
+    const count = Math.max(1, Math.min(99, parseInt(countInput?.value) || 1));
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const source = mittatData[jobNumber]?.[itemName];
+    if (!source) {
+        showToast('Alkuperäistä mittaa ei löytynyt.', 'warning');
+        return;
+    }
+
+    const suffixPattern = /^(.*?)\s*\((\d+)\.\)$/;
+    const baseMatch = itemName.match(suffixPattern);
+    const baseName = baseMatch ? baseMatch[1].trim() : itemName;
+
+    const usedNumbers = new Set();
+    Object.keys(mittatData[jobNumber] || {}).forEach(name => {
+        const m = name.match(suffixPattern);
+        if (m && m[1].trim() === baseName) {
+            usedNumbers.add(parseInt(m[2]));
+        } else if (name === baseName) {
+            usedNumbers.add(1);
+        }
+    });
+    const next = (usedNumbers.size > 0 ? Math.max(...usedNumbers) : 0) + 1;
+
+    for (let i = 0; i < count; i++) {
+        const newName = `${baseName} (${next + i}.)`;
+        const copy = JSON.parse(JSON.stringify(source));
+        copy.timestamp = new Date().toISOString();
+        mittatData[jobNumber][newName] = copy;
+    }
+
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    syncMitatStateToFirestore();
+
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
+        if (instance) instance.hide();
+    }
+
+    loadMittatView();
+    showToast(`Luotu ${count} kpl kopio${count === 1 ? '' : 'ita'}: ${baseName}`, 'success');
 }
 
 // Open notes modal
