@@ -44,14 +44,16 @@ function showToast(message, type = 'info', title = null) {
     
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
+    // Assertive announcement for errors, polite otherwise (matches container).
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
     toast.innerHTML = `
-        <span class="toast-icon">${icons[type] || icons.info}</span>
+        <span class="toast-icon" aria-hidden="true">${icons[type] || icons.info}</span>
         <div class="toast-content">
             ${title ? `<div class="toast-title">${title}</div>` : ''}
             <div class="toast-message">${message}</div>
         </div>
-        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+        <button class="toast-close" onclick="this.parentElement.remove()" aria-label="Sulje ilmoitus">×</button>
     `;
     
     container.appendChild(toast);
@@ -397,6 +399,32 @@ function stopRealtimeListeners() {
     
     console.log('✅ Kuuntelijat lopetettu');
 }
+
+// Global keyboard accessibility delegation.
+// Custom role="button" divs and the preset-checkbox widget are not
+// natively focusable/actionable; this makes Enter/Space activate them.
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+
+    const target = e.target;
+    if (!target || typeof target.matches !== 'function') return;
+
+    if (target.matches('[role="button"], .preset-checkbox, .admin-accordion-header, .formula-sub-header, .mitat-job-header, .mitat-item-header')) {
+        // Avoid double-firing when focus is inside a real <button> within the header.
+        if (target.tagName === 'BUTTON' || target.tagName === 'INPUT') return;
+        e.preventDefault();
+        target.click();
+    }
+});
+
+// Close admin panel on Escape key.
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    const overlay = document.getElementById('adminPanelOverlay');
+    if (overlay && !overlay.classList.contains('d-none')) {
+        closeAdminPanel();
+    }
+});
 
 document.addEventListener('DOMContentLoaded', function() {
     // Load kick plate setting
@@ -2494,39 +2522,81 @@ function openAdminPanel() {
     showAdminPanelView();
 }
 
+// Tracks the element that opened the admin panel so focus can be restored on close.
+let adminPanelOpenerElement = null;
+
 function showAdminPanelView() {
     if (!isAdmin) {
         return;
     }
 
-    // Show the admin panel overlay
-    document.getElementById('adminPanelOverlay').classList.remove('d-none');
-    // Load current formulas
+    adminPanelOpenerElement = document.activeElement;
+    const overlay = document.getElementById('adminPanelOverlay');
+    overlay.classList.remove('d-none');
+    overlay.setAttribute('aria-hidden', 'false');
     loadFormulasToPanel();
+
+    // Move focus into the dialog (first focusable element).
+    requestAnimationFrame(() => {
+        const firstFocusable = overlay.querySelector(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (firstFocusable) firstFocusable.focus();
+    });
 }
 
 function closeAdminPanel() {
-    document.getElementById('adminPanelOverlay').classList.add('d-none');
+    const overlay = document.getElementById('adminPanelOverlay');
+    overlay.classList.add('d-none');
+    overlay.setAttribute('aria-hidden', 'true');
+
+    // Restore focus to the element that opened the dialog.
+    if (adminPanelOpenerElement && typeof adminPanelOpenerElement.focus === 'function') {
+        adminPanelOpenerElement.focus();
+    }
+    adminPanelOpenerElement = null;
 }
+
+// Focus trap for the admin panel: Tab/Shift+Tab cycles within the dialog.
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Tab') return;
+    const overlay = document.getElementById('adminPanelOverlay');
+    if (!overlay || overlay.classList.contains('d-none')) return;
+
+    const focusables = overlay.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusables.length === 0) return;
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+
+    if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+    }
+});
 
 function toggleAdminAccordion(header) {
     const content = header.nextElementSibling;
     const icon = header.querySelector('.admin-accordion-icon');
-    
+
     content.classList.toggle('active');
-    if (content.classList.contains('active')) {
-        icon.style.transform = 'rotate(180deg)';
-    } else {
-        icon.style.transform = 'rotate(0deg)';
-    }
+    const isOpen = content.classList.contains('active');
+    icon.style.transform = isOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+    header.setAttribute('aria-expanded', String(isOpen));
 }
 
 function toggleFormulaSubAccordion(header) {
     const content = header.nextElementSibling;
     const icon = header.querySelector('.formula-sub-icon');
     content.classList.toggle('active');
-    icon.style.transform = content.classList.contains('active')
-        ? 'rotate(180deg)' : 'rotate(0deg)';
+    const isOpen = content.classList.contains('active');
+    icon.style.transform = isOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+    header.setAttribute('aria-expanded', String(isOpen));
 }
 
 // Get default formulas
@@ -3953,7 +4023,7 @@ function loadMittatView() {
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
         html += `<div class="mitat-job-section">`;
-        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')">`;
+        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
@@ -4008,7 +4078,7 @@ function loadMittatView() {
             const itemNoteClass = hasItemNote ? 'btn-note-active' : 'btn-note-empty';
             
             html += `<div class="mitat-item-section">`;
-            html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')">`;
+            html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${uniqueId}" aria-label="Avaa/sulje ${itemName}">`;
             html += `<div class="mitat-item-header-main">`;
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
@@ -4031,8 +4101,9 @@ function loadMittatView() {
                 const packingClass = doneChecked
                     ? (packingChecked ? 'preset-checkbox checked' : 'preset-checkbox')
                     : 'preset-checkbox disabled';
+                const packingDisabled = !doneChecked;
                 html += `<span class="mitat-mini-label">pakkaus</span>`;
-                html += `<div class="${packingClass}" title="${doneChecked ? 'Merkitse pakattavaksi' : 'Merkitse ensin tehdyksi'}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
+                html += `<div class="${packingClass}" role="checkbox" tabindex="${packingDisabled ? '-1' : '0'}" aria-checked="${packingChecked}" aria-disabled="${packingDisabled}" aria-label="Pakkaus ${itemName}" title="${doneChecked ? 'Merkitse pakattavaksi' : 'Merkitse ensin tehdyksi'}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
                 html += `${packingChecked ? '✓' : ''}`;
                 html += `</div>`;
                 html += `<span class="mitat-checkpoint-separator">/</span>`;
@@ -4041,18 +4112,19 @@ function loadMittatView() {
                 const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
                 const pdfClass = pdfChecked ? 'preset-checkbox checked' : 'preset-checkbox';
                 html += `<span class="mitat-mini-label">lasilistat PDF</span>`;
-                html += `<div class="${pdfClass}" title="Valitse lasilistojen PDF:ään" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
+                html += `<div class="${pdfClass}" role="checkbox" tabindex="0" aria-checked="${pdfChecked}" aria-label="Lasilistat PDF ${itemName}" title="Valitse lasilistojen PDF:ään" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
                 html += `${pdfChecked ? '✓' : ''}`;
                 html += `</div>`;
                 html += `<span class="mitat-checkpoint-separator">/</span>`;
             }
             html += `<span class="mitat-mini-label">lasilistat</span>`;
-            html += `<div class="${checkboxClass}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
+            html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
             html += `${isChecked ? '✓' : ''}`;
             html += `</div>`;
             html += `<span class="mitat-checkpoint-separator">/</span>`;
             html += `<span class="mitat-mini-label">tehty</span>`;
-            html += `<div class="${doneCheckboxClass}" title="${isChecked || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
+            const doneDisabled = !isChecked && !doneChecked;
+            html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${isChecked || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
             html += `${doneChecked ? '✓' : ''}`;
             html += `</div>`;
             if (doneChecked && packedMitat[checkKey]) {
@@ -4208,7 +4280,7 @@ function loadPaketitView() {
         const packageCount = numberedPackageCount + (hasUnnumberedItems ? 1 : 0);
 
         html += `<div class="mitat-job-section">`;
-        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')">`;
+        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
         html += `<span class="mitat-mini-label">(${packedItems.length} PAKATTU / ${packageCount} PAKETTIA)</span>`;
@@ -4803,15 +4875,16 @@ function saveMittatNote() {
 function toggleJobDetails(jobId) {
     const jobItemsElement = document.getElementById(jobId);
     const iconElement = document.getElementById(`${jobId}-icon`);
-    
-    if (jobItemsElement.style.display === 'none') {
-        jobItemsElement.style.display = 'block';
-        iconElement.textContent = '▲';
-        iconElement.classList.add('rotated');
-    } else {
-        jobItemsElement.style.display = 'none';
-        iconElement.textContent = '▼';
-        iconElement.classList.remove('rotated');
+    const headerElement = jobItemsElement ? jobItemsElement.previousElementSibling : null;
+
+    const isOpening = jobItemsElement.style.display === 'none';
+    jobItemsElement.style.display = isOpening ? 'block' : 'none';
+    if (iconElement) {
+        iconElement.textContent = isOpening ? '▲' : '▼';
+        iconElement.classList.toggle('rotated', isOpening);
+    }
+    if (headerElement && headerElement.classList.contains('mitat-job-header')) {
+        headerElement.setAttribute('aria-expanded', String(isOpening));
     }
 }
 
@@ -4833,6 +4906,7 @@ function toggleMittatCheck(checkKey, checkboxElement) {
             checkboxElement.classList.remove('checked');
             checkboxElement.textContent = '';
         }
+        checkboxElement.setAttribute('aria-checked', String(isChecked));
     }
 }
 
@@ -4883,6 +4957,7 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
             checkboxElement.classList.remove('checked');
             checkboxElement.textContent = '';
         }
+        checkboxElement.setAttribute('aria-checked', String(isDone));
     }
 
     updateJobDoneCounter(jobNumber);
@@ -4893,15 +4968,17 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
 function toggleMitatDetails(detailsId) {
     const detailsElement = document.getElementById(detailsId);
     const iconElement = document.getElementById(`${detailsId}-icon`);
-    
-    if (detailsElement.style.display === 'none') {
-        detailsElement.style.display = 'block';
-        iconElement.textContent = '▲';
-        iconElement.classList.add('rotated');
-    } else {
-        detailsElement.style.display = 'none';
-        iconElement.textContent = '▼';
-        iconElement.classList.remove('rotated');
+    // Header drives aria-expanded; locate it via aria-controls="<detailsId>".
+    const headerElement = document.querySelector(`[aria-controls="${detailsId}"]`);
+
+    const isOpening = detailsElement.style.display === 'none';
+    detailsElement.style.display = isOpening ? 'block' : 'none';
+    if (iconElement) {
+        iconElement.textContent = isOpening ? '▲' : '▼';
+        iconElement.classList.toggle('rotated', isOpening);
+    }
+    if (headerElement) {
+        headerElement.setAttribute('aria-expanded', String(isOpening));
     }
 }
 

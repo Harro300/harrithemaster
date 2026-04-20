@@ -5,7 +5,7 @@
     --bg-tertiary: #f1f3f5;
     --text-primary: #1a1a1a;
     --text-secondary: #6c757d;
-    --text-muted: #adb5bd;
+    --text-muted: #868e96;
     --border-color: #e9ecef;
     --border-light: #dee2e6;
     --card-shadow: rgba(0, 0, 0, 0.04);
@@ -25,7 +25,7 @@ body.dark-mode {
     --bg-tertiary: #3a3a3a;
     --text-primary: #ffffff;
     --text-secondary: #b0b0b0;
-    --text-muted: #808080;
+    --text-muted: #999999;
     --border-color: #404040;
     --border-light: #505050;
     --card-shadow: rgba(0, 0, 0, 0.3);
@@ -1482,4 +1482,86 @@ body.dark-mode .mitat-item-header .preset-checkbox.checked {
     background: #ffffff;
     border-color: #ffffff;
     color: #1a1a1a;
+}
+
+/* ============================================
+   ACCESSIBILITY
+   ============================================ */
+
+/* Skip to content link */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    z-index: 10000;
+}
+
+.skip-link:focus {
+    left: 16px;
+    top: 16px;
+    width: auto;
+    height: auto;
+    padding: 10px 18px;
+    background: var(--accent-color);
+    color: #ffffff;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+body.dark-mode .skip-link:focus {
+    color: #000000;
+}
+
+/* Keyboard-visible focus ring.
+   Using :focus-visible keeps the UI clean for mouse users while
+   giving keyboard users a clear outline on ANY interactive element. */
+:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Inputs keep their custom box-shadow-based focus style. */
+.form-control:focus-visible,
+.form-select:focus-visible,
+.formula-input:focus-visible {
+    outline: none;
+}
+
+/* Custom checkbox keyboard focus is drawn as an inset ring
+   so it stays visible against accent backgrounds. */
+.preset-checkbox:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 3px;
+}
+
+body.dark-mode :focus-visible {
+    outline-color: #ffffff;
+}
+
+/* Respect user motion preferences. Disables slide-in toasts,
+   card hover translates, accordion transitions, pulse/spin, etc. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    .card:hover,
+    .btn:hover,
+    .list-group-item:hover,
+    .result-item:hover,
+    .toast:hover,
+    .preset-checkbox:hover {
+        transform: none !important;
+    }
 }

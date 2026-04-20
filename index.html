@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Teräsovi- ja ikkunatuotteiden mittalaskenta- ja työnhallintasovellus tuotantokäyttöön.">
     <title>Teräsovi Mittaohjelmisto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="styles.css?v=20260304R11">
 </head>
 <body>
+    <a href="#calculatorScreen" class="skip-link">Siirry sisältöön</a>
     <!-- Login Screen -->
     <div id="loginScreen" class="container">
         <div class="row justify-content-center align-items-center min-vh-100">
@@ -59,7 +61,7 @@
                             <span class="sync-indicator">🔴</span>
                             <span class="sync-text">Offline</span>
                         </div>
-                        <button class="btn-admin-lock" id="adminLockButton" onclick="openAdminPanel()" title="Kaavahallinta" style="display: none;">🔒</button>
+                        <button class="btn-admin-lock" id="adminLockButton" onclick="openAdminPanel()" title="Kaavahallinta" aria-label="Kaavahallinta" style="display: none;">🔒</button>
                         <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
                     </div>
                 </div>
@@ -244,7 +246,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Asetukset</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3" id="gapOptionSetting">
@@ -318,7 +320,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Tallenna esiasetus</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -344,7 +346,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Valmiit Mitat</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div id="presetList" class="list-group">
@@ -361,7 +363,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">💾 Tallenna kaavamuutokset</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -384,7 +386,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Vie PDF:ksi</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -407,7 +409,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">➡️ Siirrä mittatiedot</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
@@ -459,7 +461,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="mittatNotesTitle">📝 Muistiinpano</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
                     <textarea class="form-control" id="mittatNotesText" rows="6" placeholder="Kirjoita muistiinpano tähän..."></textarea>
@@ -473,14 +475,14 @@
     </div>
 
     <!-- Toast Notification Container -->
-    <div id="toastContainer" class="toast-container"></div>
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true" role="status"></div>
 
     <!-- Admin Panel Overlay -->
-    <div id="adminPanelOverlay" class="admin-panel-overlay d-none">
+    <div id="adminPanelOverlay" class="admin-panel-overlay d-none" role="dialog" aria-modal="true" aria-labelledby="adminPanelTitle" aria-hidden="true">
         <div class="admin-panel-container">
             <div class="admin-panel-header">
-                <h3>🔒 Kaavahallinta</h3>
-                <button class="btn-admin-close" onclick="closeAdminPanel()">×</button>
+                <h3 id="adminPanelTitle">🔒 Kaavahallinta</h3>
+                <button class="btn-admin-close" onclick="closeAdminPanel()" aria-label="Sulje kaavahallinta">×</button>
             </div>
             
             <div class="admin-panel-body">
@@ -499,13 +501,13 @@
 
                 <!-- Janisol Pariovi -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="true">
                         <span>📊 JANISOL PARIOVI</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content active">
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Lasilistat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -526,7 +528,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Uretaanipalat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -547,7 +549,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Potkupellit - Käyntiovi</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -579,7 +581,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Potkupellit - Lisäovi</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -612,7 +614,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Harjalistat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -627,7 +629,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Potkupellit</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -666,7 +668,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -699,7 +701,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -732,7 +734,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -780,7 +782,7 @@
                             </div>
                         </div>
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🚪 Umpiovi - Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -888,7 +890,7 @@
 
                 <!-- Janisol Käyntiovi -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                         <span>📊 JANISOL KÄYNTIOVI</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
@@ -896,7 +898,7 @@
                         <p class="text-muted mb-3">Samat peruskaavat kuin Pariovi, ilman lisäovea</p>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Potkupellit</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -935,7 +937,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -968,7 +970,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1001,7 +1003,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1049,7 +1051,7 @@
                             </div>
                         </div>
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🚪 Umpiovi - Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1133,13 +1135,13 @@
 
                 <!-- Economy Pariovi -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                         <span>📊 ECONOMY PARIOVI</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
                     <div class="admin-accordion-content">
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Lasilistat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1160,7 +1162,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Uretaanipalat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1181,7 +1183,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Potkupellit - Käyntiovi</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1214,7 +1216,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Potkupellit - Lisäovi</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1247,7 +1249,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>Harjalistat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1262,7 +1264,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1301,7 +1303,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1334,7 +1336,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1367,7 +1369,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1415,7 +1417,7 @@
                             </div>
                         </div>
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🚪 Umpiovi - Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1523,7 +1525,7 @@
 
                 <!-- Economy Käyntiovi -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                         <span>📊 ECONOMY KÄYNTIOVI</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
@@ -1531,7 +1533,7 @@
                         <p class="text-muted mb-3">Samat peruskaavat kuin Economy Pariovi, ilman lisäovea</p>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Potkupellit</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1570,7 +1572,7 @@
                         </div>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>⚙️ Rako-asetukset - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1603,7 +1605,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Uretaani korkeus</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1636,7 +1638,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧩 Tiivistekynnys - Potkupellin korkeudet</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1684,7 +1686,7 @@
                             </div>
                         </div>
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🚪 Umpiovi - Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1768,7 +1770,7 @@
 
                 <!-- Janisol Ikkuna -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                         <span>🪟 JANISOL IKKUNA</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
@@ -1776,7 +1778,7 @@
                         <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>📏 Lasilista-kaavat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1797,7 +1799,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧱 Uretaani</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1818,7 +1820,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🦶 Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1854,7 +1856,7 @@
 
                 <!-- Economy Ikkuna -->
                 <div class="admin-accordion-item">
-                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                         <span>🪟 ECONOMY IKKUNA</span>
                         <span class="admin-accordion-icon">▼</span>
                     </div>
@@ -1862,7 +1864,7 @@
                         <p class="text-muted mb-3">Ikkunalaskuri</p>
                         
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>📏 Lasilista-kaavat</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1883,7 +1885,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🧱 Uretaani</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
@@ -1904,7 +1906,7 @@
                         </div>
 
                         <div class="formula-sub-accordion">
-                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
                                 <span>🦶 Potkupelti</span>
                                 <span class="formula-sub-icon">▼</span>
                             </div>
