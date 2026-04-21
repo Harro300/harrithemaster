@@ -3867,8 +3867,25 @@ function confirmTransferToMitat() {
         lasilistaSize: lasilistaSize,
         lasilistaColor: lasilistaColor,
         metadataOnly: isNoResultsTransferMode,
+        inputs: {
+            mainDoorWidth: document.getElementById('mainDoorWidth')?.value || '',
+            sideDoorWidth: document.getElementById('sideDoorWidth')?.value || '',
+            kickPlateHeight: document.getElementById('kickPlateHeight')?.value || '',
+            gapOption: settings.gapOption,
+            paneCount: settings.paneCount,
+            kickPlateEnabled: settings.kickPlateEnabled,
+            sealThresholdEnabled: settings.sealThresholdEnabled,
+            umpioviEnabled: settings.umpioviEnabled,
+            formulaSet: localStorage.getItem('activeFormulaSet') || 'default',
+            paneHeights: [],
+            paneWidths: []
+        },
         data: []
     };
+    for (let i = 1; i <= settings.paneCount; i++) {
+        results.inputs.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '');
+        results.inputs.paneWidths.push(document.getElementById(`paneWidth${i}`)?.value || '');
+    }
     
     sections.forEach(section => {
         const title = section.querySelector('h5').textContent;
@@ -4091,6 +4108,9 @@ function loadMittatView() {
             html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
             html += `<input type="number" class="form-control form-control-sm clone-count-input" value="1" min="1" max="99">`;
             html += `<span class="small">x</span>`;
+            html += `</li>`;
+            html += `<li class="mt-1">`;
+            html += `<button class="btn btn-sm btn-outline-secondary w-100" onclick="showMitatItemInputs('${safeJobAttr}', '${safeItemAttr}')">Syötteet</button>`;
             html += `</li>`;
             html += `</ul>`;
             html += `</div>`;
@@ -4799,6 +4819,106 @@ function cloneMitatItem(jobNumber, itemName, btn) {
 
     loadMittatView();
     showToast(`Luotu ${count} kpl kopio${count === 1 ? '' : 'ita'}: ${baseName}`, 'success');
+}
+
+function getCalculatorLabel(type) {
+    const labels = {
+        'janisol-kayntiovi': 'Janisol Käyntiovi',
+        'janisol-pariovi': 'Janisol Pariovi',
+        'economy-kayntiovi': 'Economy Käyntiovi',
+        'economy-pariovi': 'Economy Pariovi',
+        'janisol-ikkuna': 'Janisol Ikkuna',
+        'economy-ikkuna': 'Economy Ikkuna'
+    };
+    return labels[type] || type || '—';
+}
+
+function showMitatItemInputs(jobNumber, itemName) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber] && mittatData[jobNumber][itemName];
+    if (!item) {
+        showToast('Mittaa ei löytynyt.', 'warning');
+        return;
+    }
+
+    const calcLabel = getCalculatorLabel(item.calculator);
+    const isWindow = (item.calculator || '').includes('ikkuna');
+    const isPariovi = (item.calculator || '').includes('pariovi');
+    const inputs = item.inputs;
+    const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
+
+    const rows = [];
+    rows.push({ label: 'Laskin', value: calcLabel });
+    rows.push({ label: 'Siirretty', value: date });
+
+    if (item.lasilistaSize) {
+        rows.push({ label: 'Lasilistan koko', value: `${item.lasilistaSize}mm` });
+    } else if (item.lasilistaSize === '' && !item.metadataOnly) {
+        rows.push({ label: 'Lasilistan koko', value: 'Ei lasilistaa' });
+    }
+    if (item.lasilistaColor) {
+        rows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
+    }
+
+    if (inputs) {
+        rows.push({ label: 'Kaavasetti', value: inputs.formulaSet === 'default' ? 'Default Kaavat' : (inputs.formulaSet || 'default') });
+
+        if (!isWindow) {
+            const gapText = inputs.gapOption === 'saneeraus'
+                ? 'Saneerauskynnys'
+                : `${inputs.gapOption} mm rako`;
+            rows.push({ label: 'Rako-asetus', value: gapText });
+            rows.push({ label: 'Potkupelti', value: inputs.kickPlateEnabled ? 'Päällä' : 'Pois' });
+            rows.push({ label: 'Tiivistekynnys', value: inputs.sealThresholdEnabled ? 'Päällä' : 'Pois' });
+            rows.push({ label: 'Umpiovi', value: inputs.umpioviEnabled ? 'Päällä' : 'Pois' });
+        } else {
+            rows.push({ label: 'Potkupelti', value: inputs.kickPlateEnabled ? 'Päällä' : 'Pois' });
+            rows.push({ label: 'Ruutujen määrä', value: String(inputs.paneCount ?? '—') });
+        }
+
+        if (!isWindow) {
+            const widthLabel = isPariovi ? 'Käyntioven leveys' : 'Oven leveys';
+            if (inputs.mainDoorWidth) {
+                rows.push({ label: widthLabel, value: `${inputs.mainDoorWidth} mm` });
+            }
+            if (isPariovi && inputs.sideDoorWidth) {
+                rows.push({ label: 'Lisäoven leveys', value: `${inputs.sideDoorWidth} mm` });
+            }
+            if (inputs.kickPlateEnabled && inputs.kickPlateHeight) {
+                rows.push({ label: 'Potkupellin oletuskorkeus', value: `${inputs.kickPlateHeight} mm` });
+            }
+        } else {
+            if (inputs.kickPlateEnabled && inputs.kickPlateHeight) {
+                rows.push({ label: 'Potkupellin oletuskorkeus', value: `${inputs.kickPlateHeight} mm` });
+            }
+            const count = Math.max(inputs.paneHeights?.length || 0, inputs.paneWidths?.length || 0);
+            for (let i = 0; i < count; i++) {
+                const h = inputs.paneHeights?.[i] || '—';
+                const w = inputs.paneWidths?.[i] || '—';
+                rows.push({
+                    label: count > 1 ? `Ruutu ${i + 1}` : 'Ruutu',
+                    value: `${w} × ${h} mm (L × K)`
+                });
+            }
+        }
+    }
+
+    let html = `<div class="mitat-inputs-list">`;
+    rows.forEach(r => {
+        const safeLabel = String(r.label ?? '').replace(/[<>]/g, '');
+        const safeValue = String(r.value ?? '').replace(/[<>]/g, '');
+        html += `<div class="mitat-inputs-row"><span class="mitat-inputs-label">${safeLabel}</span><span class="mitat-inputs-value">${safeValue}</span></div>`;
+    });
+    if (!inputs) {
+        html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle. Näytetään vain saatavilla olevat tiedot.</div>`;
+    }
+    html += `</div>`;
+
+    const modalEl = document.getElementById('mitatInputsModal');
+    document.getElementById('mitatInputsTitle').textContent = `${jobNumber} — ${itemName}`;
+    document.getElementById('mitatInputsBody').innerHTML = html;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
 }
 
 // Open notes modal

@@ -6,7 +6,7 @@
     <meta name="description" content="Teräsovi- ja ikkunatuotteiden mittalaskenta- ja työnhallintasovellus tuotantokäyttöön.">
     <title>Teräsovi Mittaohjelmisto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260304R11">
+    <link rel="stylesheet" href="styles.css?v=20260304R12">
 </head>
 <body>
     <a href="#calculatorScreen" class="skip-link">Siirry sisältöön</a>
@@ -450,6 +450,22 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
                     <button type="button" class="btn btn-success" onclick="confirmTransferToMitat()">Siirrä</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mitat Inputs Modal -->
+    <div class="modal fade" id="mitatInputsModal" tabindex="-1" aria-labelledby="mitatInputsTitle">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="mitatInputsTitle">Syötteet</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
+                </div>
+                <div class="modal-body" id="mitatInputsBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Sulje</button>
                 </div>
             </div>
         </div>
@@ -2032,7 +2048,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R29"></script>
+    <script src="app.js?v=20260304R30"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

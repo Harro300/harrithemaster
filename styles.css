@@ -1411,6 +1411,42 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin: 0;
 }
 
+.mitat-item-actions .dropdown-menu .btn.btn-outline-secondary {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 0.72rem;
+    line-height: 1;
+}
+
+.mitat-inputs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mitat-inputs-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 10px;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+    font-size: 0.88rem;
+}
+
+.mitat-inputs-label {
+    color: #6c757d;
+    font-weight: 500;
+}
+
+.mitat-inputs-value {
+    color: #212529;
+    font-weight: 600;
+    text-align: right;
+    word-break: break-word;
+}
+
 /* Harmaa nappi (ei muistiinpanoa) */
 .btn-note-empty {
     color: #6c757d;
