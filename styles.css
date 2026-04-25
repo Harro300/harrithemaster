@@ -1235,6 +1235,7 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-checkpoints {
     gap: 0.45rem !important;
+    flex-wrap: wrap;
 }
 
 .mitat-checkpoint-separator {
@@ -1369,7 +1370,7 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .mitat-item-actions .dropdown-menu {
-    min-width: auto;
+    min-width: 128px;
     z-index: 1050;
     padding: 0.25rem !important;
     font-size: 0.75rem;
@@ -1416,6 +1417,13 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     padding: 0 8px;
     font-size: 0.72rem;
     line-height: 1;
+}
+
+.mitat-item-actions .dropdown-menu .dropdown-item {
+    border-radius: 6px;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    padding: 6px 8px;
 }
 
 .mitat-inputs-list {

@@ -191,6 +191,7 @@
                     <div class="d-flex gap-2 align-items-center">
                         <button class="btn btn-primary" id="togglePackingListBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="togglePackingListMode()">📦 Tee pakkausluettelo</button>
                         <button class="btn btn-info" id="toggleLasilistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleLasilistaPdfMode()">📄 Lasilistat PDF</button>
+                        <button class="btn btn-outline-secondary" id="toggleShowHiddenItemsBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleShowHiddenItems()">Näytä piilotetut</button>
                         <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
                     </div>
                 </div>
@@ -2048,7 +2049,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260304R30"></script>
+    <script src="app.js?v=20260425R31"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>
