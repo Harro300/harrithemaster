@@ -4112,6 +4112,9 @@ function loadMittatView() {
             html += `<li class="mt-1">`;
             html += `<button class="btn btn-sm btn-outline-secondary w-100" onclick="showMitatItemInputs('${safeJobAttr}', '${safeItemAttr}')">Syötteet</button>`;
             html += `</li>`;
+            html += `<li class="mt-1">`;
+            html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renameMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Muokkaa nimeä</button>`;
+            html += `</li>`;
             html += `</ul>`;
             html += `</div>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
@@ -4819,6 +4822,58 @@ function cloneMitatItem(jobNumber, itemName, btn) {
 
     loadMittatView();
     showToast(`Luotu ${count} kpl kopio${count === 1 ? '' : 'ita'}: ${baseName}`, 'success');
+}
+
+function renameMitatItem(jobNumber, itemName, btn) {
+    const newName = prompt('Anna uusi nimi:', itemName);
+    if (!newName || newName.trim() === itemName) return;
+    const trimmedName = newName.trim();
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber]?.[itemName]) {
+        showToast('Mittaa ei löydetty.', 'warning');
+        return;
+    }
+    if (mittatData[jobNumber][trimmedName]) {
+        showToast(`Nimi "${trimmedName}" on jo käytössä.`, 'warning');
+        return;
+    }
+
+    mittatData[jobNumber][trimmedName] = mittatData[jobNumber][itemName];
+    delete mittatData[jobNumber][itemName];
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+
+    const oldKey = `${jobNumber}-${itemName}`;
+    const newKey = `${jobNumber}-${trimmedName}`;
+    ['checkedMitat', 'doneMitat', 'packedMitat', 'packedPackageNumbers'].forEach(storeKey => {
+        const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
+        if (oldKey in obj) {
+            obj[newKey] = obj[oldKey];
+            delete obj[oldKey];
+            localStorage.setItem(storeKey, JSON.stringify(obj));
+        }
+    });
+
+    const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    const oldNoteKey = `item-${jobNumber}-${itemName}`;
+    const newNoteKey = `item-${jobNumber}-${trimmedName}`;
+    if (oldNoteKey in notes) {
+        notes[newNoteKey] = notes[oldNoteKey];
+        delete notes[oldNoteKey];
+        localStorage.setItem('mittatNotes', JSON.stringify(notes));
+    }
+
+    syncMitatStateToFirestore();
+
+    const menu = btn.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
+        if (instance) instance.hide();
+    }
+
+    loadMittatView();
+    showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
 
 function getCalculatorLabel(type) {
