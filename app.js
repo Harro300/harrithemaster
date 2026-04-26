@@ -4048,10 +4048,14 @@ function loadMittatView() {
         const itemNames = Object.keys(mittatData[jobNumber]).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' }));
         const visibleItemNames = itemNames.filter((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;
-            return isShowingHiddenItems || !hiddenMitatItems[checkKey];
+            const passesHidden = isShowingHiddenItems || !hiddenMitatItems[checkKey];
+            if (!passesHidden) return false;
+            return matchesMitatSearch(jobNumber, itemName, mittatData[jobNumber][itemName], mitatSearchQuery);
         });
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
+
+        if (mitatSearchQuery && visibleItemNames.length === 0) return;
 
         html += `<div class="mitat-job-section">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
@@ -4081,12 +4085,13 @@ function loadMittatView() {
         if (isAdmin) {
             html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')">🗑️</button>`;
         }
-        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
+        const isSearchExpanded = mitatSearchQuery.length > 0;
+        html += `<span class="mitat-toggle-icon${isSearchExpanded ? ' rotated' : ''}" id="${jobId}-icon">${isSearchExpanded ? '▲' : '▼'}</span>`;
         html += `</div>`;
         html += `</div>`;
         
-        // Job items container (hidden by default)
-        html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
+        // Job items container (auto-expanded when searching)
+        html += `<div class="mitat-job-items" id="${jobId}" style="${isSearchExpanded ? '' : 'display: none;'}">`;
 
         if (visibleItemNames.length === 0) {
             html += `<p class="text-muted small mb-0 px-2 py-2">Kaikki tuotteet on piilotettu.</p>`;
@@ -4122,8 +4127,11 @@ function loadMittatView() {
             html += `<div class="dropdown mitat-item-actions">`;
             html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
             html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+            const isHidden = !!hiddenMitatItems[checkKey];
+            const hideLabel = isHidden && isShowingHiddenItems ? 'Palauta näkyviin' : 'Piilota';
+            const hideCls = isHidden && isShowingHiddenItems ? 'dropdown-item text-success' : 'dropdown-item text-danger';
             html += `<li class="mt-1">`;
-            html += `<button class="dropdown-item text-danger" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">Piilota</button>`;
+            html += `<button class="${hideCls}" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">${hideLabel}</button>`;
             html += `</li>`;
             html += `<li class="d-flex align-items-center gap-2">`;
             html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
@@ -4219,8 +4227,18 @@ function loadMittatView() {
         html += `</div>`; // Close mitat-job-section
     });
     
+    if (html === '' && mitatSearchQuery) {
+        container.innerHTML = `<p class="text-muted text-center">Ei hakutuloksia haulle "<strong>${mitatSearchQuery}</strong>".</p>`;
+        return;
+    }
     container.innerHTML = html;
-    restoreMitatOpenState(openState);
+    if (!mitatSearchQuery) {
+        if (mitatSearchWasActive) {
+            mitatSearchWasActive = false;
+        } else {
+            restoreMitatOpenState(openState);
+        }
+    }
 }
 
 // Capture currently open Mitat accordion state before rerender
@@ -4375,6 +4393,39 @@ let isLasilistaPdfMode = false;
 let selectedLasilistaPdfJobNumber = null;
 let selectedLasilistaPdfItems = {};
 let isShowingHiddenItems = false;
+let mitatSearchQuery = '';
+let mitatSearchWasActive = false;
+
+function handleMitatSearchInput(value) {
+    const trimmed = value.trim();
+    if (trimmed) mitatSearchWasActive = true;
+    mitatSearchQuery = trimmed;
+    loadMittatView();
+}
+
+function matchesMitatSearch(jobNumber, itemName, item, query) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+
+    if (String(jobNumber).toLowerCase().includes(q)) return true;
+    if (String(itemName).toLowerCase().includes(q)) return true;
+
+    const calc = String(item.calculator || '').toLowerCase();
+    if (calc.includes(q)) return true;
+
+    if (String(item.lasilistaColor || '').toLowerCase().includes(q)) return true;
+    if (String(item.lasilistaSize || '').toLowerCase().includes(q)) return true;
+
+    for (const section of (item.data || [])) {
+        if (String(section.title || '').toLowerCase().includes(q)) return true;
+        for (const row of (section.items || [])) {
+            if (String(row.label || '').toLowerCase().includes(q)) return true;
+            if (String(row.value || '').toLowerCase().includes(q)) return true;
+        }
+    }
+
+    return false;
+}
 
 function sanitizeForAttribute(value) {
     return String(value).replace(/'/g, "\\'");
@@ -4395,7 +4446,12 @@ function hideMitatItem(jobNumber, itemName) {
     }
 
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
-    hiddenMitatItems[checkKey] = true;
+    const wasHidden = !!hiddenMitatItems[checkKey];
+    if (wasHidden) {
+        delete hiddenMitatItems[checkKey];
+    } else {
+        hiddenMitatItems[checkKey] = true;
+    }
     localStorage.setItem('hiddenMitatItems', JSON.stringify(hiddenMitatItems));
     syncMitatStateToFirestore();
 
@@ -4407,7 +4463,7 @@ function hideMitatItem(jobNumber, itemName) {
     if (paketitView && !paketitView.classList.contains('d-none')) {
         loadPaketitView();
     }
-    showToast('Tuote piilotettu', 'info');
+    showToast(wasHidden ? 'Tuote palautettu näkyviin' : 'Tuote piilotettu', 'info');
 }
 
 function formatFinnishDate(date) {

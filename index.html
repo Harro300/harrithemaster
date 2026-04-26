@@ -6,7 +6,7 @@
     <meta name="description" content="Teräsovi- ja ikkunatuotteiden mittalaskenta- ja työnhallintasovellus tuotantokäyttöön.">
     <title>Teräsovi Mittaohjelmisto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260304R12">
+    <link rel="stylesheet" href="styles.css?v=20260425R13">
 </head>
 <body>
     <a href="#calculatorScreen" class="skip-link">Siirry sisältöön</a>
@@ -194,6 +194,15 @@
                         <button class="btn btn-outline-secondary" id="toggleShowHiddenItemsBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleShowHiddenItems()">Näytä piilotetut</button>
                         <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
                     </div>
+                </div>
+                <div class="mitat-search-row">
+                    <input type="search" class="form-control mitat-search-input" id="mitatSearchInput"
+                        placeholder="Hae työnumerolla, tuotteella, värillä (esim. RAL 9010)..."
+                        oninput="handleMitatSearchInput(this.value)"
+                        onsearch="handleMitatSearchInput(this.value)"
+                        onkeydown="if(event.key==='Enter'){event.preventDefault();handleMitatSearchInput(this.value);}"
+                        autocomplete="off"
+                        aria-label="Hae mittoja">
                 </div>
                 <div id="mittatContainer">
                     <p class="text-muted text-center">Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.</p>
@@ -2049,7 +2058,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260425R31"></script>
+    <script src="app.js?v=20260425R35"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

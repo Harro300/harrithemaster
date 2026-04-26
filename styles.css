@@ -1137,6 +1137,16 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
    MITAT VIEW STYLES
    ============================================ */
 
+.mitat-search-row {
+    margin-bottom: 1.25rem;
+}
+
+.mitat-search-input {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    border-radius: 10px;
+}
+
 .mitat-job-section {
     margin-bottom: 15px;
     padding: 8px;
