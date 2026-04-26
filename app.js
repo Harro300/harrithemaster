@@ -4055,6 +4055,10 @@ function loadMittatView() {
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
+        const isFullyPacked = itemNames.length > 0 &&
+            itemNames.every((itemName) => packedMitat[`${jobNumber}-${itemName}`]);
+        if (isFullyPacked) return;
+
         if (mitatSearchQuery && visibleItemNames.length === 0) return;
 
         html += `<div class="mitat-job-section">`;
@@ -4229,6 +4233,10 @@ function loadMittatView() {
     
     if (html === '' && mitatSearchQuery) {
         container.innerHTML = `<p class="text-muted text-center">Ei hakutuloksia haulle "<strong>${mitatSearchQuery}</strong>".</p>`;
+        return;
+    }
+    if (html === '') {
+        container.innerHTML = '<p class="text-muted text-center">Kaikki työnumerot on pakattu. Katso Paketit-sivu.</p>';
         return;
     }
     container.innerHTML = html;
