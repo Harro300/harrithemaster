@@ -4129,10 +4129,7 @@ function loadMittatView() {
             html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
             const isHidden = !!hiddenMitatItems[checkKey];
             const hideLabel = isHidden && isShowingHiddenItems ? 'Palauta näkyviin' : 'Piilota';
-            const hideCls = isHidden && isShowingHiddenItems ? 'dropdown-item text-success' : 'dropdown-item text-danger';
-            html += `<li class="mt-1">`;
-            html += `<button class="${hideCls}" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">${hideLabel}</button>`;
-            html += `</li>`;
+            const hideCls = isHidden && isShowingHiddenItems ? 'btn btn-sm btn-outline-success w-100' : 'btn btn-sm btn-outline-danger w-100';
             html += `<li class="d-flex align-items-center gap-2">`;
             html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
             html += `<input type="number" class="form-control form-control-sm clone-count-input" value="1" min="1" max="99">`;
@@ -4143,6 +4140,9 @@ function loadMittatView() {
             html += `</li>`;
             html += `<li class="mt-1">`;
             html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renameMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Muokkaa nimeä</button>`;
+            html += `</li>`;
+            html += `<li class="mt-1">`;
+            html += `<button class="${hideCls}" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">${hideLabel}</button>`;
             html += `</li>`;
             html += `</ul>`;
             html += `</div>`;
