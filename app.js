@@ -4332,9 +4332,22 @@ function loadPaketitView() {
         }
     });
 
-    const jobNumbers = Object.keys(packedByJob).sort((a, b) =>
-        a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
-    );
+    const getPackedJobLatestTimestamp = (jobNumber) => {
+        const jobData = mittatData[jobNumber];
+        if (!jobData) return Number.NEGATIVE_INFINITY;
+        let latest = Number.NEGATIVE_INFINITY;
+        Object.values(jobData).forEach((itemData) => {
+            const parsed = Date.parse(String(itemData?.timestamp || ''));
+            if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
+        });
+        return latest;
+    };
+
+    const jobNumbers = Object.keys(packedByJob).sort((a, b) => {
+        const diff = getPackedJobLatestTimestamp(b) - getPackedJobLatestTimestamp(a);
+        if (diff !== 0) return diff;
+        return b.localeCompare(a, 'fi', { numeric: true, sensitivity: 'base' });
+    });
 
     if (jobNumbers.length === 0) {
         container.innerHTML = '<p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>';
