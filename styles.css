@@ -1262,6 +1262,20 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     color: var(--accent-color);
 }
 
+.paketit-package-group {
+    margin-bottom: 0.5rem;
+}
+
+.paketit-package-header {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    padding: 3px 12px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    margin-bottom: 2px;
+}
+
 .mitat-toggle-icon {
     font-size: 0.75rem;
     color: var(--text-secondary);

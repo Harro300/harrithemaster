@@ -4381,17 +4381,34 @@ function loadPaketitView() {
         html += `</div>`;
 
         html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
+
+        // Group items by package number
+        const packageGroups = new Map();
         packedItems.forEach((packedItem) => {
-            const packageText = packedItem.packageNumber ? `(Paketti ${packedItem.packageNumber})` : '(Pakattu!)';
-            html += `<div class="mitat-item-section">`;
-            html += `<div class="mitat-item-header-main">`;
-            html += `<div class="d-flex align-items-center gap-2">`;
-            html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
-            html += `<span class="mitat-packed-label">${packageText}</span>`;
-            html += `</div>`;
-            html += `</div>`;
+            const key = packedItem.packageNumber ?? 0;
+            if (!packageGroups.has(key)) packageGroups.set(key, []);
+            packageGroups.get(key).push(packedItem);
+        });
+        const sortedPackageKeys = Array.from(packageGroups.keys()).sort((a, b) => {
+            if (a === 0) return 1;
+            if (b === 0) return -1;
+            return a - b;
+        });
+        sortedPackageKeys.forEach((pkgKey) => {
+            const groupItems = packageGroups.get(pkgKey);
+            const groupLabel = pkgKey === 0 ? 'Pakattu' : `Paketti ${pkgKey}`;
+            html += `<div class="paketit-package-group">`;
+            html += `<div class="paketit-package-header">${groupLabel}</div>`;
+            groupItems.forEach((packedItem) => {
+                html += `<div class="mitat-item-section">`;
+                html += `<div class="mitat-item-header-main">`;
+                html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
+                html += `</div>`;
+                html += `</div>`;
+            });
             html += `</div>`;
         });
+
         html += `</div>`;
         html += `</div>`;
     });
