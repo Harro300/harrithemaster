@@ -155,6 +155,29 @@ async function syncMitatStateToFirestore() {
     }
 }
 
+async function syncMitatInputsToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser) {
+        return;
+    }
+    try {
+        const { db, doc, setDoc } = window.firebase;
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const inputsMap = {};
+        for (const jobNumber of Object.keys(mittatData)) {
+            for (const itemName of Object.keys(mittatData[jobNumber])) {
+                const item = mittatData[jobNumber][itemName];
+                if (item && item.inputs) {
+                    if (!inputsMap[jobNumber]) inputsMap[jobNumber] = {};
+                    inputsMap[jobNumber][itemName] = item.inputs;
+                }
+            }
+        }
+        await setDoc(doc(db, 'mitatState', 'inputs'), { inputs: inputsMap });
+    } catch (error) {
+        console.error('❌ Inputs-synkronointi Firestoreen epäonnistui:', error);
+    }
+}
+
 // Firebase Auth State Listener
 async function initializeFirebaseAuth() {
     await waitForFirebase();
@@ -371,6 +394,23 @@ function setupRealtimeListeners() {
         );
     } catch (error) {
         console.error('❌ Virhe mitatState-kuuntelijan luonnissa:', error);
+    }
+
+    // LISTENER 5: Mitat inputs document (erillinen pieni dokumentti luotettavaa inputs-synkronia varten)
+    try {
+        onSnapshot(
+            doc(db, 'mitatState', 'inputs'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) return;
+                const data = docSnapshot.data();
+                localStorage.setItem('mitatInputs', JSON.stringify(data.inputs || {}));
+            },
+            (error) => {
+                console.error('❌ MitatInputs-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe mitatInputs-kuuntelijan luonnissa:', error);
     }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
@@ -3776,6 +3816,7 @@ function mergeResults(existing, incoming) {
         lasilistaSize: existing.lasilistaSize || incoming.lasilistaSize,
         lasilistaColor: existing.lasilistaColor || incoming.lasilistaColor,
         metadataOnly: existing.metadataOnly && incoming.metadataOnly,
+        inputs: incoming.inputs || existing.inputs || null,
         data: JSON.parse(JSON.stringify(existing.data || []))
     };
 
@@ -3885,9 +3926,14 @@ function confirmTransferToMitat() {
         },
         data: []
     };
+    const isWindowCalc = (currentCalculator || '').includes('ikkuna');
     for (let i = 1; i <= settings.paneCount; i++) {
         results.inputs.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '');
-        results.inputs.paneWidths.push(document.getElementById(`paneWidth${i}`)?.value || '');
+        const widthEl = document.getElementById(`paneWidth${i}`);
+        const widthVal = widthEl?.value
+            || (isWindowCalc && !widthEl ? (document.getElementById('mainDoorWidth')?.value || '') : '')
+            || '';
+        results.inputs.paneWidths.push(widthVal);
     }
     
     sections.forEach(section => {
@@ -3954,6 +4000,7 @@ function confirmTransferToMitat() {
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
@@ -5049,7 +5096,10 @@ function showMitatItemInputs(jobNumber, itemName) {
     const calcLabel = getCalculatorLabel(item.calculator);
     const isWindow = (item.calculator || '').includes('ikkuna');
     const isPariovi = (item.calculator || '').includes('pariovi');
-    const inputs = item.inputs;
+    const inputs = item.inputs || (() => {
+        const map = JSON.parse(localStorage.getItem('mitatInputs') || '{}');
+        return (map[jobNumber] && map[jobNumber][itemName]) || null;
+    })();
     const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
 
     const rows = [];
@@ -5099,7 +5149,7 @@ function showMitatItemInputs(jobNumber, itemName) {
             const count = Math.max(inputs.paneHeights?.length || 0, inputs.paneWidths?.length || 0);
             for (let i = 0; i < count; i++) {
                 const h = inputs.paneHeights?.[i] || '—';
-                const w = inputs.paneWidths?.[i] || '—';
+                const w = inputs.paneWidths?.[i] || (isWindow ? (inputs.mainDoorWidth || '—') : '—');
                 rows.push({
                     label: count > 1 ? `Ruutu ${i + 1}` : 'Ruutu',
                     value: `${w} × ${h} mm (L × K)`
