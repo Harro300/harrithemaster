@@ -1479,6 +1479,17 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     word-break: break-word;
 }
 
+.mitat-inputs-section-header {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent-color, #0d6efd);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 8px;
+    padding: 4px 2px 2px;
+    border-bottom: 1px solid #dee2e6;
+}
+
 /* Harmaa nappi (ei muistiinpanoa) */
 .btn-note-empty {
     color: #6c757d;
