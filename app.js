@@ -3859,12 +3859,12 @@ function mergeResults(existing, incoming) {
                 matchingSection.items = mergeMeasurementItems(matchingSection.items, incomingSection.items);
             } else {
                 const newSection = JSON.parse(JSON.stringify(incomingSection));
-                if (incomingSize && !/\d+\s*mm/i.test(newSection.title)) {
+                if (incomingSize && !/(?:\d+x\d+|\d+\s*mm)/i.test(newSection.title)) {
                     newSection.title = `Lasilista ${incomingSize}`;
                 }
                 if (existingSize) {
                     merged.data.forEach(s => {
-                        if (isLasilistaSectionTitle(s.title) && !/\d+\s*mm/i.test(s.title)) {
+                        if (isLasilistaSectionTitle(s.title) && !/(?:\d+x\d+|\d+\s*mm)/i.test(s.title)) {
                             s.title = `Lasilista ${existingSize}`;
                         }
                     });
@@ -4664,7 +4664,7 @@ function toggleLasilistaPdfItem(jobNumber, itemName) {
 }
 
 function parseSizeFromSectionTitle(title) {
-    const match = String(title || '').match(/lasilista\s+(\d+\s*mm)/i);
+    const match = String(title || '').match(/lasilista\s+(\d+(?:x\d+|\s*mm))/i);
     return match ? match[1].replace(/\s+/g, '') : '';
 }
 
@@ -5180,7 +5180,7 @@ function showMitatItemInputs(jobNumber, itemName) {
         { label: 'Siirretty', value: date }
     ];
     if (item.lasilistaSize) {
-        headerRows.push({ label: 'Lasilistan koko', value: `${item.lasilistaSize}mm` });
+        headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
     } else if (item.lasilistaSize === '' && !item.metadataOnly) {
         headerRows.push({ label: 'Lasilistan koko', value: 'Ei lasilistaa' });
     }
