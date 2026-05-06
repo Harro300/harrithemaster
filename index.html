@@ -243,6 +243,15 @@
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h2 style="color: var(--accent-color); margin: 0; font-size: 1.3rem;">Paketit</h2>
                 </div>
+                <div class="mitat-search-row">
+                    <input type="search" class="form-control mitat-search-input" id="paketitSearchInput"
+                        placeholder="Hae työnumerolla, pakettinumerolla tai tuotteen nimellä..."
+                        oninput="handlePaketitSearchInput(this.value)"
+                        onsearch="handlePaketitSearchInput(this.value)"
+                        onkeydown="if(event.key==='Enter'){event.preventDefault();handlePaketitSearchInput(this.value);}"
+                        autocomplete="off"
+                        aria-label="Hae paketteja">
+                </div>
                 <div id="paketitContainer">
                     <p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>
                 </div>
@@ -2058,7 +2067,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260506R1"></script>
+    <script src="app.js?v=20260506R3"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

@@ -4394,6 +4394,15 @@ function loadPaketitView() {
         }
     });
 
+    if (paketitSearchQuery) {
+        Object.keys(packedByJob).forEach((jobNumber) => {
+            packedByJob[jobNumber] = packedByJob[jobNumber].filter(
+                (item) => matchesPaketitSearch(jobNumber, item, paketitSearchQuery)
+            );
+            if (packedByJob[jobNumber].length === 0) delete packedByJob[jobNumber];
+        });
+    }
+
     const getPackedJobLatestTimestamp = (jobNumber) => {
         const jobData = mittatData[jobNumber];
         if (!jobData) return Number.NEGATIVE_INFINITY;
@@ -4412,9 +4421,15 @@ function loadPaketitView() {
     });
 
     if (jobNumbers.length === 0) {
-        container.innerHTML = '<p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>';
+        if (paketitSearchQuery) {
+            container.innerHTML = `<p class="text-muted text-center">Ei hakutuloksia haulle "<strong>${paketitSearchQuery}</strong>".</p>`;
+        } else {
+            container.innerHTML = '<p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>';
+        }
         return;
     }
+
+    const isSearchExpanded = !!paketitSearchQuery;
 
     let html = '';
     jobNumbers.forEach((jobNumber) => {
@@ -4438,11 +4453,11 @@ function loadPaketitView() {
         if (isAdmin) {
             html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${sanitizeForAttribute(jobNumber)}')">🗑️</button>`;
         }
-        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
+        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">${isSearchExpanded ? '▲' : '▼'}</span>`;
         html += `</div>`;
         html += `</div>`;
 
-        html += `<div class="mitat-job-items" id="${jobId}" style="display: none;">`;
+        html += `<div class="mitat-job-items" id="${jobId}" style="display: ${isSearchExpanded ? 'block' : 'none'};">`;
 
         // Group items by package number
         const packageGroups = new Map();
@@ -4495,6 +4510,27 @@ let selectedLasilistaPdfItems = {};
 let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
+let paketitSearchQuery = '';
+
+function handlePaketitSearchInput(value) {
+    paketitSearchQuery = value.trim();
+    loadPaketitView();
+}
+
+function matchesPaketitSearch(jobNumber, packedItem, query) {
+    if (!query) return true;
+    const q = query.toLowerCase();
+
+    if (String(jobNumber).toLowerCase().includes(q)) return true;
+    if (String(packedItem.itemName).toLowerCase().includes(q)) return true;
+
+    if (packedItem.packageNumber != null) {
+        if (String(packedItem.packageNumber).includes(q)) return true;
+        if (`paketti ${packedItem.packageNumber}`.includes(q)) return true;
+    }
+
+    return false;
+}
 
 function handleMitatSearchInput(value) {
     const trimmed = value.trim();
