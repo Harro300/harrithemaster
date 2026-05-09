@@ -1266,6 +1266,31 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin-bottom: 0.5rem;
 }
 
+.paketit-item-draggable {
+    cursor: grab;
+    transition: opacity 0.15s ease;
+}
+
+.paketit-item-draggable:active {
+    cursor: grabbing;
+}
+
+.paketit-item-draggable.paketit-dragging {
+    opacity: 0.45;
+}
+
+.paketit-drop-zone.drag-over {
+    outline: 2px dashed var(--accent-color, #0d6efd);
+    background: rgba(13, 110, 253, 0.06);
+    border-radius: 4px;
+}
+
+.paketit-drop-zone.drag-invalid {
+    outline: 2px dashed #dc3545;
+    background: rgba(220, 53, 69, 0.05);
+    border-radius: 4px;
+}
+
 .paketit-package-header {
     font-weight: 600;
     font-size: 0.82rem;

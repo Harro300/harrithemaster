@@ -4474,12 +4474,32 @@ function loadPaketitView() {
         sortedPackageKeys.forEach((pkgKey) => {
             const groupItems = packageGroups.get(pkgKey);
             const groupLabel = pkgKey === 0 ? 'Pakattu' : `Paketti ${pkgKey}`;
-            html += `<div class="paketit-package-group">`;
+            const dropZoneAttrs = isAdmin
+                ? ` paketit-drop-zone" data-job-number="${sanitizeForAttribute(jobNumber)}" data-pkg-key="${pkgKey}`
+                : '';
+            html += `<div class="paketit-package-group${dropZoneAttrs}">`;
             html += `<div class="paketit-package-header">${groupLabel}</div>`;
             groupItems.forEach((packedItem) => {
-                html += `<div class="mitat-item-section">`;
+                const draggableAttrs = isAdmin
+                    ? ` draggable="true" data-job-number="${sanitizeForAttribute(jobNumber)}" data-item-name="${sanitizeForAttribute(packedItem.itemName)}" data-pkg-key="${pkgKey}"`
+                    : '';
+                html += `<div class="mitat-item-section${isAdmin ? ' paketit-item-draggable' : ''}"${draggableAttrs}>`;
                 html += `<div class="mitat-item-header-main">`;
+                html += `<div class="d-flex align-items-center gap-2">`;
                 html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
+                if (isAdmin) {
+                    const safeJob = sanitizeForAttribute(jobNumber);
+                    const safeItem = sanitizeForAttribute(packedItem.itemName);
+                    html += `<div class="dropdown mitat-item-actions">`;
+                    html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
+                    html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+                    html += `<li>`;
+                    html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renamePaketitItem('${safeJob}', '${safeItem}', this)">Muokkaa nimeä</button>`;
+                    html += `</li>`;
+                    html += `</ul>`;
+                    html += `</div>`;
+                }
+                html += `</div>`;
                 html += `</div>`;
                 html += `</div>`;
             });
@@ -4491,6 +4511,154 @@ function loadPaketitView() {
     });
 
     container.innerHTML = html;
+
+    if (isAdmin) {
+        initPaketitDragAndDrop(container);
+    }
+}
+
+// ============================================
+// PAKETIT DRAG-AND-DROP (admin only)
+// ============================================
+
+let paketitDraggedJobNumber = null;
+let paketitDraggedItemName = null;
+
+function initPaketitDragAndDrop(container) {
+    const draggables = container.querySelectorAll('.paketit-item-draggable[draggable="true"]');
+    const dropZones = container.querySelectorAll('.paketit-drop-zone');
+
+    draggables.forEach((el) => {
+        el.addEventListener('dragstart', (e) => {
+            paketitDraggedJobNumber = el.dataset.jobNumber;
+            paketitDraggedItemName = el.dataset.itemName;
+            e.dataTransfer.effectAllowed = 'move';
+            el.classList.add('paketit-dragging');
+        });
+        el.addEventListener('dragend', () => {
+            el.classList.remove('paketit-dragging');
+            dropZones.forEach((z) => z.classList.remove('drag-over', 'drag-invalid'));
+        });
+    });
+
+    dropZones.forEach((zone) => {
+        zone.addEventListener('dragover', (e) => {
+            if (zone.dataset.jobNumber !== paketitDraggedJobNumber) {
+                zone.classList.add('drag-invalid');
+                return;
+            }
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            zone.classList.add('drag-over');
+            zone.classList.remove('drag-invalid');
+        });
+        zone.addEventListener('dragleave', (e) => {
+            if (!zone.contains(e.relatedTarget)) {
+                zone.classList.remove('drag-over', 'drag-invalid');
+            }
+        });
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over', 'drag-invalid');
+
+            if (zone.dataset.jobNumber !== paketitDraggedJobNumber) return;
+
+            const newPkgKey = Number(zone.dataset.pkgKey);
+            const currentPkgKey = Number(
+                container.querySelector(
+                    `.paketit-item-draggable[data-job-number="${paketitDraggedJobNumber}"][data-item-name="${paketitDraggedItemName}"]`
+                )?.dataset.pkgKey ?? 0
+            );
+            if (newPkgKey === currentPkgKey) return;
+
+            const checkKey = `${paketitDraggedJobNumber}-${paketitDraggedItemName}`;
+            const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+            if (newPkgKey === 0) {
+                delete packedPackageNumbers[checkKey];
+            } else {
+                packedPackageNumbers[checkKey] = newPkgKey;
+            }
+            localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
+            syncMitatStateToFirestore();
+
+            const openJobIds = Array.from(
+                container.querySelectorAll('.mitat-job-items')
+            ).filter((el) => el.style.display !== 'none')
+             .map((el) => el.id);
+
+            loadPaketitView();
+
+            openJobIds.forEach((jobId) => {
+                const el = document.getElementById(jobId);
+                if (el && el.style.display === 'none') {
+                    toggleJobDetails(jobId);
+                }
+            });
+        });
+    });
+}
+
+function renamePaketitItem(jobNumber, itemName, btn) {
+    const newName = prompt('Anna uusi nimi:', itemName);
+    if (!newName || newName.trim() === itemName) return;
+    const trimmedName = newName.trim();
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber]?.[itemName]) {
+        showToast('Mittaa ei löydetty.', 'warning');
+        return;
+    }
+    if (mittatData[jobNumber][trimmedName]) {
+        showToast(`Nimi "${trimmedName}" on jo käytössä.`, 'warning');
+        return;
+    }
+
+    mittatData[jobNumber][trimmedName] = mittatData[jobNumber][itemName];
+    delete mittatData[jobNumber][itemName];
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+
+    const oldKey = `${jobNumber}-${itemName}`;
+    const newKey = `${jobNumber}-${trimmedName}`;
+    ['checkedMitat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
+        const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
+        if (oldKey in obj) {
+            obj[newKey] = obj[oldKey];
+            delete obj[oldKey];
+            localStorage.setItem(storeKey, JSON.stringify(obj));
+        }
+    });
+
+    const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    const oldNoteKey = `item-${jobNumber}-${itemName}`;
+    const newNoteKey = `item-${jobNumber}-${trimmedName}`;
+    if (oldNoteKey in notes) {
+        notes[newNoteKey] = notes[oldNoteKey];
+        delete notes[oldNoteKey];
+        localStorage.setItem('mittatNotes', JSON.stringify(notes));
+    }
+
+    syncMitatStateToFirestore();
+
+    const menu = btn.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
+        if (instance) instance.hide();
+    }
+
+    const container = document.getElementById('paketitContainer');
+    const openJobIds = Array.from(
+        container?.querySelectorAll('.mitat-job-items') || []
+    ).filter((el) => el.style.display !== 'none').map((el) => el.id);
+
+    loadPaketitView();
+
+    openJobIds.forEach((jobId) => {
+        const el = document.getElementById(jobId);
+        if (el && el.style.display === 'none') toggleJobDetails(jobId);
+    });
+
+    showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
 
 // ============================================
