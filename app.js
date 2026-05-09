@@ -4494,6 +4494,9 @@ function loadPaketitView() {
                     html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
                     html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
                     html += `<li>`;
+                    html += `<button class="btn btn-sm btn-outline-info w-100" onclick="showPaketitItemDetails('${safeJob}', '${safeItem}', this)">Tiedot</button>`;
+                    html += `</li>`;
+                    html += `<li class="mt-1">`;
                     html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renamePaketitItem('${safeJob}', '${safeItem}', this)">Muokkaa nimeä</button>`;
                     html += `</li>`;
                     html += `</ul>`;
@@ -4659,6 +4662,80 @@ function renamePaketitItem(jobNumber, itemName, btn) {
     });
 
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
+}
+
+function showPaketitItemDetails(jobNumber, itemName, btn) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber]?.[itemName];
+    if (!item) {
+        showToast('Mittaa ei löytynyt.', 'warning');
+        return;
+    }
+
+    const menu = btn.closest('.dropdown-menu');
+    const toggle = menu?.previousElementSibling;
+    if (toggle && window.bootstrap?.Dropdown) {
+        bootstrap.Dropdown.getInstance(toggle)?.hide();
+    }
+
+    const calcLabel = getCalculatorLabel(item.calculator);
+    const isWindow = (item.calculator || '').includes('ikkuna');
+    const isPariovi = (item.calculator || '').includes('pariovi');
+    const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
+
+    let html = '';
+
+    // Syötteet-osio
+    html += `<h6 class="fw-bold mb-2">Syötteet</h6>`;
+    html += `<div class="mitat-inputs-list">`;
+    const headerRows = [
+        { label: 'Laskin', value: calcLabel },
+        { label: 'Siirretty', value: date }
+    ];
+    if (item.lasilistaSize) headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
+    if (item.lasilistaColor) headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
+    html += renderInputsRows(headerRows);
+
+    const fallback = JSON.parse(localStorage.getItem('mitatInputs') || '{}')?.[jobNumber]?.[itemName] || {};
+    const inputsHistory = item.inputsHistory || fallback.inputsHistory || null;
+    const singleInputs = item.inputs || fallback.inputs || null;
+
+    if (inputsHistory && inputsHistory.length > 1) {
+        inputsHistory.forEach((entry, idx) => {
+            const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
+            const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
+            html += `<div class="mitat-inputs-section-header">Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</div>`;
+            html += renderInputsRows(buildInputsRows(entry, isWindow, isPariovi));
+        });
+    } else {
+        const inputs = (inputsHistory && inputsHistory.length === 1) ? inputsHistory[0] : singleInputs;
+        html += renderInputsRows(buildInputsRows(inputs, isWindow, isPariovi));
+        if (!inputs) {
+            html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle.</div>`;
+        }
+    }
+    html += `</div>`;
+
+    // Mitat-osio
+    if (item.data && item.data.length > 0) {
+        html += `<hr><h6 class="fw-bold mb-2">Mitat</h6>`;
+        item.data.forEach((section) => {
+            html += `<div class="mitat-result-section">`;
+            html += `<h6>${getLasilistaSectionTitle(section.title, item)}</h6>`;
+            html += `<div class="mitat-result-items">`;
+            section.items.forEach((row) => {
+                html += `<div class="mitat-result-item">`;
+                html += `<span class="mitat-result-label">${row.label}</span>`;
+                html += `<span class="mitat-result-value">${row.value}</span>`;
+                html += `</div>`;
+            });
+            html += `</div></div>`;
+        });
+    }
+
+    document.getElementById('mitatInputsTitle').textContent = `${jobNumber} — ${itemName}`;
+    document.getElementById('mitatInputsBody').innerHTML = html;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('mitatInputsModal')).show();
 }
 
 // ============================================
