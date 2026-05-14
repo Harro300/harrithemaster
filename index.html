@@ -245,7 +245,7 @@
                 </div>
                 <div class="mitat-search-row">
                     <input type="search" class="form-control mitat-search-input" id="paketitSearchInput"
-                        placeholder="Hae työnumerolla, pakettinumerolla tai tuotteen nimellä..."
+                        placeholder="Hae työnumerolla, pakettinumerolla, tuotteen nimellä tai päivämäärällä..."
                         oninput="handlePaketitSearchInput(this.value)"
                         onsearch="handlePaketitSearchInput(this.value)"
                         onkeydown="if(event.key==='Enter'){event.preventDefault();handlePaketitSearchInput(this.value);}"
@@ -2067,7 +2067,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260509R4"></script>
+    <script src="app.js?v=20260514R3"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>

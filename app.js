@@ -4367,6 +4367,7 @@ function loadPaketitView() {
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
 
     const packedByJob = {};
     Object.keys(mittatData).forEach((jobNumber) => {
@@ -4397,7 +4398,7 @@ function loadPaketitView() {
     if (paketitSearchQuery) {
         Object.keys(packedByJob).forEach((jobNumber) => {
             packedByJob[jobNumber] = packedByJob[jobNumber].filter(
-                (item) => matchesPaketitSearch(jobNumber, item, paketitSearchQuery)
+                (item) => matchesPaketitSearch(jobNumber, item, paketitSearchQuery, packedTimestamps)
             );
             if (packedByJob[jobNumber].length === 0) delete packedByJob[jobNumber];
         });
@@ -4469,16 +4470,29 @@ function loadPaketitView() {
         const sortedPackageKeys = Array.from(packageGroups.keys()).sort((a, b) => {
             if (a === 0) return 1;
             if (b === 0) return -1;
-            return a - b;
+            return b - a;
         });
         sortedPackageKeys.forEach((pkgKey) => {
             const groupItems = packageGroups.get(pkgKey);
             const groupLabel = pkgKey === 0 ? 'Pakattu' : `Paketti ${pkgKey}`;
+            let groupTimestamp = '';
+            if (pkgKey !== 0) {
+                const ts = packedTimestamps[`${jobNumber}-${pkgKey}`];
+                if (ts) {
+                    const d = new Date(ts);
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const year = d.getFullYear();
+                    const hours = String(d.getHours()).padStart(2, '0');
+                    const minutes = String(d.getMinutes()).padStart(2, '0');
+                    groupTimestamp = ` (${day}.${month}.${year} klo ${hours}.${minutes})`;
+                }
+            }
             const dropZoneAttrs = isAdmin
                 ? ` paketit-drop-zone" data-job-number="${sanitizeForAttribute(jobNumber)}" data-pkg-key="${pkgKey}`
                 : '';
             html += `<div class="paketit-package-group${dropZoneAttrs}">`;
-            html += `<div class="paketit-package-header">${groupLabel}</div>`;
+            html += `<div class="paketit-package-header">${groupLabel}${groupTimestamp}</div>`;
             groupItems.forEach((packedItem) => {
                 const draggableAttrs = isAdmin
                     ? ` draggable="true" data-job-number="${sanitizeForAttribute(jobNumber)}" data-item-name="${sanitizeForAttribute(packedItem.itemName)}" data-pkg-key="${pkgKey}"`
@@ -4762,7 +4776,7 @@ function handlePaketitSearchInput(value) {
     loadPaketitView();
 }
 
-function matchesPaketitSearch(jobNumber, packedItem, query) {
+function matchesPaketitSearch(jobNumber, packedItem, query, packedTimestamps) {
     if (!query) return true;
     const q = query.toLowerCase();
 
@@ -4772,6 +4786,15 @@ function matchesPaketitSearch(jobNumber, packedItem, query) {
     if (packedItem.packageNumber != null) {
         if (String(packedItem.packageNumber).includes(q)) return true;
         if (`paketti ${packedItem.packageNumber}`.includes(q)) return true;
+
+        const ts = packedTimestamps && packedTimestamps[`${jobNumber}-${packedItem.packageNumber}`];
+        if (ts) {
+            const d = new Date(ts);
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            if (`${day}.${month}.${year}`.includes(q)) return true;
+        }
     }
 
     return false;
@@ -5254,6 +5277,9 @@ async function downloadPackingList(jobNumber) {
         });
         localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
         localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
+        const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+        packedTimestamps[`${jobNumber}-${nextPackageNumber}`] = new Date().toISOString();
+        localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
         syncMitatStateToFirestore();
         const mittatView = document.getElementById('mittatView');
         const paketitView = document.getElementById('paketitView');
