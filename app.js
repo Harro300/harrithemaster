@@ -558,6 +558,16 @@ function updateCalculatorInputVisibility() {
     if (paneInputsContainer) {
         paneInputsContainer.style.display = isUmpiovi ? 'none' : '';
     }
+
+    const umpioviSettingEl = document.getElementById('umpioviSetting');
+    if (umpioviSettingEl) {
+        umpioviSettingEl.style.display = isWindowCalculator ? 'none' : '';
+    }
+
+    const sealThresholdSettingEl = document.getElementById('sealThresholdSetting');
+    if (sealThresholdSettingEl) {
+        sealThresholdSettingEl.style.display = isWindowCalculator ? 'none' : '';
+    }
 }
 
 function bindSettingsLiveUpdateHandlers() {
@@ -808,6 +818,9 @@ function saveCalculatorInputs() {
         kickPlateHeight: document.getElementById('kickPlateHeight')?.value,
         gapOption: settings.gapOption,
         paneCount: settings.paneCount,
+        kickPlateEnabled: settings.kickPlateEnabled,
+        sealThresholdEnabled: settings.sealThresholdEnabled,
+        umpioviEnabled: settings.umpioviEnabled,
         paneHeights: [],
         paneWidths: []
     };
@@ -858,11 +871,17 @@ function selectCalculator(type) {
     }
     
     const savedKickPlateEnabled = localStorage.getItem('kickPlateEnabled');
-    const kickPlateEnabled = savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true;
+    const kickPlateEnabled = cached?.kickPlateEnabled !== undefined
+        ? cached.kickPlateEnabled
+        : (savedKickPlateEnabled !== null ? savedKickPlateEnabled === 'true' : true);
     const savedSealThresholdEnabled = localStorage.getItem('sealThresholdEnabled');
-    const sealThresholdEnabled = savedSealThresholdEnabled !== null ? savedSealThresholdEnabled === 'true' : false;
+    const sealThresholdEnabled = cached?.sealThresholdEnabled !== undefined
+        ? cached.sealThresholdEnabled
+        : (savedSealThresholdEnabled !== null ? savedSealThresholdEnabled === 'true' : false);
     const savedUmpioviEnabled = localStorage.getItem('umpioviEnabled');
-    const umpioviEnabled = savedUmpioviEnabled !== null ? savedUmpioviEnabled === 'true' : false;
+    const umpioviEnabled = cached?.umpioviEnabled !== undefined
+        ? cached.umpioviEnabled
+        : (savedUmpioviEnabled !== null ? savedUmpioviEnabled === 'true' : false);
     
     settings = {
         gapOption: cached ? cached.gapOption : 8,

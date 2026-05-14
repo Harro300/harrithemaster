@@ -95,7 +95,35 @@
         <!-- Input Section -->
         <div class="card shadow-lg mb-4">
             <div class="card-body p-4">
-                <h4 class="mb-4">Syötteet</h4>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="mb-0">Syötteet</h4>
+                    <div class="d-flex gap-3">
+                        <div id="umpioviSetting">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase">Umpiovi</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="umpioviToggle" onchange="applySettings()">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="kickPlateSetting">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase">Potkupelti</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="kickPlateToggle" checked onchange="applySettings()">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="sealThresholdSetting">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase">Tiivistekynnys</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="sealThresholdToggle" onchange="applySettings()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div class="row">
                     <div class="col-md-6 col-lg-3" id="mainDoorWidthContainer">
             <div class="mb-3">
@@ -300,30 +328,6 @@
                             <option value="default">Default Kaavat</option>
                         </select>
                         <div class="form-text">Kaavasetin vaihto on sallittu kaikille käyttäjille. Uusien kaavasettien luonti vaatii admin-oikeudet.</div>
-                    </div>
-                    <div class="mb-3" id="umpioviSetting">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">Umpiovi</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="umpioviToggle" onchange="applySettings()">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mb-3" id="kickPlateSetting">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">Potkupelti</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="kickPlateToggle" checked onchange="applySettings()">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mb-3" id="sealThresholdSetting">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <label class="form-label mb-0">Tiivistekynnys</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="sealThresholdToggle" onchange="applySettings()">
-                            </div>
-                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -2067,7 +2071,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260514R3"></script>
+    <script src="app.js?v=20260514R6"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>
