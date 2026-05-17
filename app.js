@@ -1813,7 +1813,7 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
 }
 
 // Calculate Janisol Ikkuna (Windows only - glass strips only)
-function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight) {
+function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight, useYhdistettyLeveys = false) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1844,11 +1844,15 @@ function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight) {
         results.uretaani.push(`${uretaaniH} x ${uretaaniW}`);
 
         const innerH = kickPlateHeight + (jif.potku_sisa_korkeus || -67);
-        const innerW = width + (jif.potku_sisa_leveys || 115);
+        const innerW = width + (useYhdistettyLeveys
+            ? (jif.potku_yhdistetty_sisa_leveys ?? jif.potku_sisa_leveys ?? 115)
+            : (jif.potku_sisa_leveys ?? 115));
         results.potkupelti.push(`${innerH} x ${innerW}`);
 
         const outerH = kickPlateHeight + (jif.potku_ulko_korkeus || -18);
-        const outerW = width + (jif.potku_ulko_leveys || 165);
+        const outerW = width + (useYhdistettyLeveys
+            ? (jif.potku_yhdistetty_ulko_leveys ?? jif.potku_ulko_leveys ?? 165)
+            : (jif.potku_ulko_leveys ?? 165));
         results.potkupelti.push(`${outerH} x ${outerW}`);
     }
     
@@ -1856,7 +1860,7 @@ function calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight) {
 }
 
 // Calculate Economy Ikkuna (Windows only - glass strips only)
-function calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight) {
+function calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight, useYhdistettyLeveys = false) {
     const results = {
         lasilista: [],
         uretaani: [],
@@ -1887,11 +1891,15 @@ function calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight) {
         results.uretaani.push(`${uretaaniH} x ${uretaaniW}`);
 
         const innerH = kickPlateHeight + (eif.potku_sisa_korkeus || -65);
-        const innerW = width + (eif.potku_sisa_leveys || 110);
+        const innerW = width + (useYhdistettyLeveys
+            ? (eif.potku_yhdistetty_sisa_leveys ?? eif.potku_sisa_leveys ?? 110)
+            : (eif.potku_sisa_leveys ?? 110));
         results.potkupelti.push(`${innerH} x ${innerW}`);
 
         const outerH = kickPlateHeight + (eif.potku_ulko_korkeus || -20);
-        const outerW = width + (eif.potku_ulko_leveys || 160);
+        const outerW = width + (useYhdistettyLeveys
+            ? (eif.potku_yhdistetty_ulko_leveys ?? eif.potku_ulko_leveys ?? 160)
+            : (eif.potku_ulko_leveys ?? 160));
         results.potkupelti.push(`${outerH} x ${outerW}`);
     }
     
@@ -2853,7 +2861,9 @@ function getDefaultFormulas() {
             potku_sisa_korkeus: -67,
             potku_sisa_leveys: 115,
             potku_ulko_korkeus: -18,
-            potku_ulko_leveys: 165
+            potku_ulko_leveys: 165,
+            potku_yhdistetty_sisa_leveys: 155,
+            potku_yhdistetty_ulko_leveys: 125
         },
         economy_ikkuna: {
             lasilista_pysty: 38,
@@ -2863,7 +2873,9 @@ function getDefaultFormulas() {
             potku_sisa_korkeus: -65,
             potku_sisa_leveys: 110,
             potku_ulko_korkeus: -20,
-            potku_ulko_leveys: 160
+            potku_ulko_leveys: 160,
+            potku_yhdistetty_sisa_leveys: 150,
+            potku_yhdistetty_ulko_leveys: 120
         }
     };
 }
@@ -3406,7 +3418,9 @@ function collectFormulasFromPanel() {
             potku_sisa_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_korkeus').value),
             potku_sisa_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_sisa_leveys').value),
             potku_ulko_korkeus: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_korkeus').value),
-            potku_ulko_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_leveys').value)
+            potku_ulko_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_ulko_leveys').value),
+            potku_yhdistetty_sisa_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_yhdistetty_sisa_leveys').value),
+            potku_yhdistetty_ulko_leveys: parseFloat(document.getElementById('janisol_ikkuna_potku_yhdistetty_ulko_leveys').value)
         },
         economy_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('economy_ikkuna_lasilista_pysty').value),
@@ -3416,7 +3430,9 @@ function collectFormulasFromPanel() {
             potku_sisa_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_korkeus').value),
             potku_sisa_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_sisa_leveys').value),
             potku_ulko_korkeus: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_korkeus').value),
-            potku_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_leveys').value)
+            potku_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_leveys').value),
+            potku_yhdistetty_sisa_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_yhdistetty_sisa_leveys').value),
+            potku_yhdistetty_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_yhdistetty_ulko_leveys').value)
         }
     };
 }
@@ -3673,6 +3689,23 @@ function applyTransferFieldAutofill(field, suggestedValue) {
     }
 }
 
+function updateYhdistettyCheckbox() {
+    const yhdistettyCheck = document.getElementById('transferYhdistetty');
+    const yhdistettyRow = document.getElementById('transferYhdistettyRow');
+    if (!yhdistettyCheck || !yhdistettyRow || yhdistettyRow.style.display === 'none') return;
+
+    const jobNumber = document.getElementById('transferJobNumber')?.value.trim();
+    const name = document.getElementById('transferItemName')?.value.trim();
+
+    if (jobNumber && name) {
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const exists = !!(mittatData[jobNumber] && mittatData[jobNumber][name]);
+        yhdistettyCheck.checked = exists;
+    } else {
+        yhdistettyCheck.checked = false;
+    }
+}
+
 function prefillTransferFields() {
     const jobInput = document.getElementById('transferJobNumber');
     const itemNameInput = document.getElementById('transferItemName');
@@ -3697,6 +3730,7 @@ function prefillTransferFields() {
     applyTransferFieldAutofill(itemNameInput, defaults.itemName);
     applyTransferFieldAutofill(sizeSelect, defaults.lasilistaSize);
     applyTransferFieldAutofill(colorInput, defaults.lasilistaColor);
+    updateYhdistettyCheckbox();
 }
 
 function normalizeLasilistaColor(colorValue) {
@@ -3774,6 +3808,7 @@ function transferResults() {
     if (itemNameInput && !itemNameInput.dataset.autofillTrackBound) {
         itemNameInput.addEventListener('input', () => {
             itemNameInput.dataset.autofilled = '0';
+            updateYhdistettyCheckbox();
         });
         itemNameInput.dataset.autofillTrackBound = '1';
     }
@@ -3791,6 +3826,14 @@ function transferResults() {
     }
     
     populateJobNumberSuggestions();
+
+    const yhdistettyRow = document.getElementById('transferYhdistettyRow');
+    if (yhdistettyRow) {
+        const isWindowCalc = (currentCalculator || '').includes('ikkuna');
+        yhdistettyRow.style.display = isWindowCalc && settings.kickPlateEnabled ? '' : 'none';
+    }
+    const yhdistettyCheck = document.getElementById('transferYhdistetty');
+    if (yhdistettyCheck) yhdistettyCheck.checked = false;
 
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
     modal.show();
@@ -3992,6 +4035,24 @@ function confirmTransferToMitat() {
         
         results.data.push({ title, items });
     });
+
+    const isYhdistetty = document.getElementById('transferYhdistetty')?.checked;
+    if (isYhdistetty && isWindowCalc && settings.kickPlateEnabled) {
+        const paneWidths = results.inputs.paneWidths.map(Number);
+        const paneHeights = results.inputs.paneHeights.map(Number);
+        const kph = parseFloat(results.inputs.kickPlateHeight) || 0;
+        let recalc;
+        if (currentCalculator === 'janisol-ikkuna') {
+            recalc = calculateJanisolIkkuna(paneWidths, paneHeights, kph, true);
+        } else {
+            recalc = calculateEconomyIkkuna(paneWidths, paneHeights, kph, true);
+        }
+        const potkuIdx = results.data.findIndex(s => s.title === 'Potkupelti');
+        if (potkuIdx !== -1) {
+            results.data[potkuIdx].items = recalc.potkupelti.map(v => ({ label: v, value: '' }));
+        }
+        results.inputs.yhdistettyLeveys = true;
+    }
     
     const itemCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferItemCount')?.value) || 1));
 

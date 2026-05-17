@@ -469,6 +469,15 @@
                         <input type="text" class="form-control" id="transferLasilistaColor" placeholder="esim. RAL 7024">
                         <div class="form-text">Vapaaehtoinen. Jos annat värin, se näytetään Mitat- ja Lasilistat PDF -näkymissä.</div>
                     </div>
+                    <div class="pt-2 mt-1 border-top" id="transferYhdistettyRow" style="display:none;">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="transferYhdistetty">
+                            </div>
+                            <label class="form-label mb-0 small fw-medium" for="transferYhdistetty">Yhdistetty oveen</label>
+                        </div>
+                        <div class="form-text mt-1">Potkupeltien leveydet lasketaan yhdistetty-kaavoilla.</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Peruuta</button>
@@ -1888,6 +1897,18 @@
                                 <input type="number" id="janisol_ikkuna_potku_ulko_leveys" class="formula-input" value="165">
                                 <span>mm</span>
                             </div>
+                            <div class="formula-row">
+                                <label>Yhdistetty sisä leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="janisol_ikkuna_potku_yhdistetty_sisa_leveys" class="formula-input" value="155">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Yhdistetty ulko leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="janisol_ikkuna_potku_yhdistetty_ulko_leveys" class="formula-input" value="125">
+                                <span>mm</span>
+                            </div>
                             </div>
                         </div>
                     </div>
@@ -1972,6 +1993,18 @@
                                 <label>Ulko leveys:</label>
                                 <span>Ruudun leveys +</span>
                                 <input type="number" id="economy_ikkuna_potku_ulko_leveys" class="formula-input" value="160">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Yhdistetty sisä leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="economy_ikkuna_potku_yhdistetty_sisa_leveys" class="formula-input" value="150">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Yhdistetty ulko leveys:</label>
+                                <span>Ruudun leveys +</span>
+                                <input type="number" id="economy_ikkuna_potku_yhdistetty_ulko_leveys" class="formula-input" value="120">
                                 <span>mm</span>
                             </div>
                             </div>
@@ -2071,7 +2104,7 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260514R6"></script>
+    <script src="app.js?v=20260516R3"></script>
     
     <!-- Initialize login handler after everything is loaded -->
     <script>
