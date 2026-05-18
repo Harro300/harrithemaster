@@ -4484,19 +4484,19 @@ function loadPaketitView() {
         });
     }
 
-    const getPackedJobLatestTimestamp = (jobNumber) => {
-        const jobData = mittatData[jobNumber];
-        if (!jobData) return Number.NEGATIVE_INFINITY;
+    const getLatestPackedTimestamp = (jobNumber) => {
+        const prefix = `${jobNumber}-`;
         let latest = Number.NEGATIVE_INFINITY;
-        Object.values(jobData).forEach((itemData) => {
-            const parsed = Date.parse(String(itemData?.timestamp || ''));
+        Object.entries(packedTimestamps).forEach(([key, ts]) => {
+            if (!key.startsWith(prefix)) return;
+            const parsed = Date.parse(String(ts || ''));
             if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
         });
         return latest;
     };
 
     const jobNumbers = Object.keys(packedByJob).sort((a, b) => {
-        const diff = getPackedJobLatestTimestamp(b) - getPackedJobLatestTimestamp(a);
+        const diff = getLatestPackedTimestamp(b) - getLatestPackedTimestamp(a);
         if (diff !== 0) return diff;
         return b.localeCompare(a, 'fi', { numeric: true, sensitivity: 'base' });
     });
