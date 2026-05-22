@@ -370,7 +370,8 @@ function setupRealtimeListeners() {
                     packedMitat: data.packedMitat || {},
                     packedPackageNumbers: data.packedPackageNumbers || {},
                     hiddenMitatItems: data.hiddenMitatItems || {},
-                    mittatNotes: data.mittatNotes || {}
+                    mittatNotes: data.mittatNotes || {},
+                    packedTimestamps: data.packedTimestamps || {}
                 });
 
                 const isOwnUpdate = data.updatedBy === currentUser?.email;
