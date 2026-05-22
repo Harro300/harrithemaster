@@ -118,7 +118,8 @@ function getMitatStateFromLocalStorage() {
         packedMitat: JSON.parse(localStorage.getItem('packedMitat') || '{}'),
         packedPackageNumbers: JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}'),
         hiddenMitatItems: JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}'),
-        mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}')
+        mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}'),
+        packedTimestamps: JSON.parse(localStorage.getItem('packedTimestamps') || '{}')
     };
 }
 
@@ -130,6 +131,7 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('packedPackageNumbers', JSON.stringify(state.packedPackageNumbers || {}));
     localStorage.setItem('hiddenMitatItems', JSON.stringify(state.hiddenMitatItems || {}));
     localStorage.setItem('mittatNotes', JSON.stringify(state.mittatNotes || {}));
+    localStorage.setItem('packedTimestamps', JSON.stringify(state.packedTimestamps || {}));
 }
 
 async function syncMitatStateToFirestore() {
