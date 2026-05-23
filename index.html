@@ -2104,23 +2104,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260518R3"></script>
-    
-    <!-- Initialize login handler after everything is loaded -->
-    <script>
-        console.log('🟢 Inline script ladattu - DOM on valmis!');
-        console.log('🟢 Tarkistetaan loginForm:', document.getElementById('loginForm') ? 'LÖYTYI' : 'EI LÖYDY');
-        console.log('🟢 Tarkistetaan attachLoginHandler:', typeof attachLoginHandler);
-        
-        // Wait a bit to ensure everything is loaded
-        setTimeout(() => {
-            console.log('🟢 Kutsutaan attachLoginHandler()...');
-            if (typeof attachLoginHandler === 'function') {
-                attachLoginHandler();
-            } else {
-                console.error('❌ attachLoginHandler ei ole funktio!');
-            }
-        }, 100);
-    </script>
+    <script src="app.js?v=20260518R6"></script>
 </body>
 </html>

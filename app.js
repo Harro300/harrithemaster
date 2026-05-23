@@ -18,6 +18,7 @@ let presetsUnsubscribe = null;
 let checkedStatesUnsubscribe = null;
 let formulaSetsUnsubscribe = null;
 let mitatStateUnsubscribe = null;
+let mitatStateLoaded = false;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -135,7 +136,7 @@ function applyMitatStateToLocalStorage(state) {
 }
 
 async function syncMitatStateToFirestore() {
-    if (!window.firebase || !window.firebase.db || !currentUser) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
 
@@ -210,6 +211,7 @@ async function initializeFirebaseAuth() {
 
 // Setup realtime listeners for Firestore
 function setupRealtimeListeners() {
+    stopRealtimeListeners();
     if (!window.firebase || !window.firebase.db) {
         console.warn('⚠️ Firebase ei ole saatavilla, käytetään vain localStoragea');
         return;
@@ -373,6 +375,7 @@ function setupRealtimeListeners() {
                     mittatNotes: data.mittatNotes || {},
                     packedTimestamps: data.packedTimestamps || {}
                 });
+                mitatStateLoaded = true;
 
                 const isOwnUpdate = data.updatedBy === currentUser?.email;
 
@@ -777,6 +780,7 @@ function switchView(view) {
 async function logout() {
     // Stop realtime listeners first
     stopRealtimeListeners();
+    mitatStateLoaded = false;
     
     // Sign out from Firebase
     if (window.firebase && currentUser) {
@@ -5829,7 +5833,14 @@ function deleteJobMitat(jobNumber) {
     // Remove job note and job data
     delete mittatNotes[`job-${jobNumber}`];
     delete mittatData[jobNumber];
-    
+
+    // Remove packedTimestamps for this job (keys: jobNumber-packageNumber)
+    const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+    Object.keys(packedTimestamps).forEach(key => {
+        if (key.startsWith(`${jobNumber}-`)) delete packedTimestamps[key];
+    });
+    localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
+
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
@@ -5883,6 +5894,12 @@ function deleteMitta(jobNumber, itemName) {
         // If job has no items left, delete job
         if (Object.keys(mittatData[jobNumber]).length === 0) {
             delete mittatData[jobNumber];
+            // Remove packedTimestamps for this job (keys: jobNumber-packageNumber)
+            const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+            Object.keys(packedTimestamps).forEach(key => {
+                if (key.startsWith(`${jobNumber}-`)) delete packedTimestamps[key];
+            });
+            localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
         }
         
         localStorage.setItem('mittatData', JSON.stringify(mittatData));
