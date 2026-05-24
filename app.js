@@ -18,6 +18,7 @@ let presetsUnsubscribe = null;
 let checkedStatesUnsubscribe = null;
 let formulaSetsUnsubscribe = null;
 let mitatStateUnsubscribe = null;
+let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
 
 // Admin email addresses
@@ -159,7 +160,7 @@ async function syncMitatStateToFirestore() {
 }
 
 async function syncMitatInputsToFirestore() {
-    if (!window.firebase || !window.firebase.db || !currentUser) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
     try {
@@ -407,7 +408,7 @@ function setupRealtimeListeners() {
 
     // LISTENER 5: Mitat inputs document (erillinen pieni dokumentti luotettavaa inputs-synkronia varten)
     try {
-        onSnapshot(
+        mitatInputsUnsubscribe = onSnapshot(
             doc(db, 'mitatState', 'inputs'),
             (docSnapshot) => {
                 if (!docSnapshot.exists()) return;
@@ -447,6 +448,11 @@ function stopRealtimeListeners() {
     if (mitatStateUnsubscribe) {
         mitatStateUnsubscribe();
         mitatStateUnsubscribe = null;
+    }
+
+    if (mitatInputsUnsubscribe) {
+        mitatInputsUnsubscribe();
+        mitatInputsUnsubscribe = null;
     }
     
     console.log('✅ Kuuntelijat lopetettu');
