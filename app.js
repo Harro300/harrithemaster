@@ -4306,28 +4306,6 @@ function loadMittatView() {
             html += `</ul>`;
             html += `</div>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
-                const packingKey = `${jobNumber}||${itemName}`;
-                const packingChecked = !!selectedPackingItems[packingKey];
-                const packingClass = doneChecked
-                    ? (packingChecked ? 'preset-checkbox checked' : 'preset-checkbox')
-                    : 'preset-checkbox disabled';
-                const packingDisabled = !doneChecked;
-                html += `<span class="mitat-mini-label">pakkaus</span>`;
-                html += `<div class="${packingClass}" role="checkbox" tabindex="${packingDisabled ? '-1' : '0'}" aria-checked="${packingChecked}" aria-disabled="${packingDisabled}" aria-label="Pakkaus ${itemName}" title="${doneChecked ? 'Merkitse pakattavaksi' : 'Merkitse ensin tehdyksi'}" onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
-                html += `${packingChecked ? '✓' : ''}`;
-                html += `</div>`;
-                html += `<span class="mitat-checkpoint-separator">/</span>`;
-            } else if (isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
-                const pdfKey = `${jobNumber}||${itemName}`;
-                const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
-                const pdfClass = pdfChecked ? 'preset-checkbox checked' : 'preset-checkbox';
-                html += `<span class="mitat-mini-label">lasilistat PDF</span>`;
-                html += `<div class="${pdfClass}" role="checkbox" tabindex="0" aria-checked="${pdfChecked}" aria-label="Lasilistat PDF ${itemName}" title="Valitse lasilistojen PDF:ään" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">`;
-                html += `${pdfChecked ? '✓' : ''}`;
-                html += `</div>`;
-                html += `<span class="mitat-checkpoint-separator">/</span>`;
-            }
             html += `<span class="mitat-mini-label">lasilistat</span>`;
             html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
             html += `${isChecked ? '✓' : ''}`;
@@ -4338,6 +4316,22 @@ function loadMittatView() {
             html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${isChecked || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
             html += `${doneChecked ? '✓' : ''}`;
             html += `</div>`;
+            if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
+                const packingKey = `${jobNumber}||${itemName}`;
+                const packingChecked = !!selectedPackingItems[packingKey];
+                const btnClass = packingChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
+                const btnText = packingChecked ? 'Valittu' : 'Valitse';
+                const disabledAttr = doneChecked ? '' : ' disabled';
+                const titleAttr = doneChecked ? '' : ' title="Merkitse ensin tehdyksi"';
+                html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
+            }
+            if (isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
+                const pdfKey = `${jobNumber}||${itemName}`;
+                const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
+                const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
+                const btnText = pdfChecked ? 'Valittu' : 'Valitse';
+                html += `<button class="${btnClass}" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
+            }
             if (doneChecked && packedMitat[checkKey]) {
                 html += `<span class="mitat-packed-label">(Pakattu!)</span>`;
             }
@@ -5213,6 +5207,13 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
     try {
         await generateLasilistaSummaryPdf(jobNumber, groupedRows, selectedColors[0] || '');
         showToast('Lasilistat PDF ladattu.', 'success');
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+        const mittatView = document.getElementById('mittatView');
+        if (mittatView && !mittatView.classList.contains('d-none')) {
+            loadMittatView();
+        }
     } catch (error) {
         console.error('❌ Lasilistat PDF -luonti epäonnistui:', error);
         showToast('Lasilistat PDF -luonti epäonnistui.', 'error');
@@ -5374,6 +5375,9 @@ async function downloadPackingList(jobNumber) {
         packedTimestamps[`${jobNumber}-${nextPackageNumber}`] = new Date().toISOString();
         localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
         syncMitatStateToFirestore();
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
         const mittatView = document.getElementById('mittatView');
         const paketitView = document.getElementById('paketitView');
         if (mittatView && !mittatView.classList.contains('d-none')) {
