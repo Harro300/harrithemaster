@@ -28,7 +28,10 @@ const ADMIN_EMAILS = [
     'admin01@teras.local',
     'admin02@teras.local'
 ];
-const COORDINATOR_EMAIL = 'koordinaattori@teras.fi';
+const COORDINATOR_EMAILS = [
+    'koordinaattori@teras.fi',
+    'logistiikka@teras.fi'
+];
 
 // ========== UTILITY FUNCTIONS ==========
 
@@ -94,7 +97,7 @@ function checkIsAdmin(email) {
 }
 
 function checkIsCoordinator(email) {
-    return email === COORDINATOR_EMAIL;
+    return COORDINATOR_EMAILS.includes(email);
 }
 
 // Wait for Firebase to be ready
