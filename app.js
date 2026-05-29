@@ -5,7 +5,8 @@ let settings = {
     paneCount: 1,
     kickPlateEnabled: true,
     sealThresholdEnabled: false,
-    umpioviEnabled: false
+    umpioviEnabled: false,
+    umpivasikkaEnabled: false
 };
 const calculatorInputCache = {};
 
@@ -512,6 +513,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (umpioviEnabled !== null) {
         settings.umpioviEnabled = umpioviEnabled === 'true';
     }
+
+    const umpivasikkaEnabled = localStorage.getItem('umpivasikkaEnabled');
+    if (umpivasikkaEnabled !== null) {
+        settings.umpivasikkaEnabled = umpivasikkaEnabled === 'true';
+    }
     
     // Initialize Firebase Auth listener
     initializeFirebaseAuth();
@@ -583,10 +589,16 @@ function updateCalculatorInputVisibility() {
     if (sealThresholdSettingEl) {
         sealThresholdSettingEl.style.display = isWindowCalculator ? 'none' : '';
     }
+
+    const umpivasikkaSettingEl = document.getElementById('umpivasikkaSetting');
+    if (umpivasikkaSettingEl) {
+        const showUmpivasikka = isPariovi && !settings.umpioviEnabled;
+        umpivasikkaSettingEl.style.display = showUmpivasikka ? '' : 'none';
+    }
 }
 
 function bindSettingsLiveUpdateHandlers() {
-    const settingIds = ['gapOption', 'paneCount', 'kickPlateToggle', 'sealThresholdToggle', 'umpioviToggle'];
+    const settingIds = ['gapOption', 'paneCount', 'kickPlateToggle', 'sealThresholdToggle', 'umpioviToggle', 'umpivasikkaToggle'];
 
     settingIds.forEach((id) => {
         const el = document.getElementById(id);
@@ -837,6 +849,7 @@ function saveCalculatorInputs() {
         kickPlateEnabled: settings.kickPlateEnabled,
         sealThresholdEnabled: settings.sealThresholdEnabled,
         umpioviEnabled: settings.umpioviEnabled,
+        umpivasikkaEnabled: settings.umpivasikkaEnabled,
         paneHeights: [],
         paneWidths: []
     };
@@ -898,13 +911,18 @@ function selectCalculator(type) {
     const umpioviEnabled = cached?.umpioviEnabled !== undefined
         ? cached.umpioviEnabled
         : (savedUmpioviEnabled !== null ? savedUmpioviEnabled === 'true' : false);
+    const savedUmpivasikkaEnabled = localStorage.getItem('umpivasikkaEnabled');
+    const umpivasikkaEnabled = cached?.umpivasikkaEnabled !== undefined
+        ? cached.umpivasikkaEnabled
+        : (savedUmpivasikkaEnabled !== null ? savedUmpivasikkaEnabled === 'true' : false);
     
     settings = {
         gapOption: cached ? cached.gapOption : 8,
         paneCount: cached ? cached.paneCount : 1,
         kickPlateEnabled: kickPlateEnabled,
         sealThresholdEnabled: sealThresholdEnabled,
-        umpioviEnabled: umpioviEnabled
+        umpioviEnabled: umpioviEnabled,
+        umpivasikkaEnabled: umpivasikkaEnabled
     };
     document.getElementById('gapOption').value = String(settings.gapOption);
     document.getElementById('paneCount').value = String(settings.paneCount);
@@ -920,6 +938,10 @@ function selectCalculator(type) {
     const umpioviToggle = document.getElementById('umpioviToggle');
     if (umpioviToggle) {
         umpioviToggle.checked = umpioviEnabled;
+    }
+    const umpivasikkaToggle = document.getElementById('umpivasikkaToggle');
+    if (umpivasikkaToggle) {
+        umpivasikkaToggle.checked = umpivasikkaEnabled;
     }
     
     updatePaneInputs();
@@ -957,6 +979,10 @@ function openSettings() {
     const umpioviToggle = document.getElementById('umpioviToggle');
     if (umpioviToggle) {
         umpioviToggle.checked = settings.umpioviEnabled === true;
+    }
+    const umpivasikkaToggle = document.getElementById('umpivasikkaToggle');
+    if (umpivasikkaToggle) {
+        umpivasikkaToggle.checked = settings.umpivasikkaEnabled === true;
     }
     
     // Hide door-specific settings for window calculators
@@ -1024,9 +1050,12 @@ function updateSettingsInfo() {
     const tiivisteInfo = document.getElementById('settingsInfoTiivistekynnys');
     const umpioviInfo = document.getElementById('settingsInfoUmpiovi');
 
+    const umpivasikkaInfo = document.getElementById('settingsInfoUmpivasikka');
+
     if (potkupeltiInfo) potkupeltiInfo.style.display = settings.kickPlateEnabled ? '' : 'none';
     if (tiivisteInfo) tiivisteInfo.style.display = settings.sealThresholdEnabled ? '' : 'none';
     if (umpioviInfo) umpioviInfo.style.display = settings.umpioviEnabled ? '' : 'none';
+    if (umpivasikkaInfo) umpivasikkaInfo.style.display = settings.umpivasikkaEnabled ? '' : 'none';
 }
 
 // Apply settings
@@ -1037,11 +1066,13 @@ function applySettings() {
     settings.kickPlateEnabled = document.getElementById('kickPlateToggle').checked;
     settings.sealThresholdEnabled = !!document.getElementById('sealThresholdToggle')?.checked;
     settings.umpioviEnabled = !!document.getElementById('umpioviToggle')?.checked;
+    settings.umpivasikkaEnabled = !!document.getElementById('umpivasikkaToggle')?.checked;
     
     // Save settings to localStorage
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled);
     localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled);
     localStorage.setItem('umpioviEnabled', settings.umpioviEnabled);
+    localStorage.setItem('umpivasikkaEnabled', settings.umpivasikkaEnabled);
     
     const savedPaneValues = [];
     for (let i = 1; i <= settings.paneCount; i++) {
@@ -1476,11 +1507,13 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Vertical strips for side door (2 per pane)
-    paneHeights.forEach(height => {
-        const verticalLength = height + jf.lasilista_pysty;
-        results.lasilista.push(verticalLength);
-        results.lasilista.push(verticalLength);
-    });
+    if (!settings.umpivasikkaEnabled) {
+        paneHeights.forEach(height => {
+            const verticalLength = height + jf.lasilista_pysty;
+            results.lasilista.push(verticalLength);
+            results.lasilista.push(verticalLength);
+        });
+    }
     
     // Horizontal strips for main door (2 per pane)
     paneHeights.forEach(() => {
@@ -1490,11 +1523,13 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Horizontal strips for side door (2 per pane)
-    paneHeights.forEach(() => {
-        const horizontalLength = sideWidth + jf.lasilista_vaaka;
-        results.lasilista.push(horizontalLength);
-        results.lasilista.push(horizontalLength);
-    });
+    if (!settings.umpivasikkaEnabled) {
+        paneHeights.forEach(() => {
+            const horizontalLength = sideWidth + jf.lasilista_vaaka;
+            results.lasilista.push(horizontalLength);
+            results.lasilista.push(horizontalLength);
+        });
+    }
     
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
@@ -1502,7 +1537,9 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         const uretaaniHeightAdjust = getUretaaniHeightAdjust(jf, jf.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + jf.uretaani_leveys}`);
-        results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
+        if (!settings.umpivasikkaEnabled) {
+            results.uretaani.push(`${uretaaniHeight} x ${sideWidth + jf.uretaani_leveys}`);
+        }
         
         // Potkupellit - Käyntiovi (Kick plates - Main door)
     let mainInnerHeight, mainOuterHeight;
@@ -1539,10 +1576,14 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         sideInnerHeight = kickHeight + jf.potku_lisa_sisa_korkeus + innerHeightAdjust;
         sideOuterHeight = kickHeight + jf.potku_lisa_ulko_korkeus + outerHeightAdjust;
     }
-    const sideInnerWidth = sideWidth + jf.potku_lisa_sisa_leveys;
+    const sideInnerWidth = settings.umpivasikkaEnabled
+        ? sideWidth + (jf.umpiovi_potku_lisa_sisa_leveys ?? jf.umpiovi_potku_sisa_leveys ?? jf.umpiovi_potku_leveys ?? 115)
+        : sideWidth + jf.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    let sideOuterWidth = sideWidth + jf.potku_lisa_ulko_leveys;
+    let sideOuterWidth = settings.umpivasikkaEnabled
+        ? sideWidth + (jf.umpiovi_potku_lisa_ulko_leveys ?? jf.umpiovi_potku_ulko_leveys ?? 165)
+        : sideWidth + jf.potku_lisa_ulko_leveys;
     if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
@@ -1669,11 +1710,13 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Vertical strips for side door (2 per pane)
-    paneHeights.forEach(height => {
-        const verticalLength = height + ef.lasilista_pysty;
-        results.lasilista.push(verticalLength);
-        results.lasilista.push(verticalLength);
-    });
+    if (!settings.umpivasikkaEnabled) {
+        paneHeights.forEach(height => {
+            const verticalLength = height + ef.lasilista_pysty;
+            results.lasilista.push(verticalLength);
+            results.lasilista.push(verticalLength);
+        });
+    }
     
     // Horizontal strips for main door (2 per pane)
     paneHeights.forEach(() => {
@@ -1683,11 +1726,13 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     });
     
     // Horizontal strips for side door (2 per pane)
-    paneHeights.forEach(() => {
-        const horizontalLength = sideWidth + ef.lasilista_vaaka;
-        results.lasilista.push(horizontalLength);
-        results.lasilista.push(horizontalLength);
-    });
+    if (!settings.umpivasikkaEnabled) {
+        paneHeights.forEach(() => {
+            const horizontalLength = sideWidth + ef.lasilista_vaaka;
+            results.lasilista.push(horizontalLength);
+            results.lasilista.push(horizontalLength);
+        });
+    }
     
     // Only calculate kick plates and urethane if enabled
     if (settings.kickPlateEnabled) {
@@ -1695,7 +1740,9 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         const uretaaniHeightAdjust = getUretaaniHeightAdjust(ef, ef.uretaani_korkeus);
         const uretaaniHeight = kickHeight + uretaaniHeightAdjust;
         results.uretaani.push(`${uretaaniHeight} x ${mainWidth + ef.uretaani_leveys}`);
-        results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
+        if (!settings.umpivasikkaEnabled) {
+            results.uretaani.push(`${uretaaniHeight} x ${sideWidth + ef.uretaani_leveys}`);
+        }
         
         // Potkupellit - Käyntiovi
     let mainInnerHeight, mainOuterHeight;
@@ -1732,10 +1779,14 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         sideInnerHeight = kickHeight + ef.potku_lisa_sisa_korkeus + innerHeightAdjust;
         sideOuterHeight = kickHeight + ef.potku_lisa_ulko_korkeus + outerHeightAdjust;
     }
-    const sideInnerWidth = sideWidth + ef.potku_lisa_sisa_leveys;
+    const sideInnerWidth = settings.umpivasikkaEnabled
+        ? sideWidth + (ef.umpiovi_potku_lisa_sisa_leveys ?? ef.umpiovi_potku_sisa_leveys ?? ef.umpiovi_potku_leveys ?? 110)
+        : sideWidth + ef.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    let sideOuterWidth = sideWidth + ef.potku_lisa_ulko_leveys;
+    let sideOuterWidth = settings.umpivasikkaEnabled
+        ? sideWidth + (ef.umpiovi_potku_lisa_ulko_leveys ?? ef.umpiovi_potku_ulko_leveys ?? 160)
+        : sideWidth + ef.potku_lisa_ulko_leveys;
     if (kickHeight > 310) {
         sideOuterWidth -= 5;
     }
@@ -2283,6 +2334,9 @@ function loadPreset(name) {
     if (settings.umpioviEnabled === undefined) {
         settings.umpioviEnabled = false;
     }
+    if (settings.umpivasikkaEnabled === undefined) {
+        settings.umpivasikkaEnabled = false;
+    }
     document.getElementById('gapOption').value = settings.gapOption;
     document.getElementById('paneCount').value = settings.paneCount;
     
@@ -2299,9 +2353,14 @@ function loadPreset(name) {
     if (umpioviToggle) {
         umpioviToggle.checked = settings.umpioviEnabled === true;
     }
+    const umpivasikkaTogglePreset = document.getElementById('umpivasikkaToggle');
+    if (umpivasikkaTogglePreset) {
+        umpivasikkaTogglePreset.checked = settings.umpivasikkaEnabled === true;
+    }
     localStorage.setItem('kickPlateEnabled', settings.kickPlateEnabled); // Ensure localStorage is updated
     localStorage.setItem('sealThresholdEnabled', settings.sealThresholdEnabled === true);
     localStorage.setItem('umpioviEnabled', settings.umpioviEnabled === true);
+    localStorage.setItem('umpivasikkaEnabled', settings.umpivasikkaEnabled === true);
     
     applySettings(); // Apply all settings, which also calls updatePaneInputs and calculate
     
@@ -4013,6 +4072,7 @@ function confirmTransferToMitat() {
             kickPlateEnabled: settings.kickPlateEnabled,
             sealThresholdEnabled: settings.sealThresholdEnabled,
             umpioviEnabled: settings.umpioviEnabled,
+            umpivasikkaEnabled: settings.umpivasikkaEnabled,
             formulaSet: localStorage.getItem('activeFormulaSet') || 'default',
             paneHeights: [],
             paneWidths: []
@@ -5519,6 +5579,9 @@ function buildInputsRows(inputs, isWindow, isPariovi) {
         rows.push({ label: 'Potkupelti', value: inputs.kickPlateEnabled ? 'Päällä' : 'Pois' });
         rows.push({ label: 'Tiivistekynnys', value: inputs.sealThresholdEnabled ? 'Päällä' : 'Pois' });
         rows.push({ label: 'Umpiovi', value: inputs.umpioviEnabled ? 'Päällä' : 'Pois' });
+        if (isPariovi) {
+            rows.push({ label: 'Umpivasikka', value: inputs.umpivasikkaEnabled ? 'Päällä' : 'Pois' });
+        }
     } else {
         rows.push({ label: 'Potkupelti', value: inputs.kickPlateEnabled ? 'Päällä' : 'Pois' });
         rows.push({ label: 'Ruutujen määrä', value: String(inputs.paneCount ?? '—') });

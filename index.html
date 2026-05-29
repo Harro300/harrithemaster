@@ -106,6 +106,14 @@
                                 </div>
                             </div>
                         </div>
+                        <div id="umpivasikkaSetting">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase">Umpivasikka</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="umpivasikkaToggle" onchange="applySettings()">
+                                </div>
+                            </div>
+                        </div>
                         <div id="kickPlateSetting">
                             <div class="d-flex align-items-center gap-2">
                                 <label class="form-label mb-0 small text-uppercase">Potkupelti</label>
@@ -161,6 +169,7 @@
                         <div id="settingsInfoPotkupelti" style="display:none;">Potkupelti</div>
                         <div id="settingsInfoTiivistekynnys" style="display:none;">Tiivistekynnys</div>
                         <div id="settingsInfoUmpiovi" style="display:none;">Umpiovi</div>
+                        <div id="settingsInfoUmpivasikka" style="display:none;">Umpivasikka</div>
                 </div>
             </div>
         </div>
@@ -2104,6 +2113,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260527R4"></script>
+    <script src="app.js?v=20260529R2"></script>
 </body>
 </html>
