@@ -5298,7 +5298,7 @@ async function loadImageAsDataUrl(imagePath) {
     });
 }
 
-async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) {
+async function generatePackingListPdf(jobNumber, selectedItemNames, packerName, packageNumber) {
     const { jsPDF } = window.jspdf || {};
     if (!jsPDF) {
         throw new Error('jsPDF ei ole saatavilla.');
@@ -5314,7 +5314,7 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
     const rowHeight = 16;
     const itemRowFontSize = 22.4; // 20% smaller than previous 28
     const bottomReserve = 55;
-    let rowY = 176;
+    let rowY = 95;
 
     // Resolve image paths relative to current page so they work on localhost and GitHub Pages.
     const logoPath = new URL('assets/packing-logo.png', window.location.href).toString();
@@ -5326,20 +5326,17 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
         doc.setFontSize(36);
         doc.text('PAKKAUSLUETTELO', pageWidth / 2, 30, { align: 'center' });
 
-        doc.setFontSize(28);
-        doc.text('LÄHETYKSEN VASTAANOTTAJA:', pageWidth / 2, 58, { align: 'center' });
-
         const infoFontSize = 16.8; // 30% smaller than previous 24
         doc.setFontSize(infoFontSize);
-        doc.text('PAKKAUSPVM:', 22, 118);
-        doc.text('PAKKAAJA:', 84, 118);
-        doc.text('TYÖNRO:', 145, 118);
+        doc.text('PAKKAUSPVM:', 22, 58);
+        doc.text('PAKKAAJA:', 84, 58);
+        doc.text('TYÖNRO:', 145, 58);
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(infoFontSize);
-        doc.text(dateText, 22, 135);
-        doc.text(packerName, 84, 135);
-        doc.text(jobNumber, 145, 135);
+        doc.text(dateText, 22, 75);
+        doc.text(packerName, 84, 75);
+        doc.text(jobNumber, 145, 75);
     };
 
     drawHeader();
@@ -5385,6 +5382,25 @@ async function generatePackingListPdf(jobNumber, selectedItemNames, packerName) 
     doc.addImage(logoDataUrl, 'PNG', 38, imagesY, logoWidth, logoHeight);
     doc.addImage(qrDataUrl, 'PNG', pageWidth - 38 - qrSize, imagesY - 6, qrSize, qrSize);
 
+    doc.addPage('a4', 'l');
+    const labelPageWidth = doc.internal.pageSize.getWidth();
+    const labelPageHeight = doc.internal.pageSize.getHeight();
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+
+    const gapMm = 12;
+    doc.setFontSize(120);
+    const titleDim = doc.getTextDimensions('PAKETTI');
+    doc.setFontSize(200);
+    const numDim = doc.getTextDimensions(String(packageNumber));
+    const titleBaselineY = (labelPageHeight + titleDim.h - gapMm - numDim.h) / 2;
+    const numberBaselineY = titleBaselineY + gapMm + numDim.h;
+
+    doc.setFontSize(120);
+    doc.text('PAKETTI', labelPageWidth / 2, titleBaselineY, { align: 'center' });
+    doc.setFontSize(200);
+    doc.text(String(packageNumber), labelPageWidth / 2, numberBaselineY, { align: 'center' });
+
     const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
     const cleanDate = dateText.replace(/\./g, '-');
     doc.save(`pakkausluettelo_${cleanJob}_${cleanDate}.pdf`);
@@ -5417,7 +5433,6 @@ async function downloadPackingList(jobNumber) {
     }
 
     try {
-        await generatePackingListPdf(jobNumber, selectedItemNames, packerName);
         const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
         const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
         const existingPackageNumbers = Object.entries(packedPackageNumbers)
@@ -5426,6 +5441,8 @@ async function downloadPackingList(jobNumber) {
         const nextPackageNumber = existingPackageNumbers.length > 0
             ? Math.max(...existingPackageNumbers) + 1
             : 1;
+
+        await generatePackingListPdf(jobNumber, selectedItemNames, packerName, nextPackageNumber);
 
         selectedItemNames.forEach((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;
