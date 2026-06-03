@@ -4864,11 +4864,17 @@ function showPaketitItemDetails(jobNumber, itemName, btn) {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
             const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
             html += `<div class="mitat-inputs-section-header">Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</div>`;
-            html += renderInputsRows(buildInputsRows(entry, isWindow, isPariovi));
+            const entryCalc = entry.calculator || '';
+            const entryIsWindow = entryCalc.includes('ikkuna');
+            const entryIsPariovi = entryCalc.includes('pariovi');
+            html += renderInputsRows(buildInputsRows(entry, entryIsWindow, entryIsPariovi));
         });
     } else {
         const inputs = (inputsHistory && inputsHistory.length === 1) ? inputsHistory[0] : singleInputs;
-        html += renderInputsRows(buildInputsRows(inputs, isWindow, isPariovi));
+        const inputsCalc = (inputs && inputs.calculator) || (item.calculator || '');
+        const inputsIsWindow = inputsCalc.includes('ikkuna');
+        const inputsIsPariovi = inputsCalc.includes('pariovi');
+        html += renderInputsRows(buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi));
         if (!inputs) {
             html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle.</div>`;
         }
@@ -5599,12 +5605,20 @@ function buildInputsRows(inputs, isWindow, isPariovi) {
         rows.push({ label: 'Ruutujen määrä', value: String(inputs.paneCount ?? '—') });
     }
     if (!isWindow) {
-        const widthLabel = isPariovi ? 'Käyntioven leveys' : 'Oven leveys';
-        if (inputs.mainDoorWidth) {
-            rows.push({ label: widthLabel, value: `${inputs.mainDoorWidth} mm` });
+        const paneCount = inputs.paneHeights?.length || 0;
+        if (paneCount > 1) {
+            rows.push({ label: 'Ruutujen määrä', value: String(paneCount) });
         }
         if (isPariovi && inputs.sideDoorWidth) {
             rows.push({ label: 'Lisäoven leveys', value: `${inputs.sideDoorWidth} mm` });
+        }
+        for (let i = 0; i < paneCount; i++) {
+            const w = inputs.mainDoorWidth || '—';
+            const h = inputs.paneHeights[i] || '—';
+            rows.push({
+                label: paneCount > 1 ? `Ruutu ${i + 1}` : 'Ruutu',
+                value: `${w} × ${h} mm (L × K)`
+            });
         }
         if (inputs.kickPlateEnabled && inputs.kickPlateHeight) {
             rows.push({ label: 'Potkupellin oletuskorkeus', value: `${inputs.kickPlateHeight} mm` });
@@ -5677,13 +5691,19 @@ function showMitatItemInputs(jobNumber, itemName) {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
             const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
             html += `<div class="mitat-inputs-section-header">Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</div>`;
-            const rows = buildInputsRows(entry, isWindow, isPariovi);
+            const entryCalc = entry.calculator || '';
+            const entryIsWindow = entryCalc.includes('ikkuna');
+            const entryIsPariovi = entryCalc.includes('pariovi');
+            const rows = buildInputsRows(entry, entryIsWindow, entryIsPariovi);
             html += renderInputsRows(rows);
         });
     } else {
         // Single transfer
         const inputs = (inputsHistory && inputsHistory.length === 1) ? inputsHistory[0] : singleInputs;
-        const rows = buildInputsRows(inputs, isWindow, isPariovi);
+        const inputsCalc = (inputs && inputs.calculator) || (item.calculator || '');
+        const inputsIsWindow = inputsCalc.includes('ikkuna');
+        const inputsIsPariovi = inputsCalc.includes('pariovi');
+        const rows = buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi);
         html += renderInputsRows(rows);
         if (!inputs) {
             html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle. Näytetään vain saatavilla olevat tiedot.</div>`;
