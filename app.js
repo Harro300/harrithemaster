@@ -590,6 +590,11 @@ function updateCalculatorInputVisibility() {
         sealThresholdSettingEl.style.display = isWindowCalculator ? 'none' : '';
     }
 
+    const gapOptionSettingEl = document.getElementById('gapOptionSetting');
+    if (gapOptionSettingEl) {
+        gapOptionSettingEl.style.display = isWindowCalculator ? 'none' : '';
+    }
+
     const umpivasikkaSettingEl = document.getElementById('umpivasikkaSetting');
     if (umpivasikkaSettingEl) {
         const showUmpivasikka = isPariovi && !settings.umpioviEnabled;
@@ -1046,16 +1051,6 @@ function updateSettingsInfo() {
         }
     }
 
-    const potkupeltiInfo = document.getElementById('settingsInfoPotkupelti');
-    const tiivisteInfo = document.getElementById('settingsInfoTiivistekynnys');
-    const umpioviInfo = document.getElementById('settingsInfoUmpiovi');
-
-    const umpivasikkaInfo = document.getElementById('settingsInfoUmpivasikka');
-
-    if (potkupeltiInfo) potkupeltiInfo.style.display = settings.kickPlateEnabled ? '' : 'none';
-    if (tiivisteInfo) tiivisteInfo.style.display = settings.sealThresholdEnabled ? '' : 'none';
-    if (umpioviInfo) umpioviInfo.style.display = settings.umpioviEnabled ? '' : 'none';
-    if (umpivasikkaInfo) umpivasikkaInfo.style.display = settings.umpivasikkaEnabled ? '' : 'none';
 }
 
 // Apply settings

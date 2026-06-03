@@ -96,7 +96,39 @@
         <div class="card shadow-lg mb-4">
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h4 class="mb-0">Syötteet</h4>
+                    <div class="d-flex align-items-center gap-3">
+                        <h4 class="mb-0">Syötteet</h4>
+                        <div id="gapOptionSetting">
+                            <div class="d-flex align-items-center gap-1">
+                            <label for="gapOption" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Rako</label>
+                            <select class="form-select" id="gapOption" onchange="applySettings()" style="width:auto;font-size:0.75rem;padding:0.15rem 1.5rem 0.15rem 0.4rem">
+                                <option value="8">8 mm rako</option>
+                                <option value="10">10 mm rako</option>
+                                <option value="15">15 mm rako</option>
+                                <option value="saneeraus">Saneerauskynnys</option>
+                            </select>
+                            </div>
+                        </div>
+                        <div id="paneCountSetting">
+                            <div class="d-flex align-items-center gap-1">
+                            <label for="paneCount" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Ruutuja</label>
+                            <select class="form-select" id="paneCount" onchange="applySettings()" style="width:auto;font-size:0.75rem;padding:0.15rem 1.5rem 0.15rem 0.4rem">
+                                <option value="1">1 ruutu</option>
+                                <option value="2">2 ruutua</option>
+                                <option value="3">3 ruutua</option>
+                                <option value="4">4 ruutua</option>
+                                <option value="5">5 ruutua</option>
+                                <option value="6">6 ruutua</option>
+                                <option value="7">7 ruutua</option>
+                                <option value="8">8 ruutua</option>
+                                <option value="9">9 ruutua</option>
+                                <option value="10">10 ruutua</option>
+                                <option value="11">11 ruutua</option>
+                                <option value="12">12 ruutua</option>
+                            </select>
+                            </div>
+                        </div>
+                    </div>
                     <div class="d-flex gap-3">
                         <div id="umpioviSetting">
                             <div class="d-flex align-items-center gap-2">
@@ -164,12 +196,7 @@
                         <button class="btn btn-warning" onclick="loadPresetDialog()">📂 Valmiit Mitat</button>
                     </div>
                     <div id="currentSettingsInfo" class="text-end" style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;">
-                        <div>Rako: <span id="currentGapSetting">8 mm rako</span></div>
                         <div>Kaavat: <span id="currentFormulaSet">Default Kaavat</span></div>
-                        <div id="settingsInfoPotkupelti" style="display:none;">Potkupelti</div>
-                        <div id="settingsInfoTiivistekynnys" style="display:none;">Tiivistekynnys</div>
-                        <div id="settingsInfoUmpiovi" style="display:none;">Umpiovi</div>
-                        <div id="settingsInfoUmpivasikka" style="display:none;">Umpivasikka</div>
                 </div>
             </div>
         </div>
@@ -305,32 +332,6 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sulje"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3" id="gapOptionSetting">
-                        <label for="gapOption" class="form-label">Rako</label>
-                        <select class="form-select" id="gapOption" onchange="applySettings()">
-                            <option value="8">8 mm rako</option>
-                            <option value="10">10 mm rako</option>
-                            <option value="15">15 mm rako</option>
-                            <option value="saneeraus">Saneerauskynnys</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="paneCount" class="form-label">Ruutujen määrä</label>
-                        <select class="form-select" id="paneCount" onchange="applySettings()">
-                            <option value="1">1 ruutu</option>
-                            <option value="2">2 ruutua</option>
-                            <option value="3">3 ruutua</option>
-                            <option value="4">4 ruutua</option>
-                            <option value="5">5 ruutua</option>
-                            <option value="6">6 ruutua</option>
-                            <option value="7">7 ruutua</option>
-                            <option value="8">8 ruutua</option>
-                            <option value="9">9 ruutua</option>
-                            <option value="10">10 ruutua</option>
-                            <option value="11">11 ruutua</option>
-                            <option value="12">12 ruutua</option>
-                        </select>
-                    </div>
                     <div class="mb-3">
                         <label for="settingsFormulaSet" class="form-label">Kaavasetti</label>
                         <select class="form-select" id="settingsFormulaSet" onchange="switchFormulaSetFromSettings()">
@@ -2113,6 +2114,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260531R9"></script>
+    <script src="app.js?v=20260603R7"></script>
 </body>
 </html>
