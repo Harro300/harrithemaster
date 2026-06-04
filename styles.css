@@ -1515,6 +1515,32 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     border-bottom: 1px solid #dee2e6;
 }
 
+.mitat-inputs-edit-row {
+    background-color: #ffffff;
+    border-color: #ced4da;
+    align-items: center;
+}
+
+.mitat-inputs-edit-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.mitat-inputs-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mitat-edit-btn {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
 /* Harmaa nappi (ei muistiinpanoa) */
 .btn-note-empty {
     color: #6c757d;

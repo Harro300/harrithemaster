@@ -4823,7 +4823,7 @@ function renamePaketitItem(jobNumber, itemName, btn) {
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
 
-function showPaketitItemDetails(jobNumber, itemName, btn) {
+function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber]?.[itemName];
     if (!item) {
@@ -4831,16 +4831,18 @@ function showPaketitItemDetails(jobNumber, itemName, btn) {
         return;
     }
 
-    const menu = btn.closest('.dropdown-menu');
-    const toggle = menu?.previousElementSibling;
-    if (toggle && window.bootstrap?.Dropdown) {
-        bootstrap.Dropdown.getInstance(toggle)?.hide();
+    if (btn) {
+        const menu = btn.closest('.dropdown-menu');
+        const toggle = menu?.previousElementSibling;
+        if (toggle && window.bootstrap?.Dropdown) {
+            bootstrap.Dropdown.getInstance(toggle)?.hide();
+        }
     }
 
     const calcLabel = getCalculatorLabel(item.calculator);
-    const isWindow = (item.calculator || '').includes('ikkuna');
-    const isPariovi = (item.calculator || '').includes('pariovi');
     const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
+    const safeJob = sanitizeForAttribute(jobNumber);
+    const safeItem = sanitizeForAttribute(itemName);
 
     let html = '';
 
@@ -4863,20 +4865,35 @@ function showPaketitItemDetails(jobNumber, itemName, btn) {
         inputsHistory.forEach((entry, idx) => {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
             const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
-            html += `<div class="mitat-inputs-section-header">Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</div>`;
             const entryCalc = entry.calculator || '';
             const entryIsWindow = entryCalc.includes('ikkuna');
             const entryIsPariovi = entryCalc.includes('pariovi');
-            html += renderInputsRows(buildInputsRows(entry, entryIsWindow, entryIsPariovi));
+            const editBtn = editEntryIdx !== idx
+                ? `<button class="btn btn-sm mitat-edit-btn btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,${idx})">Muokkaa</button>`
+                : '';
+            html += `<div class="mitat-inputs-section-header d-flex justify-content-between align-items-center">
+                <span>Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</span>${editBtn}
+            </div>`;
+            if (editEntryIdx === idx) {
+                html += buildInputsEditForm(entry, entryIsWindow, entryIsPariovi, idx, jobNumber, itemName, 'paketit');
+            } else {
+                html += renderInputsRows(buildInputsRows(entry, entryIsWindow, entryIsPariovi));
+            }
         });
     } else {
         const inputs = (inputsHistory && inputsHistory.length === 1) ? inputsHistory[0] : singleInputs;
         const inputsCalc = (inputs && inputs.calculator) || (item.calculator || '');
         const inputsIsWindow = inputsCalc.includes('ikkuna');
         const inputsIsPariovi = inputsCalc.includes('pariovi');
-        html += renderInputsRows(buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi));
-        if (!inputs) {
-            html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle.</div>`;
+        if (editEntryIdx === 0 && inputs) {
+            html += buildInputsEditForm(inputs, inputsIsWindow, inputsIsPariovi, 0, jobNumber, itemName, 'paketit');
+        } else {
+            html += renderInputsRows(buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi));
+            if (!inputs) {
+                html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle.</div>`;
+            } else {
+                html += `<div class="mt-3"><button class="btn btn-sm btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,0)">Muokkaa syötteitä</button></div>`;
+            }
         }
     }
     html += `</div>`;
@@ -5648,7 +5665,241 @@ function renderInputsRows(rows) {
     }).join('');
 }
 
-function showMitatItemInputs(jobNumber, itemName) {
+// ============================================
+// INPUTS EDIT — recalculate & save
+// ============================================
+
+function formatResultToData(result, calc, settingsSnap) {
+    const data = [];
+    const isWindow = calc.includes('ikkuna');
+    const isUmpiovi = !isWindow && settingsSnap.umpioviEnabled;
+    if (!isUmpiovi) {
+        const combined = combineResults(result.lasilista || []);
+        if (combined.length > 0)
+            data.push({ title: 'Lasilista', items: combined.map(v => ({ label: v, value: '' })) });
+    }
+    if (!isUmpiovi && settingsSnap.kickPlateEnabled && (result.uretaani || []).length > 0)
+        data.push({ title: 'Uretaani', items: result.uretaani.map(v => ({ label: v, value: '' })) });
+    if (settingsSnap.kickPlateEnabled && (result.potkupelti || []).length > 0)
+        data.push({ title: 'Potkupelti', items: result.potkupelti.map(v => ({ label: v, value: '' })) });
+    if (!isWindow && (isUmpiovi || !settingsSnap.sealThresholdEnabled) && (result.harjalista || []).length > 0)
+        data.push({ title: 'Harjalista', items: result.harjalista.map(v => ({ label: String(v), value: '' })) });
+    return data;
+}
+
+function recalculateFromInputs(inputs) {
+    const savedSettings = { ...settings };
+    const savedFormula = localStorage.getItem('activeFormulaSet');
+    try {
+        Object.assign(settings, {
+            gapOption: inputs.gapOption,
+            paneCount: inputs.paneCount || 1,
+            kickPlateEnabled: !!inputs.kickPlateEnabled,
+            sealThresholdEnabled: !!inputs.sealThresholdEnabled,
+            umpioviEnabled: !!inputs.umpioviEnabled,
+            umpivasikkaEnabled: !!inputs.umpivasikkaEnabled
+        });
+        localStorage.setItem('activeFormulaSet', inputs.formulaSet || 'default');
+        const c = inputs.calculator || '';
+        const w = parseInt(inputs.mainDoorWidth) || 0;
+        const s = parseInt(inputs.sideDoorWidth) || 0;
+        const k = parseInt(inputs.kickPlateHeight) || 0;
+        const ph = (inputs.paneHeights || []).map(v => parseInt(v) || 0);
+        const pw = (inputs.paneWidths || []).map(v => parseInt(v) || 0);
+        const umpi = settings.umpioviEnabled;
+        let result;
+        if      (c === 'economy-kayntiovi') result = umpi ? calculateUmpioviResults(w, 0, k, c) : calculateEconomyKayntiovi(w, k, ph);
+        else if (c === 'economy-pariovi')   result = umpi ? calculateUmpioviResults(w, s, k, c) : calculateEconomyPariovi(w, s, k, ph);
+        else if (c === 'janisol-kayntiovi') result = umpi ? calculateUmpioviResults(w, 0, k, c) : calculateJanisolKayntiovi(w, k, ph);
+        else if (c === 'janisol-pariovi')   result = umpi ? calculateUmpioviResults(w, s, k, c) : calculateJanisolPariovi(w, s, k, ph);
+        else if (c === 'economy-ikkuna')    result = calculateEconomyIkkuna(pw.length ? pw : [w], ph, k);
+        else if (c === 'janisol-ikkuna')    result = calculateJanisolIkkuna(pw.length ? pw : [w], ph, k);
+        else result = { lasilista: [], uretaani: [], potkupelti: [], harjalista: [] };
+        return formatResultToData(result, c, { ...settings });
+    } finally {
+        Object.assign(settings, savedSettings);
+        savedFormula !== null
+            ? localStorage.setItem('activeFormulaSet', savedFormula)
+            : localStorage.removeItem('activeFormulaSet');
+    }
+}
+
+function mergeDataArrays(dataArrays) {
+    if (!dataArrays || dataArrays.length === 0) return [];
+    if (dataArrays.length === 1) return dataArrays[0];
+    let merged = JSON.parse(JSON.stringify(dataArrays[0]));
+    for (let i = 1; i < dataArrays.length; i++) {
+        (dataArrays[i] || []).forEach(section => {
+            const isLasil = isLasilistaSectionTitle(section.title);
+            const existing = merged.find(s => isLasil ? isLasilistaSectionTitle(s.title) : s.title === section.title);
+            if (existing && isLasil)
+                existing.items = mergeMeasurementItems(existing.items, section.items);
+            else if (existing)
+                existing.items = existing.items.concat(JSON.parse(JSON.stringify(section.items)));
+            else
+                merged.push(JSON.parse(JSON.stringify(section)));
+        });
+    }
+    return merged;
+}
+
+function buildInputsEditForm(inputs, isWindow, isPariovi, entryIdx, jobNumber, itemName, context = 'mitat') {
+    if (!inputs) return '<p class="text-muted small">Syötteitä ei saatavilla muokkaukseen.</p>';
+    const safeJob = sanitizeForAttribute(jobNumber);
+    const safeItem = sanitizeForAttribute(itemName);
+
+    function editRow(label, controlHtml) {
+        return `<div class="mitat-inputs-row mitat-inputs-edit-row">
+            <span class="mitat-inputs-label">${label}</span>
+            <div class="mitat-inputs-edit-control">${controlHtml}</div>
+        </div>`;
+    }
+
+    const formulaSets = JSON.parse(localStorage.getItem('formulaSets') || '{}');
+    let formulaOptions = `<option value="default"${!inputs.formulaSet || inputs.formulaSet === 'default' ? ' selected' : ''}>Default Kaavat</option>`;
+    Object.keys(formulaSets).forEach(key => {
+        formulaOptions += `<option value="${key}"${inputs.formulaSet === key ? ' selected' : ''}>${key}</option>`;
+    });
+
+    let html = `<div class="mitat-inputs-edit-form" data-entry-idx="${entryIdx}">`;
+    html += editRow('Kaavasetti', `<select name="formulaSet" class="form-select form-select-sm" style="width:auto">${formulaOptions}</select>`);
+
+    if (!isWindow) {
+        const gapVal = String(inputs.gapOption);
+        const gapOpts = [
+            ['8', '8 mm rako'], ['10', '10 mm rako'], ['15', '15 mm rako'], ['saneeraus', 'Saneerauskynnys']
+        ].map(([v, l]) => `<option value="${v}"${gapVal === v ? ' selected' : ''}>${l}</option>`).join('');
+        html += editRow('Rako-asetus', `<select name="gapOption" class="form-select form-select-sm" style="width:auto">${gapOpts}</select>`);
+    }
+
+    html += editRow('Potkupelti', `<input type="checkbox" name="kickPlateEnabled" class="form-check-input"${inputs.kickPlateEnabled ? ' checked' : ''}>`);
+    html += editRow('Potkupellin korkeus (mm)', `<input type="number" name="kickPlateHeight" class="form-control form-control-sm" value="${inputs.kickPlateHeight || ''}" min="100" style="width:90px">`);
+
+    if (!isWindow) {
+        html += editRow('Tiivistekynnys', `<input type="checkbox" name="sealThresholdEnabled" class="form-check-input"${inputs.sealThresholdEnabled ? ' checked' : ''}>`);
+        html += editRow('Umpiovi', `<input type="checkbox" name="umpioviEnabled" class="form-check-input"${inputs.umpioviEnabled ? ' checked' : ''}>`);
+        if (isPariovi) {
+            html += editRow('Umpivasikka', `<input type="checkbox" name="umpivasikkaEnabled" class="form-check-input"${inputs.umpivasikkaEnabled ? ' checked' : ''}>`);
+        }
+        const widthLabel = isPariovi ? 'Käyntioven leveys (mm)' : 'Oven leveys (mm)';
+        html += editRow(widthLabel, `<input type="number" name="mainDoorWidth" class="form-control form-control-sm" value="${inputs.mainDoorWidth || ''}" min="500" style="width:90px">`);
+        if (isPariovi) {
+            html += editRow('Lisäoven leveys (mm)', `<input type="number" name="sideDoorWidth" class="form-control form-control-sm" value="${inputs.sideDoorWidth || ''}" min="100" style="width:90px">`);
+        }
+        const paneHeights = inputs.paneHeights || [];
+        paneHeights.forEach((h, i) => {
+            const lbl = paneHeights.length > 1 ? `Ruutu ${i + 1} korkeus (mm)` : 'Ruudun korkeus (mm)';
+            html += editRow(lbl, `<input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h || ''}" min="100" style="width:90px">`);
+        });
+    } else {
+        const paneCount = inputs.paneCount || 1;
+        html += editRow('Ruutujen määrä', `<span class="mitat-inputs-value">${paneCount}</span>`);
+        for (let i = 0; i < paneCount; i++) {
+            const w = (inputs.paneWidths || [])[i] || inputs.mainDoorWidth || '';
+            const h = (inputs.paneHeights || [])[i] || '';
+            const lbl = paneCount > 1 ? `Ruutu ${i + 1} (L × K, mm)` : 'Ruutu (L × K, mm)';
+            html += editRow(lbl,
+                `<span class="d-flex align-items-center gap-1">
+                    <input type="number" name="paneWidth_${i}" class="form-control form-control-sm" value="${w}" min="100" style="width:78px">
+                    <span class="text-muted">×</span>
+                    <input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h}" min="100" style="width:78px">
+                </span>`
+            );
+        }
+    }
+
+    const saveCtx = context === 'paketit' ? `,'paketit'` : '';
+    const cancelOnclick = context === 'paketit'
+        ? `showPaketitItemDetails('${safeJob}','${safeItem}',null)`
+        : `showMitatItemInputs('${safeJob}','${safeItem}')`;
+    html += `<div class="d-flex gap-2 mt-3">
+        <button class="btn btn-sm btn-primary" onclick="saveEditedMitatInputs('${safeJob}','${safeItem}',${entryIdx},this.closest('.mitat-inputs-edit-form')${saveCtx})">Tallenna ja laske</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="${cancelOnclick}">Peruuta</button>
+    </div>`;
+    html += `</div>`;
+    return html;
+}
+
+function collectInputsFromEditForm(formEl, baseInputs) {
+    const get = n => formEl.querySelector(`[name="${n}"]`);
+    const val = n => { const el = get(n); return el ? el.value : undefined; };
+    const chk = n => { const el = get(n); return el ? el.checked : undefined; };
+    const upd = (obj, key, v) => { if (v !== undefined) obj[key] = v; };
+
+    const inp = { ...baseInputs };
+    upd(inp, 'formulaSet', val('formulaSet'));
+    const gapRaw = val('gapOption');
+    if (gapRaw !== undefined) inp.gapOption = isNaN(parseInt(gapRaw)) ? gapRaw : parseInt(gapRaw);
+    upd(inp, 'kickPlateEnabled', chk('kickPlateEnabled'));
+    upd(inp, 'kickPlateHeight', val('kickPlateHeight'));
+    upd(inp, 'sealThresholdEnabled', chk('sealThresholdEnabled'));
+    upd(inp, 'umpioviEnabled', chk('umpioviEnabled'));
+    upd(inp, 'umpivasikkaEnabled', chk('umpivasikkaEnabled'));
+    upd(inp, 'mainDoorWidth', val('mainDoorWidth'));
+    upd(inp, 'sideDoorWidth', val('sideDoorWidth'));
+
+    const newHeights = [], newWidths = [];
+    for (let i = 0; get(`paneHeight_${i}`) !== null; i++) {
+        newHeights.push(get(`paneHeight_${i}`).value);
+        const wEl = get(`paneWidth_${i}`);
+        if (wEl) newWidths.push(wEl.value);
+    }
+    if (newHeights.length > 0) inp.paneHeights = newHeights;
+    if (newWidths.length > 0) inp.paneWidths = newWidths;
+
+    return inp;
+}
+
+function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 'mitat') {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber]?.[itemName];
+    if (!item) { showToast('Mittaa ei löytynyt.', 'warning'); return; }
+
+    const hasHistory = item.inputsHistory && item.inputsHistory.length > 0;
+    const baseInputs = hasHistory
+        ? (item.inputsHistory[entryIdx] || item.inputsHistory[0])
+        : (item.inputs || {});
+    const newInputs = collectInputsFromEditForm(formEl, baseInputs);
+
+    if (hasHistory) {
+        item.inputsHistory[entryIdx] = newInputs;
+    } else {
+        item.inputs = newInputs;
+    }
+
+    const entries = (item.inputsHistory && item.inputsHistory.length > 0)
+        ? item.inputsHistory
+        : [item.inputs];
+    const allData = entries.map(e => {
+        if (!e || !e.calculator) return null;
+        try { return recalculateFromInputs(e); } catch (err) {
+            console.error('Laskenta epäonnistui siirrolle:', e?.calculator, err);
+            return null;
+        }
+    }).filter(Boolean);
+
+    const calcOk = allData.length > 0;
+    if (calcOk) item.data = mergeDataArrays(allData);
+
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+
+    if (calcOk) {
+        showToast('Syötteet päivitetty ja tulokset laskettu uudelleen.', 'success');
+    } else {
+        showToast('Syötteet tallennettu, mutta laskenta epäonnistui — tarkista syötteet.', 'warning');
+    }
+
+    if (context === 'paketit') {
+        showPaketitItemDetails(jobNumber, itemName, null);
+    } else {
+        loadMittatView();
+        showMitatItemInputs(jobNumber, itemName);
+    }
+}
+
+function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber] && mittatData[jobNumber][itemName];
     if (!item) {
@@ -5657,9 +5908,9 @@ function showMitatItemInputs(jobNumber, itemName) {
     }
 
     const calcLabel = getCalculatorLabel(item.calculator);
-    const isWindow = (item.calculator || '').includes('ikkuna');
-    const isPariovi = (item.calculator || '').includes('pariovi');
     const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
+    const safeJob = sanitizeForAttribute(jobNumber);
+    const safeItem = sanitizeForAttribute(itemName);
 
     const fallbackEntry = (() => {
         const map = JSON.parse(localStorage.getItem('mitatInputs') || '{}');
@@ -5690,12 +5941,20 @@ function showMitatItemInputs(jobNumber, itemName) {
         inputsHistory.forEach((entry, idx) => {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
             const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
-            html += `<div class="mitat-inputs-section-header">Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</div>`;
             const entryCalc = entry.calculator || '';
             const entryIsWindow = entryCalc.includes('ikkuna');
             const entryIsPariovi = entryCalc.includes('pariovi');
-            const rows = buildInputsRows(entry, entryIsWindow, entryIsPariovi);
-            html += renderInputsRows(rows);
+            const editBtn = editEntryIdx !== idx
+                ? `<button class="btn btn-sm mitat-edit-btn btn-outline-secondary" onclick="showMitatItemInputs('${safeJob}','${safeItem}',${idx})">Muokkaa</button>`
+                : '';
+            html += `<div class="mitat-inputs-section-header d-flex justify-content-between align-items-center">
+                <span>Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</span>${editBtn}
+            </div>`;
+            if (editEntryIdx === idx) {
+                html += buildInputsEditForm(entry, entryIsWindow, entryIsPariovi, idx, jobNumber, itemName);
+            } else {
+                html += renderInputsRows(buildInputsRows(entry, entryIsWindow, entryIsPariovi));
+            }
         });
     } else {
         // Single transfer
@@ -5703,10 +5962,15 @@ function showMitatItemInputs(jobNumber, itemName) {
         const inputsCalc = (inputs && inputs.calculator) || (item.calculator || '');
         const inputsIsWindow = inputsCalc.includes('ikkuna');
         const inputsIsPariovi = inputsCalc.includes('pariovi');
-        const rows = buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi);
-        html += renderInputsRows(rows);
-        if (!inputs) {
-            html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle. Näytetään vain saatavilla olevat tiedot.</div>`;
+        if (editEntryIdx === 0 && inputs) {
+            html += buildInputsEditForm(inputs, inputsIsWindow, inputsIsPariovi, 0, jobNumber, itemName);
+        } else {
+            html += renderInputsRows(buildInputsRows(inputs, inputsIsWindow, inputsIsPariovi));
+            if (!inputs) {
+                html += `<div class="mitat-inputs-note text-muted small mt-2">Alkuperäisiä syötteitä ei ole tallennettu tälle mitalle. Näytetään vain saatavilla olevat tiedot.</div>`;
+            } else {
+                html += `<div class="mt-3"><button class="btn btn-sm btn-outline-secondary" onclick="showMitatItemInputs('${safeJob}','${safeItem}',0)">Muokkaa syötteitä</button></div>`;
+            }
         }
     }
 
