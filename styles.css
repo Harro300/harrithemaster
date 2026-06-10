@@ -1695,3 +1695,33 @@ body.dark-mode :focus-visible {
         transform: none !important;
     }
 }
+
+/* Gradus logo */
+.gradus-brand {
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+    flex-shrink: 0;
+}
+
+.gradus-logo {
+    height: 28px;
+    width: auto;
+    display: inline-block;
+}
+
+.gradus-logo--lg {
+    height: 40px;
+}
+
+.gradus-logo-dark {
+    display: none;
+}
+
+body.dark-mode .gradus-logo-light {
+    display: none;
+}
+
+body.dark-mode .gradus-logo-dark {
+    display: inline-block;
+}

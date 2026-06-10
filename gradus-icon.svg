@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 44" role="img" aria-label="Gradus">
+  <rect width="56" height="44" rx="10" fill="#1A1A2E"/>
+  <path d="M6 14 V8 H12 M6 34 V40 H12 M44 8 H38 M44 14 V8" fill="none" stroke="#F5F5F5" stroke-width="2" stroke-linecap="square"/>
+  <rect x="14" y="26" width="9" height="10" rx="1.5" fill="#F5F5F5"/>
+  <rect x="25" y="18" width="9" height="18" rx="1.5" fill="#F5F5F5"/>
+  <rect x="36" y="10" width="9" height="26" rx="1.5" fill="#F5F5F5"/>
+  <rect x="37.75" y="11.75" width="5.5" height="6.5" fill="#1A1A2E"/>
+  <rect x="37.75" y="19.75" width="5.5" height="9" fill="#1A1A2E"/>
+  <line x1="37" y1="19.5" x2="44" y2="19.5" stroke="#1A1A2E" stroke-width="0.8"/>
+  <line x1="37" y1="29.5" x2="44" y2="29.5" stroke="#1A1A2E" stroke-width="0.8"/>
+  <path fill="#F5F5F5" d="M 37.35 18.65 H 38.45 C 38.7 18.65 38.7 18.8 38.7 18.95 V 24.35 C 38.7 24.5 38.7 24.65 38.45 24.65 H 37.35 V 24.2 H 38.1 C 38.25 24.2 38.25 24.05 38.25 23.95 V 19.35 C 38.25 19.2 38.25 19.1 38.1 19.1 H 37.35 Z"/>
+</svg>
