@@ -273,7 +273,7 @@
                 </div>
                 <div class="mitat-search-row">
                     <input type="search" class="form-control mitat-search-input" id="mitatSearchInput"
-                        placeholder="Hae työnumerolla, tuotteella, värillä (esim. RAL 9010)..."
+                        placeholder="Hae työnumerolla, tuotteella, värillä tai &quot;lasilista 798&quot;..."
                         oninput="handleMitatSearchInput(this.value)"
                         onsearch="handleMitatSearchInput(this.value)"
                         onkeydown="if(event.key==='Enter'){event.preventDefault();handleMitatSearchInput(this.value);}"
@@ -2129,6 +2129,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260609R1"></script>
+    <script src="app.js?v=20260611R1"></script>
 </body>
 </html>

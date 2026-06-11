@@ -4977,7 +4977,21 @@ function handleMitatSearchInput(value) {
 
 function matchesMitatSearch(jobNumber, itemName, item, query) {
     if (!query) return true;
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
+
+    // Lasilista-pituushaku: "lasilista 798" tai "lasilista 798mm"
+    const lasilistaLengthMatch = q.match(/^lasilista\s+(\d+(?:[.,]\d+)?)\s*(?:mm)?$/i);
+    if (lasilistaLengthMatch) {
+        const targetLength = Number(lasilistaLengthMatch[1].replace(',', '.'));
+        for (const section of (item.data || [])) {
+            if (!isLasilistaSectionTitle(section.title)) continue;
+            for (const row of (section.items || [])) {
+                const parsed = parseLasilistaRow(row.label);
+                if (parsed && Math.abs(parsed.length - targetLength) < 0.5) return true;
+            }
+        }
+        return false;
+    }
 
     if (String(jobNumber).toLowerCase().includes(q)) return true;
     if (String(itemName).toLowerCase().includes(q)) return true;
