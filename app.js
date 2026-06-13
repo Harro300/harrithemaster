@@ -3763,13 +3763,9 @@ function loadMittatView() {
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
-    const clearAllBtn = document.getElementById('clearAllMitatBtn');
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
     const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
     const toggleShowHiddenItemsBtn = document.getElementById('toggleShowHiddenItemsBtn');
-    if (clearAllBtn) {
-        clearAllBtn.style.display = isAdmin ? '' : 'none';
-    }
     if (togglePackingBtn) {
         togglePackingBtn.classList.toggle('btn-primary', !isPackingListMode);
         togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
@@ -5938,33 +5934,4 @@ function deleteMitta(jobNumber, itemName) {
         loadMittatView();
         showToast('Mitat poistettu', 'info');
     }
-}
-
-// Clear all mitat
-function clearAllMitat() {
-    if (!isAdmin) {
-        showToast('Vain admin voi poistaa mittoja.', 'warning');
-        return;
-    }
-
-    if (!confirm('Haluatko varmasti tyhjentää KAIKKI tallennetut mitat? Tätä toimintoa ei voi perua!')) {
-        return;
-    }
-    
-    localStorage.removeItem('mittatData');
-    localStorage.removeItem('checkedMitat');
-    localStorage.removeItem('doneMitat');
-    localStorage.removeItem('packedMitat');
-    localStorage.removeItem('packedPackageNumbers');
-    localStorage.removeItem('hiddenMitatItems');
-    localStorage.removeItem('mittatNotes');
-    syncMitatStateToFirestore();
-    selectedPackingJobNumber = null;
-    selectedPackingItems = {};
-    isPackingListMode = false;
-    selectedLasilistaPdfJobNumber = null;
-    selectedLasilistaPdfItems = {};
-    isLasilistaPdfMode = false;
-    loadMittatView();
-    showToast('Kaikki mitat tyhjennetty', 'info');
 }

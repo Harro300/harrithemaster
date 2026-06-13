@@ -26,7 +26,7 @@
                             <form id="loginForm">
                                 <div class="mb-3">
                                     <label for="email" class="form-label">Sähköposti</label>
-                                    <input type="email" class="form-control" id="email" placeholder="esim. nimi@teras.local" required>
+                                    <input type="email" class="form-control" id="email" required>
         </div>
         <div class="mb-3">
                                     <label for="password" class="form-label">Salasana</label>
@@ -264,7 +264,6 @@
                         <button class="btn btn-primary" id="togglePackingListBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="togglePackingListMode()">📦 Tee pakkausluettelo</button>
                         <button class="btn btn-info" id="toggleLasilistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleLasilistaPdfMode()">📄 Lasilistat PDF</button>
                         <button class="btn btn-outline-secondary" id="toggleShowHiddenItemsBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleShowHiddenItems()">Näytä piilotetut</button>
-                        <button class="btn btn-danger" id="clearAllMitatBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="clearAllMitat()">🗑️ Tyhjennä kaikki</button>
                     </div>
                 </div>
                 <div class="mitat-search-row">
@@ -2082,6 +2081,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260611R2"></script>
+    <script src="app.js?v=20260613R2"></script>
 </body>
 </html>
