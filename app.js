@@ -19,6 +19,7 @@ let formulaSetsUnsubscribe = null;
 let mitatStateUnsubscribe = null;
 let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
+let lastKnownJobCount = -1;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -140,6 +141,14 @@ function applyMitatStateToLocalStorage(state) {
 
 async function syncMitatStateToFirestore() {
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+
+    const currentJobCount = Object.keys(
+        JSON.parse(localStorage.getItem('mittatData') || '{}')
+    ).length;
+    if (currentJobCount === 0 && lastKnownJobCount > 0) {
+        console.warn('Synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
         return;
     }
 
@@ -306,6 +315,7 @@ function setupRealtimeListeners() {
                     mittatNotes: data.mittatNotes || {},
                     packedTimestamps: data.packedTimestamps || {}
                 });
+                lastKnownJobCount = Object.keys(data.mittatData || {}).length;
                 mitatStateLoaded = true;
 
                 const isOwnUpdate = data.updatedBy === currentUser?.email;
@@ -723,6 +733,7 @@ async function logout() {
     // Stop realtime listeners first
     stopRealtimeListeners();
     mitatStateLoaded = false;
+    lastKnownJobCount = -1;
     
     // Sign out from Firebase
     if (window.firebase && currentUser) {
