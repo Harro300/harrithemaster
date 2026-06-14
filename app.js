@@ -170,6 +170,32 @@ async function syncMitatStateToFirestore() {
     }
 }
 
+function downloadBackup(source) {
+    if (!isAdmin) {
+        showToast('Vain admin voi ladata varmuuskopion.', 'warning');
+        return;
+    }
+    const state = getMitatStateFromLocalStorage();
+    const inputs = JSON.parse(localStorage.getItem('mitatInputs') || '{}');
+    const backup = {
+        exportedAt: new Date().toISOString(),
+        exportedBy: currentUser?.email || 'tuntematon',
+        source,
+        version: 1,
+        mittatState: state,
+        inputs
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `${source}-varmuuskopio-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Varmuuskopio ladattu', 'success');
+}
+
 async function syncMitatInputsToFirestore() {
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
@@ -3777,6 +3803,10 @@ function loadMittatView() {
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
     const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
     const toggleShowHiddenItemsBtn = document.getElementById('toggleShowHiddenItemsBtn');
+    const tuotantoBackupBtn = document.getElementById('tuotantoBackupBtn');
+    if (tuotantoBackupBtn) {
+        tuotantoBackupBtn.style.display = isAdmin ? '' : 'none';
+    }
     if (togglePackingBtn) {
         togglePackingBtn.classList.toggle('btn-primary', !isPackingListMode);
         togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
@@ -4092,6 +4122,10 @@ function loadPaketitView() {
     const container = document.getElementById('paketitContainer');
     if (!container) return;
 
+    const paketitBackupBtn = document.getElementById('paketitBackupBtn');
+    if (paketitBackupBtn) {
+        paketitBackupBtn.style.display = isAdmin ? '' : 'none';
+    }
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');

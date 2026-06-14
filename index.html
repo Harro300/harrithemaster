@@ -264,6 +264,7 @@
                         <button class="btn btn-primary" id="togglePackingListBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="togglePackingListMode()">📦 Tee pakkausluettelo</button>
                         <button class="btn btn-info" id="toggleLasilistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleLasilistaPdfMode()">📄 Lasilistat PDF</button>
                         <button class="btn btn-outline-secondary" id="toggleShowHiddenItemsBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleShowHiddenItems()">Näytä piilotetut</button>
+                        <button class="btn btn-outline-warning" id="tuotantoBackupBtn" style="font-size: 0.75rem; padding: 5px 10px; display:none;" onclick="downloadBackup('tuotanto')">💾 Varmuuskopio</button>
                     </div>
                 </div>
                 <div class="mitat-search-row">
@@ -316,6 +317,9 @@
             <div class="card-body p-4">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h2 style="color: var(--accent-color); margin: 0; font-size: 1.3rem;">Paketit</h2>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-outline-warning" id="paketitBackupBtn" style="font-size: 0.75rem; padding: 5px 10px; display:none;" onclick="downloadBackup('paketit')">💾 Varmuuskopio</button>
+                    </div>
                 </div>
                 <div class="mitat-search-row">
                     <input type="search" class="form-control mitat-search-input" id="paketitSearchInput"
@@ -2081,6 +2085,6 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260613R3"></script>
+    <script src="app.js?v=20260614R1"></script>
 </body>
 </html>
