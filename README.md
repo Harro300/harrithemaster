@@ -60,7 +60,7 @@ Kirjautumisen jälkeen yläpalkissa on kolme päänäkymää:
 - **Umpiovi** — erilliset kaavat; tulosnäkymä supistuu tilaan sopivaksi  
 - **Umpivasikka** — pariovissa, kun umpiovi ei ole päällä  
 - **Potkupelti** — päälle / pois  
-- **Tiivistysrajapinta**, **rako**, **ruutujen määrä**,   
+- **Tiivistyskynnys**, **rako**, **ruutujen määrä**   
 - **Aktiivinen kaavasetti** — vaihdettavissa asetuksista  
 
 ### Tulosten vienti
@@ -84,7 +84,7 @@ Rakenne: **työnumero → tuote** (esim. työnumero `TYO-1001`, tuote `Ovi A` �
 - **Tehty**-checkpoint (vaatii lasilistat)  
 - **(pakattu!)** kun tuote on merkitty pakkausluettelossa  
 - **Muokkaa nimeä**, **Piilota** / näytä piilotetut  
-- **Syötteet**-modaali (laskurista siirretyt syötteet, synkataan Firestoreen)  
+- **Syötteet**-modaali (laskurista siirretyt syötteet, syötteiden muokkaus, synkataan Firestoreen)  
 - Kopioi tuotteen tiedot, PDF-vienti  
 
 ### Työnumero-otsikko
@@ -142,7 +142,7 @@ Roolit määritellään sähköpostiosoitteiden perusteella `app.js`-tiedostossa
 |-------|----------|
 | **Peruskäyttäjä** | Laskin, Tuotanto, Paketit, asetukset, esiasetukset, pakkausluettelot |
 | **Admin** | Kaikki yllä + kaavahallinta, työnumeron/tuotteen poisto, Paketit drag-and-drop, varmuuskopion lataus |
-| **Koordinaattori** | Vain Tuotanto-näkymä |
+| **Koordinaattori** | Vain Tuotanto ja Paketit -näkymä |
 
 Admin- ja koordinaattorisähköpostit: `ADMIN_EMAILS` ja `COORDINATOR_EMAILS` tiedostossa `app.js`. Firestore-sääntöjen admin-lista (`firestore.rules`) pidettävä linjassa admin-sähköpostien kanssa.
 
