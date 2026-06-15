@@ -40,7 +40,7 @@ Kirjautumisen jälkeen yläpalkissa on kolme päänäkymää:
 | **Tuotanto** | `mitat` | Työnhallinta, checkpointit, PDF-viennit |
 | **Paketit** | `paketit` | Valmiiksi pakatut työt |
 
-**Koordinaattorit** näkevät vain Tuotanto-näkymän (Laskin ja Paketit piilotettu).
+**Koordinaattorit** näkevät vain Tuotanto ja Paketit-näkymän (Laskin piilotettu).
 
 ---
 
@@ -60,7 +60,7 @@ Kirjautumisen jälkeen yläpalkissa on kolme päänäkymää:
 - **Umpiovi** — erilliset kaavat; tulosnäkymä supistuu tilaan sopivaksi  
 - **Umpivasikka** — pariovissa, kun umpiovi ei ole päällä  
 - **Potkupelti** — päälle / pois  
-- **Tiivistysrajapinta**, **rako**, **ruutujen määrä**, **dark mode**  
+- **Tiivistysrajapinta**, **rako**, **ruutujen määrä**,   
 - **Aktiivinen kaavasetti** — vaihdettavissa asetuksista  
 
 ### Tulosten vienti
@@ -69,9 +69,6 @@ Kirjautumisen jälkeen yläpalkissa on kolme päänäkymää:
 - Vie PDF  
 - **Siirrä** tulokset Tuotanto-näkymään työnumeron alle (ikkunoille valinnainen yhdistetty leveys)  
 
-### Esiasetukset
-
-Tallenna ja lataa laskurin syötteitä ja asetuksia. Esiasetusten poisto on rajattu admin-käyttäjille.
 
 ---
 
@@ -145,7 +142,7 @@ Roolit määritellään sähköpostiosoitteiden perusteella `app.js`-tiedostossa
 |-------|----------|
 | **Peruskäyttäjä** | Laskin, Tuotanto, Paketit, asetukset, esiasetukset, pakkausluettelot |
 | **Admin** | Kaikki yllä + kaavahallinta, työnumeron/tuotteen poisto, Paketit drag-and-drop, varmuuskopion lataus |
-| **Koordinaattori** | Vain Tuotanto-näkymä (logistiikka) |
+| **Koordinaattori** | Vain Tuotanto-näkymä |
 
 Admin- ja koordinaattorisähköpostit: `ADMIN_EMAILS` ja `COORDINATOR_EMAILS` tiedostossa `app.js`. Firestore-sääntöjen admin-lista (`firestore.rules`) pidettävä linjassa admin-sähköpostien kanssa.
 
