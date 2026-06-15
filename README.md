@@ -1,163 +1,329 @@
-# Teräsovi Mittaohjelmisto
+# Gradus — Teräsovi Mittaohjelmisto
 
-Teräsovi- ja ikkunatuotteiden mittalaskenta- ja työnhallintasovellus tuotantokäyttöön.
+Teräsovi- ja ikkunatuotteiden **mittalaskenta** ja **tuotannon työnhallinta** yhdessä selainsovelluksessa. Sovellus on tarkoitettu yhden tehtaan sisäiseen käyttöön: kaikki kirjautuneet käyttäjät näkevät saman tuotantotilan reaaliajassa.
 
-Sovellus sisältää:
-- useita laskureita ovi- ja ikkunamalleille
-- kaavasettien hallinnan (admin)
-- Mitat-sivun työnumero-/tuoterakenteen
-- reaaliaikaisen monikäyttäjäsynkan Firebasella
-- pakkausluetteloiden luonnin PDF-muodossa.
+## Mitä sovellus tekee?
 
-## Sisältö
-- [Päätoiminnot](#päätoiminnot)
-- [Käyttäjäroolit](#käyttäjäroolit)
-- [Mitat-sivun toiminnot](#mitat-sivun-toiminnot)
+| Osa | Kuvaus |
+|-----|--------|
+| **Laskin** | Kuusi laskuria (Janisol / Economy, ovi / ikkuna). Laskee lasilistat, uretaanit, potkupellit jne. valitun kaavasetin mukaan. |
+| **Tuotanto** | Työnumero → tuotteet. Checkpointit, muistiinpanot, pakkausluettelot, lasilistojen PDF. |
+| **Paketit** | Täysin pakatut työt. Haku, pakkausajat ja pakettikohtainen järjestys. |
+| **Synkka** | Firebase Authentication + Cloud Firestore. Muutokset näkyvät kaikilla laitteilla. |
+
+## Sisällysluettelo
+
+- [Näkymät](#näkymät)
+- [Laskin](#laskin)
+- [Tuotanto-näkymä](#tuotanto-näkymä)
 - [Pakkausluettelo](#pakkausluettelo)
+- [Paketit-näkymä](#paketit-näkymä)
+- [Käyttäjäroolit](#käyttäjäroolit)
+- [Varmuuskopio (admin)](#varmuuskopio-admin)
 - [Tekninen rakenne](#tekninen-rakenne)
+- [Tietoturva ja käyttömalli](#tietoturva-ja-käyttömalli)
 - [Asennus ja käynnistys](#asennus-ja-käynnistys)
 - [Firebase-käyttöönotto](#firebase-käyttöönotto)
+- [Kehitys ja julkaisu](#kehitys-ja-julkaisu)
 - [Tiedostorakenne](#tiedostorakenne)
+- [Muu dokumentaatio](#muu-dokumentaatio)
 
-## Päätoiminnot
+---
 
-### 1) Kirjautuminen
-- Kirjautuminen sähköpostilla ja salasanalla (Firebase Authentication).
-- Sovellus näyttää kirjautumisen jälkeen laskin- tai Mitat-näkymän.
+## Näkymät
 
-### 2) Laskimet
-Sovelluksessa on kuusi laskuria:
-- Janisol Pariovi
-- Janisol Käyntiovi
-- Economy Pariovi
-- Economy Käyntiovi
-- Janisol Ikkuna
-- Economy Ikkuna
+Kirjautumisen jälkeen yläpalkissa on kolme päänäkymää:
 
-Laskuri laskee automaattisesti tuotekohtaisia mittoja (esim. lasilistat, uretaanit, potkupellit, harjalistat mallin mukaan).
+| Näkymä | Koodi | Kuvaus |
+|--------|-------|--------|
+| **Laskin** | `laskin` | Mittalaskurit, asetukset, tulosten vienti |
+| **Tuotanto** | `mitat` | Työnhallinta, checkpointit, PDF-viennit |
+| **Paketit** | `paketit` | Valmiiksi pakatut työt |
 
-### 3) Asetukset
-- Rakoasetus (ovilaskimet)
-- Ruutujen määrä
-- Potkupellin päälle/pois
-- Dark mode
-- Aktiivinen kaavasetti (myös ei-admin voi vaihtaa)
+**Koordinaattorit** näkevät vain Tuotanto-näkymän (Laskin ja Paketit piilotettu).
 
-### 4) Esiasetukset
-- Tulokset ja syötteet voi tallentaa nimettyinä esiasetuksina.
-- Esiasetukset voidaan ladata myöhemmin nopeasti käyttöön.
-- Esiasetuslista sisältää poistotoiminnon (admin-rajaus käytössä).
+---
 
-### 5) Tulosten vienti
-- Kopioi tulokset leikepöydälle
-- Vie PDF
-- Siirrä tulokset Mitat-sivulle työnumeron alle
+## Laskin
 
-## Käyttäjäroolit
+### Laskurit
 
-### Peruskäyttäjä
-- Voi käyttää laskureita, asetuksia, esiasetuksia ja Mitat-sivua.
-- Voi vaihtaa aktiivisen kaavasetin asetuksista.
-- Voi tehdä pakkausluetteloita.
+1. Janisol Pariovi  
+2. Janisol Käyntiovi  
+3. Economy Pariovi  
+4. Economy Käyntiovi  
+5. Janisol Ikkuna  
+6. Economy Ikkuna  
 
-### Admin-käyttäjä
-- Näkee ja avaa kaavahallinnan (`Kaavahallinta`).
-- Voi tallentaa, päivittää ja poistaa kaavasettejä.
-- Voi poistaa Mitat-sivulla työnumeroita ja yksittäisiä nimettyjä mittoja.
+### Ovilaskurien erikoistilat
 
-Admin-käyttäjät määritellään `app.js`-tiedoston `ADMIN_EMAILS`-listassa.
+- **Umpiovi** — erilliset kaavat; tulosnäkymä supistuu tilaan sopivaksi  
+- **Umpivasikka** — pariovissa, kun umpiovi ei ole päällä  
+- **Potkupelti** — päälle / pois  
+- **Tiivistysrajapinta**, **rako**, **ruutujen määrä**, **dark mode**  
+- **Aktiivinen kaavasetti** — vaihdettavissa asetuksista  
 
-## Mitat-sivun toiminnot
+### Tulosten vienti
 
-Mitat-sivu toimii työnumero -> tuote (ovi/ikkuna) -rakenteella.
+- Kopioi leikepöydälle  
+- Vie PDF  
+- **Siirrä** tulokset Tuotanto-näkymään työnumeron alle (ikkunoille valinnainen yhdistetty leveys)  
 
-Tuotekohtaiset toiminnot:
-- avaa/sulje yksityiskohdat
-- muistiinpano (tuote- ja työnumerotasolla)
-- lasilistat-checkpoint
-- tehty-checkpoint
-- pakattu-merkintä `(pakattu!)` kun tuote on lisätty pakkausluetteloon
-- kopioi tuotteen tiedot
-- PDF-vienti tuotekohtaisesti
+### Esiasetukset
 
-Työnumerotasolla:
-- laskuri muodossa `(X KPL / Y TEHTY)` näyttää kokonaismäärän ja tehty-merkittyjen määrän
-- adminille poistotoiminnot
+Tallenna ja lataa laskurin syötteitä ja asetuksia. Esiasetusten poisto on rajattu admin-käyttäjille.
+
+---
+
+## Tuotanto-näkymä
+
+Rakenne: **työnumero → tuote** (esim. työnumero `TYO-1001`, tuote `Ovi A` — vain esimerkkejä dokumentaatiossa).
+
+### Tuotekohtaiset toiminnot
+
+- Avaa / sulje yksityiskohdat  
+- Muistiinpano (tuote- ja työnumero tasolla)  
+- **Lasilistat**-checkpoint  
+- **Tehty**-checkpoint (vaatii lasilistat)  
+- **(pakattu!)** kun tuote on merkitty pakkausluettelossa  
+- **Muokkaa nimeä**, **Piilota** / näytä piilotetut  
+- **Syötteet**-modaali (laskurista siirretyt syötteet, synkataan Firestoreen)  
+- Kopioi tuotteen tiedot, PDF-vienti  
+
+### Työnumero-otsikko
+
+- Laskuri muodossa `(X KPL / Y TEHTY)` — kokonaismäärä ja tehty-merkityt  
+- Haku työnumeroille, tuotteille ja lasilistoille  
+- Täysin pakatut työt siirtyvät Paketit-näkymään  
+
+### Työkalupalkki
+
+| Nappi | Toiminto |
+|-------|----------|
+| Tee pakkausluettelo | Valitse tuotteet → pakkaaja → PDF |
+| Lasilistat PDF | Monivalinta ja lasilistojen PDF |
+| Näytä piilotetut | Piilotettujen tuotteiden hallinta |
+| Varmuuskopio | Admin: lataa koko tuotantodatan JSON-tiedostona |
+
+---
 
 ## Pakkausluettelo
 
-Mitat-sivulta voi muodostaa pakkausluettelon:
-- aktivoi pakkausluettelotila
-- valitse työnumero
-- valitse halutut ovet/ikkunat
-- lataa pakkausluettelo PDF:nä
+1. Aktivoi pakkausluettelotila Tuotanto-näkymässä.  
+2. Valitse työnumero ja tuotteet.  
+3. Syötä pakkaajan nimi; järjestelmä ehdottaa seuraavaa pakettinumeroa.  
+4. Lataa PDF (sisältää pakettinumero-sivun, esim. **PAKETTI 1**).  
 
-Pakkausluettelon luonti:
-- merkitsee valitut tuotteet pakatuiksi (`packedMitat`)
-- näyttää tuotteelle `(pakattu!)`-tekstin
-- jos `tehty`-check poistetaan, myös pakattu-merkintä poistuu automaattisesti
+**Vaikutukset:**
+
+- Merkitsee valitut tuotteet pakatuiksi (`packedMitat`) ja näyttää `(pakattu!)`.  
+- Tallentaa pakkausajan (`packedTimestamps`) — synkataan Firestoreen.  
+- Jos **tehty**-merkintä poistetaan, pakattu-merkintä poistuu automaattisesti.  
+
+---
+
+## Paketit-näkymä
+
+Näyttää työt, joissa kaikki tuotteet on merkitty pakatuiksi.
+
+- Haku työnumerolla, tuotteella tai päivämäärällä  
+- Järjestys viimeisimmän pakkausajan mukaan  
+- Pakettikohtaiset väliotsikot ja pakkausajat  
+- Admin: drag-and-drop tuotteiden siirto pakettien välillä  
+- **Tiedot** / syötteet pakatuille tuotteille  
+- **Varmuuskopio**-nappi (admin)  
+
+---
+
+## Käyttäjäroolit
+
+Sovellusta käyttää yhden tehtaan noin kymmenen työntekijää. Jaettu reaaliaikainen tuotantotila on **tarkoituksellinen** — kaikkien pitää nähdä samat merkinnät.
+
+Roolit määritellään sähköpostiosoitteiden perusteella `app.js`-tiedostossa. **Älä tallenna salasanoja tai oikeita käyttäjätunnuksia versionhallintaan.**
+
+| Rooli | Oikeudet |
+|-------|----------|
+| **Peruskäyttäjä** | Laskin, Tuotanto, Paketit, asetukset, esiasetukset, pakkausluettelot |
+| **Admin** | Kaikki yllä + kaavahallinta, työnumeron/tuotteen poisto, Paketit drag-and-drop, varmuuskopion lataus |
+| **Koordinaattori** | Vain Tuotanto-näkymä (logistiikka) |
+
+Admin- ja koordinaattorisähköpostit: `ADMIN_EMAILS` ja `COORDINATOR_EMAILS` tiedostossa `app.js`. Firestore-sääntöjen admin-lista (`firestore.rules`) pidettävä linjassa admin-sähköpostien kanssa.
+
+---
+
+## Varmuuskopio (admin)
+
+Admin-käyttäjä voi ladata Tuotanto- tai Paketit-näkymästä **JSON-varmuuskopion** koneelleen.
+
+- Molemmat napit lataavat saman täydellisen snapshotin (ero on vain tiedoston nimi ja metadata).  
+- Sisältää `mittatState`-datan ja syötekartan (`inputs`).  
+- **Lukuoperaatio** — ei muuta Firestorea tai localStoragea.  
+- Tarkoitettu myöhempää palautusta varten (restore-toiminto toteutetaan erikseen).  
+
+Tiedostomuoto (esimerkkirakenne, ei oikeaa dataa):
+
+```json
+{
+  "exportedAt": "2026-01-15T10:00:00.000Z",
+  "exportedBy": "admin@yrityksen-domain.fi",
+  "source": "tuotanto",
+  "version": 1,
+  "mittatState": { },
+  "inputs": { }
+}
+```
+
+---
 
 ## Tekninen rakenne
 
 ### Frontend
-- `index.html` (UI-rakenne)
-- `styles.css` (teemat, layout, komponenttityylit)
-- `app.js` (sovelluslogiikka, laskenta, UI-toiminnot, synkka)
 
-### Backend-palvelut
-- Firebase Authentication (kirjautuminen)
-- Cloud Firestore (reaaliaikainen data)
+| Tiedosto | Rooli |
+|----------|--------|
+| `index.html` | UI-rakenne, Bootstrap 5, Firebase- ja jsPDF-CDN |
+| `styles.css` | Teemat ja layout |
+| `app.js` | Laskenta, näkymät, Firestore-synkka, PDF |
 
-### Reaaliaikaisesti synkattavat kokonaisuudet
-- `presets`
-- `checkedStates`
-- `formulaSets`
-- `mitatState` (mittadata + checkboxit + muistiinpanot + tehty + pakattu)
+**Kirjastot (CDN):** Bootstrap 5.3, jsPDF 2.5, Firebase JS 12.8 (Auth + Firestore).
+
+Sovellus on **Vanilla JS** -pohjainen. Staattinen hosting: `index.html` + `app.js` (esim. GitHub Pages tai paikallinen HTTP-palvelin).
+
+### Firestore
+
+| Polku | Sisältö |
+|-------|---------|
+| `presets` | Esiasetukset |
+| `checkedStates/global` | Laskurien checkbox-tilat |
+| `formulaSets` | Kaavasetit |
+| `mitatState/global` | Tuotantodata: mitat, checkpointit, pakkausmerkinnät, muistiinpanot jne. |
+| `mitatState/inputs` | Tuotantoon siirrettyjen syötteiden kartta |
+
+### Synkronointisuojaus
+
+Kriittiset suojaukset estävät tyhjän datan kirjoittamisen Firestoreen:
+
+- **`mitatStateLoaded`** — synkka ei ajaudu ennen ensimmäistä Firestore-latausta  
+- **`lastKnownJobCount`** — estää tyhjän `mittatData`-objektin ylikirjoittamisen, jos localStorage tyhjenee vahingossa latauksen jälkeen  
+
+Lisätietoa kehittäjille: `.cursor/skills/terasovi-firebase-sync/SKILL.md`.
+
+---
+
+## Tietoturva ja käyttömalli
+
+### Kenelle sovellus on tarkoitettu?
+
+- Yhden tehtaan sisäinen työkalu, luotettu pieni käyttäjäryhmä  
+- Ei multi-tenant- tai asiakaskohtaista eristystä  
+
+### Miten pääsy suojataan?
+
+- Kirjautuminen Firebase Authenticationilla (sähköposti + salasana)  
+- Firestore-säännöt: vain kirjautuneet käyttäjät lukevat/kirjoittavat tuotantodataa  
+- Käyttäjät luodaan Firebase Consolessa — **älä ota käyttöön avointa rekisteröitymistä** tuotannossa  
+
+### Mitä README ei sisällä?
+
+- Käyttäjätunnuksia, salasanoja tai Firebase-avaimia  
+- Oikeita työnumeroita, asiakasnimiä tai tuotantodataa  
+
+Firebase-konfiguraatio on `index.html`:ssä (normaali client-sovelluksen malli). API-avain ei yksinään anna pääsyä dataan — pääsy vaatii kelvollisen kirjautumisen.
+
+### Tunnettu rajoitus
+
+Kaikki kirjautuneet käyttäjät voivat Firestore-tasolla lukea ja kirjoittaa jaettua tuotantodataa. Tämä on tarkoituksellista yhteistyön vuoksi. Admin-toiminnot UI:ssa (poisto, kaavahallinta) on rajattu koodissa, mutta tuotantodatan täysi kirjoitusoikeus on jaettu kaikille kirjautuneille Firestore-sääntöjen mukaan.
+
+---
 
 ## Asennus ja käynnistys
 
 ### Paikallinen testaus (suositus)
-1. Siirry projektikansioon.
-2. Käynnistä paikallinen palvelin, esim:
-   - `python -m http.server 8080`
-3. Avaa selaimessa:
-   - `http://localhost:8080`
 
-### Vaihtoehto
-- Voit avata `index.html` suoraan tiedostona, mutta osa selaintoiminnoista (esim. clipboard/PDF-käytös) toimii luotettavammin localhostilla.
+```bash
+cd /polku/projektiin
+python -m http.server 8080
+```
+
+Avaa selaimessa: `http://localhost:8080`
+
+### Huomioita
+
+- `index.html` suoraan tiedostona voi toimia, mutta clipboard, PDF ja Firebase ovat luotettavampia localhostilla.  
+- Kun muutat `app.js` tai `styles.css`, päivitä cache-bust `index.html`:ssä (`?v=…`) jotta selain lataa uuden version.  
+
+---
 
 ## Firebase-käyttöönotto
 
-### 1) Konfiguroi Firebase
-- Varmista, että Firebase-konfiguraatio on projektissa käytössä.
-- Ota käyttöön:
-  - Authentication (Email/Password)
-  - Firestore Database
+1. Luo Firebase-projekti ja ota käyttöön **Authentication** (Email/Password) ja **Firestore**.  
+2. Lisää Firebase-konfiguraatio `index.html`:ään (`firebaseConfig`).  
+3. Luo käyttäjät Firebase Consolessa (älä commitoi tunnuksia repoihin).  
+4. Julkaise `firestore.rules` Firebase Consoleen.  
+5. Pidä `ADMIN_EMAILS` (`app.js`) ja rulesin admin-sähköpostilistat synkassa.  
+6. Rajaa **Authorized domains** vain tarvittaviin osoitteisiin.  
 
-### 2) Päivitä Firestore rules
-- Käytä projektin `firestore.rules`-tiedostoa.
-- Julkaise säännöt Firebase Consoleen (Publish).
+Tarkemmat asennusohjeet: [FIREBASE-ASENNUS.md](FIREBASE-ASENNUS.md) — tarkista, ettei vanhoissa ohjeissa ole vanhentuneita salasanoja tai tunnuksia ennen käyttöä.
 
-### 3) Admin-oikeudet
-- Päivitä admin-lista:
-  - `app.js` -> `ADMIN_EMAILS`
-- Pidä `firestore.rules` admin-sähköpostilistat linjassa tämän kanssa.
+---
+
+## Kehitys ja julkaisu
+
+### Cache-versiot
+
+`index.html` viittaa skripteihin versioparametrilla, esim.:
+
+```html
+<script src="app.js?v=20260614R1"></script>
+```
+
+Nosta versiota aina kun `app.js` tai `styles.css` muuttuu merkittävästi.
+
+### Git / GitHub Pages
+
+- Julkaise `index.html`, `app.js`, `styles.css`, `firestore.rules` ja staattiset assetit.  
+- Älä commitoi `.env`-tiedostoja, salasanoja tai varmuuskopio-JSON-tiedostoja.  
+- Firestore-säännöt deployataan erikseen Firebase Consoleen (ei automaattisesti Git pushista).  
+
+---
 
 ## Tiedostorakenne
 
 ```text
 .
-├── index.html
-├── styles.css
-├── app.js
-├── firestore.rules
-└── README.md
+├── index.html          # Pääsivu + Firebase CDN
+├── styles.css          # Tyylit
+├── app.js              # Sovelluslogiikka
+├── firestore.rules     # Firestore Security Rules
+├── gradus-logo.svg     # Brändi / logo
+├── README.md           # Tämä tiedosto
+├── FIREBASE-ASENNUS.md
+├── PIKA-ALOITUS.md
+├── TESTIT.md
+├── TESTAUSOHJEET.md
+├── .cursor/skills/     # Agentti-/kehityssäännöt (ei runtime)
+└── plans/              # Kehityssuunnitelmat (ei runtime)
 ```
 
-## Huomioita ylläpitoon
-- Sovellus on toteutettu Vanilla JS -pohjaisena (ei React/Vite-migraatiota).
-- Kaikki merkittävät käyttäjätilat pyritään pitämään synkassa Firestoreen.
-- Ennen tuotantokäyttöä tarkista:
-  - admin-listat
-  - Firestore rules
-  - Firebase-projektin domain-asetukset (jos julkaistu webiin).
+---
+
+## Muu dokumentaatio
+
+| Tiedosto | Sisältö |
+|----------|---------|
+| [FIREBASE-ASENNUS.md](FIREBASE-ASENNUS.md) | Firebase-projektin asennus |
+| [PIKA-ALOITUS.md](PIKA-ALOITUS.md) | Pika-aloitus (tarkista ajantasaisuus) |
+| [TESTAUSOHJEET.md](TESTAUSOHJEET.md) | Manuaaliset testit |
+| [TESTIT.md](TESTIT.md) | Laskentaesimerkit |
+
+> **Huom:** Vanhemmat tiedostot (`YHTEENVETO.md`, `KÄYTTÖÖNOTTO.md`, osa muista ohjeista) voivat viitata vanhentuneeseen kirjautumistapaan tai vanhaan ominaisuuslistaan. Luota tähän README:hen ja nykyiseen `app.js`-koodiin.
+
+---
+
+## Ylläpito (tiivistelmä)
+
+- Käyttäjäroolit: `ADMIN_EMAILS`, `COORDINATOR_EMAILS` → `app.js`  
+- Firestore admin-sähköpostit: `firestore.rules`  
+- Älä synkkaa `mitatState` ennen `mitatStateLoaded === true`  
+- Admin: lataa säännöllinen JSON-varmuuskopio ennen suuria muutoksia  
+- Ennen tuotantoon vientiä: rules julkaistu, domainit rajattu, cache-versiot päivitetty  
