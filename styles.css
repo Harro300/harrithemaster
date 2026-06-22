@@ -1725,3 +1725,58 @@ body.dark-mode .gradus-logo-light {
 body.dark-mode .gradus-logo-dark {
     display: inline-block;
 }
+
+/* ===== PDF-skanneri ===== */
+.scanner-dropzone {
+    border: 2px dashed var(--border-light);
+    border-radius: 12px;
+    background: var(--bg-tertiary);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.scanner-dropzone:hover,
+.scanner-dropzone.dragover {
+    border-color: var(--accent-color);
+    background: var(--bg-secondary);
+}
+
+.scanner-dropzone-icon {
+    font-size: 2.25rem;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+}
+
+.scanner-dropzone-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.scanner-dropzone-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.scanner-status {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.scanner-status > span {
+    font-weight: 500;
+}
+
+/* Esikatselun epävarmat kentät */
+.scan-uncertain {
+    border-color: var(--warning-color) !important;
+    box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
+}

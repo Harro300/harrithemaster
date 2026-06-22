@@ -478,6 +478,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateSettingsInfo();
     updateCalculatorInputVisibility();
     bindSettingsLiveUpdateHandlers();
+    initScanner();
 });
 
 // Valid passwords
@@ -498,7 +499,23 @@ function isUmpioviNoResultsMode() {
         settings.sealThresholdEnabled === true;
 }
 
+const SCANNER_HIDDEN_SETTINGS = [
+    'gapOptionSetting', 'paneCountSetting', 'calculatorTogglesRow',
+    'umpioviSetting', 'umpivasikkaSetting', 'kickPlateSetting', 'sealThresholdSetting'
+];
+
+function hideScannerSettings() {
+    SCANNER_HIDDEN_SETTINGS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+}
+
 function updateCalculatorInputVisibility() {
+    if (scannerEnabled) {
+        hideScannerSettings();
+        return;
+    }
     const isWindowCalculator = isWindowCalculatorType();
     const isPariovi = currentCalculator && currentCalculator.includes('pariovi');
     const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
@@ -669,6 +686,18 @@ function attachLoginHandler() {
             document.getElementById('calculatorScreen').classList.remove('d-none');
             console.log('✅ Näyttö vaihdettu!');
             
+            // Always start with manual input mode (disable scanner on login)
+            scannerEnabled = false;
+            localStorage.setItem('scannerEnabled', 'false');
+            const scanToggle = document.getElementById('scannerToggle');
+            if (scanToggle) scanToggle.checked = false;
+            const scannerPanel = document.getElementById('scannerPanel');
+            const inputsRow = document.getElementById('calculatorInputsRow');
+            if (scannerPanel) scannerPanel.style.display = 'none';
+            if (inputsRow) inputsRow.style.display = '';
+            const scanReviewCard = document.getElementById('scanReviewCard');
+            if (scanReviewCard) scanReviewCard.style.display = 'none';
+
             // Select default calculator
             console.log('🔵 Valitaan default-laskuri...');
             selectCalculator('janisol-pariovi');
@@ -943,23 +972,27 @@ function openSettings() {
         umpivasikkaToggle.checked = settings.umpivasikkaEnabled === true;
     }
     
-    // Hide door-specific settings for window calculators
-    const gapOptionSetting = document.getElementById('gapOptionSetting');
-    const umpioviSetting = document.getElementById('umpioviSetting');
-    const kickPlateSetting = document.getElementById('kickPlateSetting');
-    const sealThresholdSetting = document.getElementById('sealThresholdSetting');
-    
-    if (gapOptionSetting) {
-        gapOptionSetting.style.display = isWindowCalculator ? 'none' : '';
-    }
-    if (umpioviSetting) {
-        umpioviSetting.style.display = isWindowCalculator ? 'none' : '';
-    }
-    if (kickPlateSetting) {
-        kickPlateSetting.style.display = '';
-    }
-    if (sealThresholdSetting) {
-        sealThresholdSetting.style.display = isWindowCalculator ? 'none' : '';
+    // Hide door-specific settings for window calculators (skip when scanner is active)
+    if (!scannerEnabled) {
+        const gapOptionSetting = document.getElementById('gapOptionSetting');
+        const umpioviSetting = document.getElementById('umpioviSetting');
+        const kickPlateSetting = document.getElementById('kickPlateSetting');
+        const sealThresholdSetting = document.getElementById('sealThresholdSetting');
+
+        if (gapOptionSetting) {
+            gapOptionSetting.style.display = isWindowCalculator ? 'none' : '';
+        }
+        if (umpioviSetting) {
+            umpioviSetting.style.display = isWindowCalculator ? 'none' : '';
+        }
+        if (kickPlateSetting) {
+            kickPlateSetting.style.display = '';
+        }
+        if (sealThresholdSetting) {
+            sealThresholdSetting.style.display = isWindowCalculator ? 'none' : '';
+        }
+    } else {
+        hideScannerSettings();
     }
 
     // Keep formula set options and selection in sync for all users
@@ -5979,4 +6012,681 @@ function deleteMitta(jobNumber, itemName) {
         loadMittatView();
         showToast('Mitat poistettu', 'info');
     }
+}
+
+/* ===========================================================================
+   PDF-SKANNERI
+   Lukee oven/ikkunan piirustuksen PDF:stä laskin- ja tuotantokentät.
+   - Renderöinti: pdf.js. Jos PDF:ssä on valittava tekstikerros, käytetään sitä;
+     muuten ajetaan Tesseract.js-OCR (vaaka + 2 pystysuuntaa kierrettyä passia).
+   - Tulkinta on sääntö-/avainsanapohjainen ja sietää pientä asettelun vaihtelua.
+   - Tulokset näytetään aina muokattavassa esikatselussa ennen hyväksyntää.
+   =========================================================================== */
+
+let scannerEnabled = false;
+
+function toggleScanner(enabled) {
+    scannerEnabled = !!enabled;
+    localStorage.setItem('scannerEnabled', scannerEnabled);
+
+    const panel = document.getElementById('scannerPanel');
+    const inputsRow = document.getElementById('calculatorInputsRow');
+    const toggle = document.getElementById('scannerToggle');
+    if (panel) panel.style.display = scannerEnabled ? '' : 'none';
+    if (inputsRow) inputsRow.style.display = scannerEnabled ? 'none' : '';
+    if (toggle) toggle.checked = scannerEnabled;
+
+    if (scannerEnabled) {
+        hideScannerSettings();
+    } else {
+        SCANNER_HIDDEN_SETTINGS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = '';
+        });
+        updateCalculatorInputVisibility();
+    }
+
+    const resultsDiv = document.getElementById('results');
+    if (enabled) {
+        if (resultsDiv) {
+            resultsDiv.innerHTML = '<p class="text-muted text-center">Lataa piirustus PDF-skannerilla nähdäksesi tulokset.</p>';
+        }
+        scanner_resetPanel();
+    } else {
+        calculate();
+    }
+}
+
+function initScanner() {
+    scannerEnabled = localStorage.getItem('scannerEnabled') === 'true';
+    const toggle = document.getElementById('scannerToggle');
+    if (toggle) toggle.checked = scannerEnabled;
+    if (scannerEnabled) toggleScanner(true);
+
+    const dz = document.getElementById('scannerDropZone');
+    if (dz && !dz.dataset.bound) {
+        ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => {
+            e.preventDefault();
+            dz.classList.add('dragover');
+        }));
+        ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, e => {
+            e.preventDefault();
+            dz.classList.remove('dragover');
+        }));
+        dz.addEventListener('drop', e => {
+            e.preventDefault();
+            dz.classList.remove('dragover');
+            const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) processScanFile(f);
+        });
+        dz.dataset.bound = '1';
+    }
+
+    const calcSel = document.getElementById('scanCalculator');
+    if (calcSel && !calcSel.dataset.bound) {
+        calcSel.addEventListener('change', updateScanReviewVisibility);
+        calcSel.dataset.bound = '1';
+    }
+    const kickToggle = document.getElementById('scanKickEnabled');
+    if (kickToggle && !kickToggle.dataset.bound) {
+        kickToggle.addEventListener('change', updateScanReviewVisibility);
+        kickToggle.dataset.bound = '1';
+    }
+
+    const umpioviCheck = document.getElementById('scanUmpiovi');
+    if (umpioviCheck && !umpioviCheck.dataset.bound) {
+        umpioviCheck.addEventListener('change', updateScanReviewVisibility);
+        umpioviCheck.dataset.bound = '1';
+    }
+
+    const scanCalcFields = [
+        'scanCalculator', 'scanGap', 'scanPaneCount',
+        'scanMainWidth', 'scanSideWidth', 'scanKickEnabled',
+        'scanKickHeight', 'scanPaneHeight',
+        'scanUmpiovi', 'scanUmpivasikka', 'scanSealThreshold'
+    ];
+    scanCalcFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.calcBound) {
+            el.addEventListener('input', calculateFromScanReview);
+            el.addEventListener('change', calculateFromScanReview);
+            el.dataset.calcBound = '1';
+        }
+    });
+}
+
+function handleScanFileInput(event) {
+    const f = event.target && event.target.files && event.target.files[0];
+    if (f) processScanFile(f);
+}
+
+function scanner_setStatus(active, text, pct) {
+    const s = document.getElementById('scannerStatus');
+    const dz = document.getElementById('scannerDropZone');
+    if (!s) return;
+    s.style.display = active ? '' : 'none';
+    if (dz) dz.style.display = active ? 'none' : '';
+    if (text) {
+        const t = document.getElementById('scannerStatusText');
+        if (t) t.textContent = text;
+    }
+    if (pct != null) {
+        const bar = document.getElementById('scannerProgressBar');
+        if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+}
+
+function scanner_showError(msg) {
+    const e = document.getElementById('scannerError');
+    if (!e) return;
+    if (msg) {
+        e.textContent = msg;
+        e.style.display = '';
+    } else {
+        e.style.display = 'none';
+    }
+}
+
+function scanner_resetPanel() {
+    scanner_setStatus(false);
+    scanner_showError('');
+    const fi = document.getElementById('scannerFileInput');
+    if (fi) fi.value = '';
+}
+
+async function processScanFile(file) {
+    const isPdf = file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''));
+    if (!isPdf) {
+        scanner_showError('Valitse PDF-tiedosto.');
+        return;
+    }
+    if (!window.pdfjsLib) {
+        scanner_showError('PDF-kirjasto ei latautunut. Tarkista verkkoyhteys ja päivitä sivu.');
+        return;
+    }
+    scanner_showError('');
+    scanner_setStatus(true, 'Avataan PDF…', 5);
+    try {
+        const { canvas, width, height, textTokens } = await scanner_loadPdf(file);
+        let tokens = textTokens;
+        if (!tokens || tokens.length < 6) {
+            if (!window.Tesseract) throw new Error('OCR-kirjasto ei latautunut.');
+            scanner_setStatus(true, 'Luetaan tekstiä (OCR)…', 20);
+            tokens = await scanner_ocr(canvas, p =>
+                scanner_setStatus(true, 'Luetaan tekstiä (OCR)…', 20 + Math.round((p || 0) * 70)));
+        }
+        scanner_setStatus(true, 'Tulkitaan tietoja…', 96);
+        const parsed = scanner_parse(tokens, width, height);
+        scanner_setStatus(false);
+        showScanReview(parsed);
+    } catch (err) {
+        console.error('Skannausvirhe:', err);
+        scanner_setStatus(false);
+        scanner_showError('Skannaus epäonnistui: ' + ((err && err.message) || err));
+    }
+}
+
+async function scanner_loadPdf(file) {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(4, Math.max(1.5, 2200 / base.width));
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    let textTokens = null;
+    try {
+        const tc = await page.getTextContent();
+        const toks = [];
+        tc.items.forEach(it => {
+            const s = (it.str || '').trim();
+            if (!s) return;
+            const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
+            const x = tx[4];
+            const y = tx[5];
+            const vertical = Math.abs(tx[0]) < Math.abs(tx[1]);
+            const wpx = (it.width || 0) * scale;
+            const hpx = (it.height || 0) * scale || Math.hypot(tx[2], tx[3]) || 10;
+            const cx = vertical ? x : x + wpx / 2;
+            const cy = vertical ? y + wpx / 2 : y - hpx / 2;
+            toks.push({ text: s, cx, cy, vertical, conf: 99 });
+        });
+        const totalChars = toks.reduce((n, t) => n + t.text.length, 0);
+        if (totalChars >= 25) textTokens = toks;
+    } catch (e) {
+        // Ei tekstikerrosta -> OCR hoitaa
+    }
+    return { canvas, width: canvas.width, height: canvas.height, textTokens };
+}
+
+function scanner_rotate(src, dir) {
+    const W = src.width;
+    const H = src.height;
+    const out = document.createElement('canvas');
+    const ctx = out.getContext('2d');
+    out.width = H;
+    out.height = W;
+    if (dir === 'cw') {
+        ctx.translate(H, 0);
+        ctx.rotate(Math.PI / 2);
+    } else {
+        ctx.translate(0, W);
+        ctx.rotate(-Math.PI / 2);
+    }
+    ctx.drawImage(src, 0, 0);
+    const map = dir === 'cw'
+        ? (rcx, rcy) => ({ cx: rcy, cy: H - rcx })
+        : (rcx, rcy) => ({ cx: W - rcy, cy: rcx });
+    return { canvas: out, map };
+}
+
+async function scanner_ocr(canvas, onProgress) {
+    const worker = await Tesseract.createWorker('fin+eng', 1, {
+        logger: m => {
+            if (m && m.status === 'recognizing text' && onProgress) onProgress(m.progress);
+        }
+    });
+    const tokens = [];
+    const pushWords = (words, orient, map) => {
+        (words || []).forEach(w => {
+            const text = (w.text || '').trim();
+            if (!text) return;
+            if (w.confidence != null && w.confidence < 35) return;
+            const bx = (w.bbox.x0 + w.bbox.x1) / 2;
+            const by = (w.bbox.y0 + w.bbox.y1) / 2;
+            const p = map ? map(bx, by) : { cx: bx, cy: by };
+            tokens.push({ text, cx: p.cx, cy: p.cy, vertical: orient === 'v', conf: w.confidence == null ? 50 : w.confidence });
+        });
+    };
+    try {
+        let r = await worker.recognize(canvas);
+        pushWords(r.data.words, 'h');
+        const cw = scanner_rotate(canvas, 'cw');
+        r = await worker.recognize(cw.canvas);
+        pushWords(r.data.words, 'v', cw.map);
+        const ccw = scanner_rotate(canvas, 'ccw');
+        r = await worker.recognize(ccw.canvas);
+        pushWords(r.data.words, 'v', ccw.map);
+    } finally {
+        await worker.terminate();
+    }
+    return tokens;
+}
+
+function scanner_parse(tokens, W, H) {
+    const norm = tokens.map(t => ({ ...t, nx: t.cx / W, ny: t.cy / H }));
+    const all = norm.map(t => t.text).join(' ');
+    const low = all.toLowerCase();
+    const conf = {};
+
+    // --- Laskuri: ovi/ikkuna, pari/käynti, janisol/economy ---
+    const hasIkkuna = /ikkuna/.test(low);
+    const hasOvi = /ovi|ovet|luukku/.test(low);
+    const isWindow = hasIkkuna && !hasOvi;
+    const isPari = /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low);
+    const family = /economy|\beco\b/.test(low) ? 'economy' : 'janisol';
+    let calculator;
+    if (isWindow) calculator = family + '-ikkuna';
+    else calculator = family + (isPari ? '-pariovi' : '-kayntiovi');
+    conf.calculator = (hasIkkuna || hasOvi) ? 'ok' : 'low';
+
+    // --- Rako (vain ovet) ---
+    let gapOption = 8;
+    conf.gapOption = 'low';
+    const gm = low.match(/(8|10|15)\s*mm\s*rako/) || low.match(/rako\s*:?\s*(8|10|15)/);
+    if (gm) {
+        gapOption = parseInt(gm[1], 10);
+        conf.gapOption = 'ok';
+    }
+    if (/saneeraus/.test(low)) {
+        gapOption = 'saneeraus';
+        conf.gapOption = 'ok';
+    }
+
+    // --- Lasilista / lyöntilista paksuus (esim 12x20) ---
+    let lasilistaSize = '';
+    conf.lasilistaSize = 'low';
+    const sm = all.match(/\b(12|15|20|25|30|35|40)\s*[xX×]\s*20\b/);
+    if (sm) {
+        lasilistaSize = sm[1] + 'x20';
+        conf.lasilistaSize = 'ok';
+    }
+
+    // --- Potkupelti + korkeus ---
+    const kickPlateEnabled = /potku/.test(low);
+    let kickPlateHeight = '';
+    conf.kickPlateHeight = 'low';
+    if (kickPlateEnabled) {
+        const kc = norm
+            .filter(t => t.nx > 0.5 && t.ny > 0.62 && /^\d{3}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), ny: t.ny }))
+            .filter(o => o.v >= 100 && o.v <= 600);
+        if (kc.length) {
+            kc.sort((a, b) => b.ny - a.ny);
+            kickPlateHeight = kc[0].v;
+            conf.kickPlateHeight = 'ok';
+        }
+    }
+
+    // --- Leveydet (vaaka, alaosa) ---
+    const widthCands = norm
+        .filter(t => !t.vertical && t.ny > 0.6 && /^\d{3,4}$/.test(t.text.trim()))
+        .map(t => parseInt(t.text, 10))
+        .filter(v => v >= 400 && v <= 4000);
+    const uniqW = [...new Set(widthCands)].sort((a, b) => b - a);
+    let mainDoorWidth = '';
+    let sideDoorWidth = '';
+    conf.mainDoorWidth = 'low';
+    conf.sideDoorWidth = 'low';
+    if (isWindow) {
+        if (uniqW.length) mainDoorWidth = uniqW[0];
+    } else if (isPari) {
+        if (uniqW.length >= 3) { mainDoorWidth = uniqW[1]; sideDoorWidth = uniqW[2]; }
+        else if (uniqW.length === 2) { mainDoorWidth = uniqW[0]; sideDoorWidth = uniqW[1]; }
+        else if (uniqW.length === 1) { mainDoorWidth = uniqW[0]; }
+    } else {
+        if (uniqW.length >= 2) mainDoorWidth = uniqW[1];
+        else if (uniqW.length === 1) mainDoorWidth = uniqW[0];
+    }
+
+    // --- Ruudun korkeus (pysty, keskialue) ---
+    let paneHeight = '';
+    conf.paneHeight = 'low';
+    let phCands = norm
+        .filter(t => t.vertical && t.nx > 0.3 && t.nx < 0.68 && /^\d{3,4}$/.test(t.text.trim()))
+        .map(t => parseInt(t.text, 10))
+        .filter(v => v >= 200 && v <= 4000);
+    if (!phCands.length) {
+        phCands = norm
+            .filter(t => t.vertical && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => parseInt(t.text, 10))
+            .filter(v => v >= 200 && v <= 4000);
+    }
+    if (phCands.length) {
+        paneHeight = Math.max(...phCands);
+        conf.paneHeight = 'ok';
+    }
+
+    // --- Työnumero ---
+    let jobNumber = '';
+    conf.jobNumber = 'low';
+    const jm = all.match(/ty[öo]\s*-?\s*numero\s*:?\s*([0-9]{1,4}\s*-\s*[0-9]{2,4})/i);
+    if (jm) {
+        jobNumber = jm[1].replace(/\s+/g, '');
+        conf.jobNumber = 'ok';
+    } else {
+        const j2 = all.match(/\b(\d{2,4}-\d{2,4})\b/);
+        if (j2) jobNumber = j2[1];
+    }
+
+    // --- Määrä ---
+    let quantity = 1;
+    conf.quantity = 'low';
+    const qm = all.match(/m[äa]{1,2}r[äa]\s*:?\s*(\d{1,3})/i);
+    if (qm) {
+        quantity = parseInt(qm[1], 10) || 1;
+        conf.quantity = 'ok';
+    }
+
+    // --- Väri (kaksivärisessä lasilista = sisäväri) ---
+    let color = '';
+    conf.color = 'low';
+    const sisaM = low.match(/sis[äa][^]{0,30}?ral\s*([0-9]{3,4})/i);
+    const ralAll = [...all.matchAll(/ral\s*([0-9]{3,4})/ig)];
+    if (sisaM) {
+        color = 'RAL ' + sisaM[1].trim().toUpperCase();
+        conf.color = 'ok';
+    } else if (ralAll.length) {
+        color = 'RAL ' + ralAll[0][1];
+        conf.color = ralAll.length === 1 ? 'ok' : 'low';
+    }
+
+    // --- Nimi (otsikkolohko, vasen ylä) ---
+    let itemName = '';
+    conf.itemName = 'low';
+    const titleToks = norm
+        .filter(t => !t.vertical && t.ny < 0.32 && t.nx < 0.62)
+        .sort((a, b) => (a.ny - b.ny) || (a.nx - b.nx));
+    const lines = [];
+    titleToks.forEach(t => {
+        let line = lines.find(L => Math.abs(L.ny - t.ny) < 0.02);
+        if (!line) {
+            line = { ny: t.ny, parts: [] };
+            lines.push(line);
+        }
+        line.parts.push(t);
+    });
+    const lineStrs = lines.map(L => L.parts.sort((a, b) => a.nx - b.nx).map(p => p.text).join(' ').trim());
+    const exclude = /ty[öo]|numero|m[äa]{1,2}r|pos\.|\bral\b|janisol|economy|lasi|kynnys|profiili|matta|lyönti/i;
+    for (const s of lineStrs) {
+        if (/ovi|ikkuna|ovet|luukku/i.test(s) && !exclude.test(s)) {
+            itemName = s.replace(/\s+/g, ' ').trim();
+            conf.itemName = 'ok';
+            break;
+        }
+    }
+    if (!itemName) {
+        const cand = lineStrs.find(s => s.length >= 4 && !exclude.test(s) && /[a-zäöå]/i.test(s));
+        if (cand) itemName = cand.replace(/\s+/g, ' ').trim();
+    }
+
+    // --- Ruutumäärä ---
+    let paneCount = 1;
+    conf.paneCount = 'low';
+    const pcm = all.match(/\b(\d{1,2})\s*ruut/i);
+    if (pcm) {
+        const v = parseInt(pcm[1], 10);
+        if (v >= 1 && v <= 12) { paneCount = v; conf.paneCount = 'ok'; }
+    }
+
+    // --- Umpiovi ---
+    let umpioviEnabled = false;
+    conf.umpioviEnabled = 'low';
+    if (/umpiov|umpi.?ov/i.test(all)) { umpioviEnabled = true; conf.umpioviEnabled = 'ok'; }
+
+    // --- Umpivasikka ---
+    let umpivasikkaEnabled = false;
+    conf.umpivasikkaEnabled = 'low';
+    if (/umpivasikka|vasikka/i.test(all)) { umpivasikkaEnabled = true; conf.umpivasikkaEnabled = 'ok'; }
+
+    // --- Tiivistekynnys ---
+    let sealThresholdEnabled = false;
+    conf.sealThresholdEnabled = 'low';
+    if (/tiiviste\s*kynnys|tiivistekynnys/i.test(all)) { sealThresholdEnabled = true; conf.sealThresholdEnabled = 'ok'; }
+
+    return {
+        calculator, gapOption, lasilistaSize,
+        kickPlateEnabled, kickPlateHeight,
+        mainDoorWidth, sideDoorWidth, paneHeight,
+        paneCount, umpioviEnabled, umpivasikkaEnabled, sealThresholdEnabled,
+        jobNumber, itemName, quantity, color, conf
+    };
+}
+
+function updateScanReviewVisibility() {
+    const calc = document.getElementById('scanCalculator').value;
+    const isPari = calc.includes('pariovi');
+    const isWindow = calc.includes('ikkuna');
+    const isDoor = !isWindow;
+    const umpioviChecked = !!document.getElementById('scanUmpiovi')?.checked;
+
+    const sideWrap = document.getElementById('scanSideWidthWrap');
+    const gapWrap = document.getElementById('scanGapWrap');
+    const mainLabel = document.getElementById('scanMainWidthLabel');
+    const umpioviWrap = document.getElementById('scanUmpioviWrap');
+    const umpivasikkaWrap = document.getElementById('scanUmpivasikkaWrap');
+    const sealWrap = document.getElementById('scanSealThresholdWrap');
+    const kickHeightWrap = document.getElementById('scanKickHeightWrap');
+    const kickEnabled = !!document.getElementById('scanKickEnabled')?.checked;
+
+    if (sideWrap) sideWrap.style.display = isPari ? '' : 'none';
+    if (gapWrap) gapWrap.style.display = isWindow ? 'none' : '';
+    if (mainLabel) mainLabel.textContent = isWindow ? 'Ruudun leveys' : 'Käyntioven leveys';
+    if (umpioviWrap) umpioviWrap.style.display = isDoor ? '' : 'none';
+    if (sealWrap) sealWrap.style.display = isDoor ? '' : 'none';
+    if (umpivasikkaWrap) umpivasikkaWrap.style.display = (isPari && !umpioviChecked) ? '' : 'none';
+    if (kickHeightWrap) kickHeightWrap.style.display = kickEnabled ? '' : 'none';
+}
+
+function showScanReview(parsed) {
+    const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+    const mark = (id, ok) => { const el = document.getElementById(id); if (el) el.classList.toggle('scan-uncertain', ok !== 'ok'); };
+
+    setV('scanCalculator', parsed.calculator);
+    setV('scanGap', String(parsed.gapOption));
+    setV('scanMainWidth', parsed.mainDoorWidth);
+    setV('scanSideWidth', parsed.sideDoorWidth);
+    setV('scanKickHeight', parsed.kickPlateHeight);
+    setV('scanPaneHeight', parsed.paneHeight);
+    setV('scanJobNumber', parsed.jobNumber);
+    setV('scanItemName', parsed.itemName);
+    setV('scanQuantity', parsed.quantity || 1);
+    setV('scanLasilistaSize', parsed.lasilistaSize);
+    setV('scanColor', parsed.color);
+
+    const kickToggle = document.getElementById('scanKickEnabled');
+    if (kickToggle) kickToggle.checked = parsed.kickPlateEnabled;
+
+    setV('scanPaneCount', parsed.paneCount || 1);
+    const umpioviEl = document.getElementById('scanUmpiovi');
+    if (umpioviEl) umpioviEl.checked = !!parsed.umpioviEnabled;
+    const umpivasikkaEl = document.getElementById('scanUmpivasikka');
+    if (umpivasikkaEl) umpivasikkaEl.checked = !!parsed.umpivasikkaEnabled;
+    const sealEl = document.getElementById('scanSealThreshold');
+    if (sealEl) sealEl.checked = !!parsed.sealThresholdEnabled;
+
+    updateScanReviewVisibility();
+
+    const isWindow = parsed.calculator.includes('ikkuna');
+    const isPari = parsed.calculator.includes('pariovi');
+    mark('scanCalculator', parsed.conf.calculator);
+    mark('scanGap', isWindow ? 'ok' : parsed.conf.gapOption);
+    mark('scanMainWidth', parsed.conf.mainDoorWidth);
+    mark('scanSideWidth', isPari ? parsed.conf.sideDoorWidth : 'ok');
+    mark('scanKickHeight', parsed.kickPlateEnabled ? parsed.conf.kickPlateHeight : 'ok');
+    mark('scanPaneHeight', parsed.conf.paneHeight);
+    mark('scanPaneCount', parsed.conf.paneCount);
+    const umpioviLabel = document.getElementById('scanUmpiovi')?.closest('.form-check');
+    if (umpioviLabel) umpioviLabel.classList.toggle('scan-uncertain', isWindow ? false : parsed.conf.umpioviEnabled !== 'ok');
+    const umpivasikkaLabel = document.getElementById('scanUmpivasikka')?.closest('.form-check');
+    if (umpivasikkaLabel) umpivasikkaLabel.classList.toggle('scan-uncertain', parsed.conf.umpivasikkaEnabled !== 'ok');
+    const sealLabel = document.getElementById('scanSealThreshold')?.closest('.form-check');
+    if (sealLabel) sealLabel.classList.toggle('scan-uncertain', isWindow ? false : parsed.conf.sealThresholdEnabled !== 'ok');
+    mark('scanJobNumber', parsed.conf.jobNumber);
+    mark('scanItemName', parsed.conf.itemName);
+    mark('scanLasilistaSize', parsed.conf.lasilistaSize);
+    mark('scanColor', parsed.conf.color);
+
+    const card = document.getElementById('scanReviewCard');
+    if (card) {
+        card.style.display = '';
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    calculateFromScanReview();
+}
+
+function applyScanResult() {
+    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const calc = val('scanCalculator');
+    const isPari = calc.includes('pariovi');
+    const isWindow = calc.includes('ikkuna');
+
+    // 1) Valitse laskuri (asettaa currentCalculator ja oletukset)
+    selectCalculator(calc);
+
+    // 2) Ylikirjoita asetukset skannatuilla arvoilla
+    const gapVal = val('scanGap');
+    settings.gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
+    const gapSel = document.getElementById('gapOption');
+    if (gapSel) gapSel.value = String(settings.gapOption);
+
+    const kickEnabled = document.getElementById('scanKickEnabled').checked;
+    settings.kickPlateEnabled = kickEnabled;
+    const kickToggle = document.getElementById('kickPlateToggle');
+    if (kickToggle) kickToggle.checked = kickEnabled;
+    localStorage.setItem('kickPlateEnabled', kickEnabled);
+
+    const umpioviEnabled = !!document.getElementById('scanUmpiovi')?.checked;
+    settings.umpioviEnabled = umpioviEnabled;
+    const umpioviToggle = document.getElementById('umpioviToggle');
+    if (umpioviToggle) umpioviToggle.checked = umpioviEnabled;
+    localStorage.setItem('umpioviEnabled', umpioviEnabled);
+
+    const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
+    settings.umpivasikkaEnabled = umpivasikkaEnabled;
+    const umpivasikkaToggle = document.getElementById('umpivasikkaToggle');
+    if (umpivasikkaToggle) umpivasikkaToggle.checked = umpivasikkaEnabled;
+    localStorage.setItem('umpivasikkaEnabled', umpivasikkaEnabled);
+
+    const sealEnabled = !!document.getElementById('scanSealThreshold')?.checked;
+    settings.sealThresholdEnabled = sealEnabled;
+    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
+    if (sealThresholdToggle) sealThresholdToggle.checked = sealEnabled;
+    localStorage.setItem('sealThresholdEnabled', sealEnabled);
+
+    const paneCount = parseInt(val('scanPaneCount'), 10) || 1;
+    settings.paneCount = paneCount;
+    const paneCountSel = document.getElementById('paneCount');
+    if (paneCountSel) paneCountSel.value = String(paneCount);
+    updatePaneInputs();
+
+    // 3) Täytä syötekentät
+    const setInput = (id, v) => { const el = document.getElementById(id); if (el && v !== '') el.value = v; };
+    setInput('mainDoorWidth', val('scanMainWidth'));
+    if (isPari) setInput('sideDoorWidth', val('scanSideWidth'));
+    if (kickEnabled) setInput('kickPlateHeight', val('scanKickHeight'));
+    setInput('paneHeight1', val('scanPaneHeight'));
+
+    updateCalculatorInputVisibility();
+    updateSettingsInfo();
+    calculate();
+
+    // 4) Piilota tarkistuskortti ja avaa esitäytetty siirtomodaali
+    closeScanReview();
+
+    const jobNumber = val('scanJobNumber');
+    const itemName = val('scanItemName');
+    const quantity = val('scanQuantity') || '1';
+    const size = val('scanLasilistaSize');
+    const color = val('scanColor');
+
+    transferResults();
+    setTimeout(() => {
+        const job = document.getElementById('transferJobNumber');
+        if (job) job.value = jobNumber;
+        const name = document.getElementById('transferItemName');
+        if (name) { name.value = itemName; name.dataset.autofilled = '0'; }
+        const count = document.getElementById('transferItemCount');
+        if (count) count.value = quantity;
+        const sizeSel = document.getElementById('transferLasilistaSize');
+        if (sizeSel && size) { sizeSel.value = size; sizeSel.dataset.autofilled = '0'; }
+        const colorInput = document.getElementById('transferLasilistaColor');
+        if (colorInput) { colorInput.value = color; colorInput.dataset.autofilled = '0'; }
+        if (typeof prefillTransferFields === 'function') {
+            try { prefillTransferFields(); } catch (e) { /* ohitetaan */ }
+        }
+    }, 200);
+}
+
+function closeScanReview() {
+    const card = document.getElementById('scanReviewCard');
+    if (card) card.style.display = 'none';
+    scanner_resetPanel();
+}
+
+function calculateFromScanReview() {
+    const card = document.getElementById('scanReviewCard');
+    if (!card || card.style.display === 'none') return;
+
+    const calc = document.getElementById('scanCalculator')?.value;
+    if (!calc) return;
+
+    const gapVal = document.getElementById('scanGap')?.value;
+    const gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
+    const kickEnabled = !!document.getElementById('scanKickEnabled')?.checked;
+    const kickHeight  = parseInt(document.getElementById('scanKickHeight')?.value, 10) || 0;
+    const mainWidth   = parseInt(document.getElementById('scanMainWidth')?.value, 10)  || 0;
+    const sideWidth   = parseInt(document.getElementById('scanSideWidth')?.value, 10)  || 0;
+    const paneHeight  = parseInt(document.getElementById('scanPaneHeight')?.value, 10) || 0;
+    const umpioviEnabled     = !!document.getElementById('scanUmpiovi')?.checked;
+    const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
+    const sealEnabled        = !!document.getElementById('scanSealThreshold')?.checked;
+
+    const prevCalc     = currentCalculator;
+    const prevSettings = { ...settings };
+
+    currentCalculator = calc;
+    settings = {
+        gapOption, paneCount: 1,
+        kickPlateEnabled: kickEnabled,
+        sealThresholdEnabled: sealEnabled,
+        umpioviEnabled,
+        umpivasikkaEnabled
+    };
+
+    const isWindow  = calc.includes('ikkuna');
+    const isUmpiovi = !isWindow && umpioviEnabled;
+    const paneHeights = [paneHeight];
+    const paneWidths  = [mainWidth];
+    let results = {};
+
+    if      (calc === 'janisol-pariovi')   results = isUmpiovi ? calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calc) : calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights);
+    else if (calc === 'janisol-kayntiovi') results = isUmpiovi ? calculateUmpioviResults(mainWidth, 0, kickHeight, calc)         : calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights);
+    else if (calc === 'janisol-ikkuna')    results = calculateJanisolIkkuna(paneWidths, paneHeights, kickEnabled ? kickHeight : 0);
+    else if (calc === 'economy-pariovi')   results = isUmpiovi ? calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calc) : calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights);
+    else if (calc === 'economy-kayntiovi') results = isUmpiovi ? calculateUmpioviResults(mainWidth, 0, kickHeight, calc)         : calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights);
+    else if (calc === 'economy-ikkuna')    results = calculateEconomyIkkuna(paneWidths, paneHeights, kickEnabled ? kickHeight : 0);
+
+    displayResults(results);
+
+    currentCalculator = prevCalc;
+    settings = prevSettings;
 }

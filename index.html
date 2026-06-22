@@ -138,7 +138,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="d-flex gap-3">
+                    <div class="d-flex gap-3" id="calculatorTogglesRow">
                         <div id="umpioviSetting">
                             <div class="d-flex align-items-center gap-2">
                                 <label class="form-label mb-0 small text-uppercase">Umpiovi</label>
@@ -173,7 +173,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="row">
+                <div class="row" id="calculatorInputsRow">
                     <div class="col-md-6 col-lg-3" id="mainDoorWidthContainer">
             <div class="mb-3">
                             <label for="mainDoorWidth" class="form-label" id="mainDoorWidthLabel">Käyntioven leveys (mm)</label>
@@ -199,6 +199,27 @@
                     </div>
                 </div>
             </div>
+
+                <!-- PDF-skanneri (näkyy kun skanneri on päällä) -->
+                <div id="scannerPanel" style="display:none;">
+                    <div id="scannerDropZone" class="scanner-dropzone" onclick="document.getElementById('scannerFileInput').click()">
+                        <input type="file" id="scannerFileInput" accept="application/pdf,.pdf" style="display:none" onchange="handleScanFileInput(event)">
+                        <div class="scanner-dropzone-inner">
+                            <div class="scanner-dropzone-icon">📄</div>
+                            <div class="scanner-dropzone-title">Lataa tai raahaa oven piirustus (PDF)</div>
+                            <div class="scanner-dropzone-sub">Sovellus lukee mitat ja tuotantotiedot tarkistettavaksi</div>
+                        </div>
+                    </div>
+                    <div id="scannerStatus" class="scanner-status" style="display:none;">
+                        <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+                        <span id="scannerStatusText">Luetaan piirustusta…</span>
+                        <div class="progress mt-2" style="height:6px;">
+                            <div id="scannerProgressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <div id="scannerError" class="alert alert-warning mt-3 mb-0" style="display:none;"></div>
+                </div>
+
                 <div class="mt-3 d-flex justify-content-end align-items-end">
                     <div id="currentSettingsInfo" class="text-end" style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;">
                         <div>Kaavat: <span id="currentFormulaSet">Default Kaavat</span></div>
@@ -206,6 +227,176 @@
             </div>
         </div>
     </div>
+
+        <!-- Skannauksen tarkistus (inline, piilotettu kunnes skannaus valmis) -->
+        <div id="scanReviewCard" class="card shadow-lg mb-4" style="display:none;">
+            <div class="card-body p-4">
+
+                <!-- Otsikkorivi — sama rakenne kuin Syötteet-kortissa -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                        <h4 class="mb-0">Skannauksen tarkistus</h4>
+                        <!-- Laskuri -->
+                        <div class="d-flex align-items-center gap-1">
+                            <label for="scanCalculator" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Laskuri</label>
+                            <select class="form-select" id="scanCalculator" style="width:auto;font-size:0.75rem;padding:0.15rem 1.5rem 0.15rem 0.4rem">
+                                <option value="janisol-kayntiovi">Janisol Käyntiovi</option>
+                                <option value="janisol-pariovi">Janisol Pariovi</option>
+                                <option value="economy-kayntiovi">Economy Käyntiovi</option>
+                                <option value="economy-pariovi">Economy Pariovi</option>
+                                <option value="janisol-ikkuna">Janisol Ikkuna</option>
+                                <option value="economy-ikkuna">Economy Ikkuna</option>
+                            </select>
+                        </div>
+                        <!-- Rako -->
+                        <div class="d-flex align-items-center gap-1" id="scanGapWrap">
+                            <label for="scanGap" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Rako</label>
+                            <select class="form-select" id="scanGap" style="width:auto;font-size:0.75rem;padding:0.15rem 1.5rem 0.15rem 0.4rem">
+                                <option value="8">8 mm rako</option>
+                                <option value="10">10 mm rako</option>
+                                <option value="15">15 mm rako</option>
+                                <option value="saneeraus">Saneerauskynnys</option>
+                            </select>
+                        </div>
+                        <!-- Ruutumäärä -->
+                        <div class="d-flex align-items-center gap-1">
+                            <label for="scanPaneCount" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Ruutuja</label>
+                            <select class="form-select" id="scanPaneCount" style="width:auto;font-size:0.75rem;padding:0.15rem 1.5rem 0.15rem 0.4rem">
+                                <option value="1">1 ruutu</option>
+                                <option value="2">2 ruutua</option>
+                                <option value="3">3 ruutua</option>
+                                <option value="4">4 ruutua</option>
+                                <option value="5">5 ruutua</option>
+                                <option value="6">6 ruutua</option>
+                                <option value="7">7 ruutua</option>
+                                <option value="8">8 ruutua</option>
+                                <option value="9">9 ruutua</option>
+                                <option value="10">10 ruutua</option>
+                                <option value="11">11 ruutua</option>
+                                <option value="12">12 ruutua</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Togglet oikealla -->
+                    <div class="d-flex gap-3 flex-wrap justify-content-end">
+                        <div id="scanUmpioviWrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase" for="scanUmpiovi">Umpiovi</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="scanUmpiovi">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="scanUmpivasikkaWrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase" for="scanUmpivasikka">Umpivasikka</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="scanUmpivasikka">
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase" for="scanKickEnabled">Potkupelti</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="scanKickEnabled">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="scanSealThresholdWrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <label class="form-label mb-0 small text-uppercase" for="scanSealThreshold">Tiivistekynnys</label>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" id="scanSealThreshold">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mittakentät — sama col-lg-3-ruudukko kuin Syötteet-kortissa -->
+                <div class="row">
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanMainWidth" class="form-label"><span id="scanMainWidthLabel">Käyntioven leveys</span> (mm)</label>
+                            <input type="number" class="form-control" id="scanMainWidth">
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3" id="scanSideWidthWrap">
+                        <div class="mb-3">
+                            <label for="scanSideWidth" class="form-label">Lisäoven leveys (mm)</label>
+                            <input type="number" class="form-control" id="scanSideWidth">
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3" id="scanKickHeightWrap">
+                        <div class="mb-3">
+                            <label for="scanKickHeight" class="form-label">Potkupellin korkeus (mm)</label>
+                            <input type="number" class="form-control" id="scanKickHeight">
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanPaneHeight" class="form-label">Ruudun korkeus (mm)</label>
+                            <input type="number" class="form-control" id="scanPaneHeight">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tuotantotiedot -->
+                <div class="row g-2 mt-1 pt-3 border-top">
+                    <div class="col-12 mb-1">
+                        <span class="text-uppercase fw-bold" style="font-size:0.75rem;color:var(--text-secondary)">Tuotantotiedot</span>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanJobNumber" class="form-label">Työnumero</label>
+                            <input type="text" class="form-control" id="scanJobNumber" placeholder="esim. 197-25">
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanItemName" class="form-label">Oven / ikkunan nimi</label>
+                            <input type="text" class="form-control" id="scanItemName" placeholder="esim. Terassin ovi">
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanLasilistaSize" class="form-label">Lasilistojen koko</label>
+                            <select class="form-select" id="scanLasilistaSize">
+                                <option value="">Valitse koko</option>
+                                <option value="ei-lasilistaa">Ei lasilistaa</option>
+                                <option value="12x20">12x20</option>
+                                <option value="15x20">15x20</option>
+                                <option value="20x20">20x20</option>
+                                <option value="25x20">25x20</option>
+                                <option value="30x20">30x20</option>
+                                <option value="35x20">35x20</option>
+                                <option value="40x20">40x20</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3">
+                        <div class="mb-3">
+                            <label for="scanColor" class="form-label">Väri (lasilista = sisäväri)</label>
+                            <input type="text" class="form-control" id="scanColor" placeholder="esim. RAL 9006">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Napit + määrä-kenttä alaosassa -->
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="scanQuantity" class="form-label mb-0 small">Määrä</label>
+                        <input type="number" class="form-control form-control-sm" id="scanQuantity" min="1" max="99" value="1" style="max-width:70px;text-align:center;">
+                        <span class="small text-muted">kpl</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary" onclick="closeScanReview()">Peruuta</button>
+                        <button type="button" class="btn btn-success" onclick="applyScanResult()">Hyväksy ja siirrä tuotantoon</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Results Section -->
         <div class="card shadow-lg">
@@ -353,6 +544,16 @@
                         </select>
                         <div class="form-text">Kaavasetin vaihto on sallittu kaikille käyttäjille. Uusien kaavasettien luonti vaatii admin-oikeudet.</div>
                     </div>
+                    <hr>
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <label class="form-label mb-0" for="scannerToggle">PDF-skanneri</label>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="scannerToggle" onchange="toggleScanner(this.checked)">
+                            </div>
+                        </div>
+                        <div class="form-text">Kun päällä, Syötteet-kentät korvataan PDF-skannerilla. Lataa oven/ikkunan piirustus PDF:nä ja sovellus lukee mitat ja tuotantotiedot tarkistettavaksi.</div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Sulje</button>
@@ -468,6 +669,7 @@
         </div>
     </div>
 
+    <!-- Scan Review Modal -->
     <!-- Mitat Inputs Modal -->
     <div class="modal fade" id="mitatInputsModal" tabindex="-1" aria-labelledby="mitatInputsTitle">
         <div class="modal-dialog modal-dialog-centered">
@@ -2085,6 +2287,16 @@
       window.dispatchEvent(new Event('firebaseReady'));
     </script>
 
-    <script src="app.js?v=20260614R1"></script>
+    <!-- PDF-skanneri: pdf.js (renderointi/tekstikerros) + Tesseract.js (OCR) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+
+    <script src="app.js?v=20260622R1"></script>
 </body>
 </html>
