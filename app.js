@@ -1,5 +1,10 @@
 // Global state
 let currentCalculator = '';
+let mergeMode = false;
+let frozenFirstResult = null;
+let lastRawResult = null;
+let mergeCount = 0;
+let mergeLiveCommitted = false;
 let settings = {
     gapOption: 8,
     paneCount: 1,
@@ -1354,7 +1359,29 @@ function calculate() {
         results = calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight);
     }
     
-    displayResults(results);
+    lastRawResult = results;
+    if (mergeMode && frozenFirstResult) {
+        mergeLiveCommitted = false;
+        let mergeRaw = results;
+        if (currentCalculator.includes('ikkuna') && settings.kickPlateEnabled && kickPlateHeight > 0) {
+            mergeRaw = currentCalculator === 'janisol-ikkuna'
+                ? calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight, true)
+                : calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight, true);
+        }
+        const secondData = formatResultToData(mergeRaw, currentCalculator, {...settings});
+        const incoming = {
+            data: secondData,
+            calculator: currentCalculator,
+            lasilistaSize: '',
+            lasilistaColor: '',
+            inputs: captureCurrentInputsForMerge(),
+            timestamp: new Date().toISOString()
+        };
+        const merged = mergeResults(frozenFirstResult, incoming);
+        displayMergedResults(merged.data);
+    } else {
+        displayResults(results);
+    }
 }
 
 function getGapFormulaSuffix() {
@@ -2067,6 +2094,11 @@ function displayResults(results) {
     
     html += '</div>';
     resultsDiv.innerHTML = html;
+
+    if (!mergeMode) {
+        const btnYhdista = document.getElementById('btnYhdistaMerge');
+        if (btnYhdista) btnYhdista.style.display = '';
+    }
 }
 
 // Combine duplicate results (e.g., "841 x 2" instead of two "841")
@@ -2079,6 +2111,182 @@ function combineResults(items) {
     return Object.entries(counts)
         .sort((a, b) => b[0] - a[0]) // Sort by value descending
         .map(([value, count]) => count > 1 ? `${value} x ${count}` : value);
+}
+
+// --- Merge mode functions ---
+
+function captureCurrentInputsForMerge() {
+    const inputs = {
+        calculator: currentCalculator,
+        mainDoorWidth: document.getElementById('mainDoorWidth')?.value || '',
+        sideDoorWidth: document.getElementById('sideDoorWidth')?.value || '',
+        kickPlateHeight: document.getElementById('kickPlateHeight')?.value || '',
+        gapOption: settings.gapOption,
+        paneCount: settings.paneCount,
+        kickPlateEnabled: settings.kickPlateEnabled,
+        sealThresholdEnabled: settings.sealThresholdEnabled,
+        umpioviEnabled: settings.umpioviEnabled,
+        umpivasikkaEnabled: settings.umpivasikkaEnabled,
+        formulaSet: localStorage.getItem('activeFormulaSet') || 'default',
+        paneHeights: [],
+        paneWidths: []
+    };
+    const isWindowCalc = (currentCalculator || '').includes('ikkuna');
+    for (let i = 1; i <= settings.paneCount; i++) {
+        inputs.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '');
+        const widthEl = document.getElementById(`paneWidth${i}`);
+        const widthVal = widthEl?.value
+            || (isWindowCalc && !widthEl ? (document.getElementById('mainDoorWidth')?.value || '') : '')
+            || '';
+        inputs.paneWidths.push(widthVal);
+    }
+    return inputs;
+}
+
+function getIkkunaRawForMerge(inp) {
+    if (!currentCalculator.includes('ikkuna') || !settings.kickPlateEnabled) return lastRawResult;
+    const pw = (inp.paneWidths || []).map(Number);
+    const ph = (inp.paneHeights || []).map(Number);
+    const kph = parseInt(inp.kickPlateHeight) || 0;
+    if (kph <= 0) return lastRawResult;
+    return currentCalculator === 'janisol-ikkuna'
+        ? calculateJanisolIkkuna(pw, ph, kph, true)
+        : calculateEconomyIkkuna(pw, ph, kph, true);
+}
+
+function activateMergeMode() {
+    if (!lastRawResult) {
+        showToast('Syötä ensin mitat ennen yhdistämistä.', 'warning');
+        return;
+    }
+
+    if (mergeMode && frozenFirstResult) {
+        // Lisätään uusi tulos kertymään
+        const inp = captureCurrentInputsForMerge();
+        const secondData = formatResultToData(getIkkunaRawForMerge(inp), currentCalculator, {...settings});
+        if (!secondData || secondData.length === 0) {
+            showToast('Ei yhdistettäviä tuloksia.', 'warning');
+            return;
+        }
+        const incoming = {
+            data: secondData,
+            calculator: currentCalculator,
+            lasilistaSize: '',
+            lasilistaColor: '',
+            inputs: inp,
+            timestamp: new Date().toISOString()
+        };
+        frozenFirstResult = mergeResults(frozenFirstResult, incoming);
+        mergeCount++;
+        mergeLiveCommitted = true;
+        updateMergeFirstCard();
+        displayMergedResults(frozenFirstResult.data);
+        return;
+    }
+
+    // Ensimmäinen aktivointi
+    const firstInp = captureCurrentInputsForMerge();
+    const firstData = formatResultToData(getIkkunaRawForMerge(firstInp), currentCalculator, {...settings});
+    if (!firstData || firstData.length === 0) {
+        showToast('Ei yhdistettäviä tuloksia.', 'warning');
+        return;
+    }
+    frozenFirstResult = {
+        data: firstData,
+        calculator: currentCalculator,
+        lasilistaSize: '',
+        lasilistaColor: '',
+        inputs: firstInp,
+        timestamp: new Date().toISOString()
+    };
+    mergeMode = true;
+    mergeCount = 1;
+    mergeLiveCommitted = true;
+
+    updateMergeFirstCard();
+
+    const btnPeruuta = document.getElementById('btnPeruutaMerge');
+    if (btnPeruuta) btnPeruuta.style.display = '';
+
+    // Näytä ensimmäinen tulos sellaisenaan – odota käyttäjän syötteitä toiselle laskimelle
+    displayMergedResults(frozenFirstResult.data);
+}
+
+function cancelMergeMode() {
+    mergeMode = false;
+    frozenFirstResult = null;
+    mergeCount = 0;
+    mergeLiveCommitted = false;
+
+    const card = document.getElementById('mergeFirstCard');
+    if (card) card.classList.add('d-none');
+
+    const btnYhdista = document.getElementById('btnYhdistaMerge');
+    const btnPeruuta = document.getElementById('btnPeruutaMerge');
+    if (btnYhdista) btnYhdista.style.display = lastRawResult ? '' : 'none';
+    if (btnPeruuta) btnPeruuta.style.display = 'none';
+
+    calculate();
+}
+
+function buildMergeFirstSummary(frozenResult) {
+    const calc = frozenResult.inputs?.calculator || frozenResult.calculator || '';
+    const labels = {
+        'janisol-kayntiovi': 'Janisol käyntiovi',
+        'janisol-pariovi': 'Janisol pariovi',
+        'economy-kayntiovi': 'Economy käyntiovi',
+        'economy-pariovi': 'Economy pariovi',
+        'janisol-ikkuna': 'Janisol ikkuna',
+        'economy-ikkuna': 'Economy ikkuna'
+    };
+    const calcLabel = labels[calc] || calc;
+    const inp = frozenResult.inputs || {};
+    const parts = [calcLabel];
+    if (inp.mainDoorWidth) parts.push(`${inp.mainDoorWidth} mm`);
+    if (inp.sideDoorWidth && parseInt(inp.sideDoorWidth) > 0) parts.push(`+ ${inp.sideDoorWidth} mm`);
+    if (inp.kickPlateEnabled && inp.kickPlateHeight) parts.push(`potku ${inp.kickPlateHeight} mm`);
+    return parts.join(', ');
+}
+
+function buildMergeFirstItems(frozenResult) {
+    const sections = frozenResult.data || [];
+    return sections.map(s => {
+        const itemsText = (s.items || []).map(it => it.label).join(', ');
+        return `<span class="text-muted me-3"><strong>${s.title}:</strong> ${itemsText}</span>`;
+    }).join('');
+}
+
+function updateMergeFirstCard() {
+    const labelEl = document.getElementById('mergeFirstLabel');
+    const summaryEl = document.getElementById('mergeFirstSummary');
+    const itemsEl = document.getElementById('mergeFirstItems');
+    if (labelEl) labelEl.textContent = mergeCount > 1 ? `Yhdistetty (${mergeCount} kpl):` : '1. laskuri:';
+    if (summaryEl) summaryEl.innerHTML = mergeCount > 1 ? '' : buildMergeFirstSummary(frozenFirstResult);
+    if (itemsEl) itemsEl.innerHTML = buildMergeFirstItems(frozenFirstResult);
+    const card = document.getElementById('mergeFirstCard');
+    if (card) card.classList.remove('d-none');
+}
+
+function displayMergedResults(dataArray) {
+    const resultsDiv = document.getElementById('results');
+    let html = '<div class="row">';
+    (dataArray || []).forEach(section => {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section">';
+        html += `<h5>${section.title}</h5>`;
+        (section.items || []).forEach(item => {
+            if (item.value) {
+                html += `<div class="result-item">${item.label}: ${item.value}</div>`;
+            } else {
+                html += `<div class="result-item">${item.label}</div>`;
+            }
+        });
+        html += '</div></div>';
+    });
+    html += '</div>';
+    resultsDiv.innerHTML = html;
+
+    const btnYhdista = document.getElementById('btnYhdistaMerge');
+    if (btnYhdista) btnYhdista.style.display = '';
 }
 
 // Copy results to clipboard
@@ -3547,7 +3755,7 @@ function transferResults() {
     const yhdistettyRow = document.getElementById('transferYhdistettyRow');
     if (yhdistettyRow) {
         const isWindowCalc = (currentCalculator || '').includes('ikkuna');
-        yhdistettyRow.style.display = isWindowCalc && settings.kickPlateEnabled ? '' : 'none';
+        yhdistettyRow.style.display = isWindowCalc && settings.kickPlateEnabled && !mergeMode ? '' : 'none';
     }
     const yhdistettyCheck = document.getElementById('transferYhdistetty');
     if (yhdistettyCheck) yhdistettyCheck.checked = false;
@@ -3770,6 +3978,19 @@ function confirmTransferToMitat() {
             results.data[potkuIdx].items = recalc.potkupelti.map(v => ({ label: v, value: '' }));
         }
         results.inputs.yhdistettyLeveys = true;
+    }
+
+    if (mergeMode && frozenFirstResult) {
+        const existingHistory = frozenFirstResult.inputsHistory
+            ? frozenFirstResult.inputsHistory
+            : (frozenFirstResult.inputs
+                ? [{ ...frozenFirstResult.inputs, _mergedAt: frozenFirstResult.timestamp }]
+                : []);
+        if (!mergeLiveCommitted) {
+            results.inputsHistory = [...existingHistory, { ...results.inputs, _mergedAt: results.timestamp }];
+        } else {
+            results.inputsHistory = [...existingHistory];
+        }
     }
     
     const itemCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferItemCount')?.value) || 1));

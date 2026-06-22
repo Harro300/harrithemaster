@@ -406,9 +406,20 @@
                     <div>
                         <button class="btn btn-primary me-2" onclick="copyResults(event)">📋 Kopioi</button>
                         <button class="btn btn-danger me-2" onclick="exportToPDF()">📄 PDF</button>
+                        <button class="btn btn-outline-secondary me-2" id="btnYhdistaMerge" onclick="activateMergeMode()" style="display:none">🔗 Yhdistä</button>
+                        <button class="btn btn-warning me-2" id="btnPeruutaMerge" onclick="cancelMergeMode()" style="display:none">✕ Peruuta</button>
                         <button class="btn btn-success" onclick="transferResults()">➡️ Siirrä</button>
                     </div>
         </div>
+                <div id="mergeFirstCard" class="alert alert-secondary d-none mb-3">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+                        <div>
+                            <strong id="mergeFirstLabel">1. laskuri:</strong>
+                            <span id="mergeFirstSummary" class="ms-1"></span>
+                        </div>
+                    </div>
+                    <div id="mergeFirstItems" class="mt-1 small text-muted"></div>
+                </div>
                 <div id="results" class="results-container">
                     <p class="text-muted text-center">Valitse laskuri ja syötä mitat nähdäksesi tulokset</p>
                 </div>
@@ -2297,6 +2308,6 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260622R1"></script>
+    <script src="app.js?v=20260622R6"></script>
 </body>
 </html>
