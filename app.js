@@ -6512,12 +6512,38 @@ function scanner_parse(tokens, W, H) {
     const hasIkkuna = /ikkuna/.test(low);
     const hasOvi = /ovi|ovet|luukku/.test(low);
     const isWindow = hasIkkuna && !hasOvi;
-    const isPari = /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low);
+
+    // Etsi käyntioven R/L-kirjain ruudun sisältä
+    const rlTok = norm.find(t =>
+        /^[RLrl]$/.test(t.text.trim()) &&
+        !t.vertical &&
+        t.ny > 0.22 && t.ny < 0.82 &&
+        t.nx > 0.15 && t.nx < 0.88
+    );
+
+    // Laske leveysvyöhykkeet heti R/L:n perusteella, jotta pariovi/käyntiovi voidaan erottaa.
+    // Pariovi: molemmat puolet sivua tuottavat leveysmitta.
+    // Käyntiovi: mitat löytyvät vain yhdeltä puolelta (lisäovi-puoli jää tyhjäksi).
+    let _kayntiWidths = [], _lisaWidths = [];
+    if (rlTok) {
+        const _isRightSide = rlTok.nx >= 0.5;
+        const _pw = norm
+            .filter(t => !t.vertical && t.ny > 0.50 && t.ny < 0.80
+                      && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 150 && o.v <= 1800);
+        _kayntiWidths = _pw.filter(o => _isRightSide ? o.nx >= 0.5 : o.nx < 0.5);
+        _lisaWidths   = _pw.filter(o => _isRightSide ? o.nx < 0.5  : o.nx >= 0.5);
+    }
+    // Pariovi vain jos MOLEMMAT puolet sisältävät leveysmitta
+    const isPariByRL = rlTok != null && _kayntiWidths.length > 0 && _lisaWidths.length > 0;
+    const isPari = isPariByRL || /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low);
+
     const family = /economy|\beco\b/.test(low) ? 'economy' : 'janisol';
     let calculator;
     if (isWindow) calculator = family + '-ikkuna';
     else calculator = family + (isPari ? '-pariovi' : '-kayntiovi');
-    conf.calculator = (hasIkkuna || hasOvi) ? 'ok' : 'low';
+    conf.calculator = (hasIkkuna || hasOvi || isPariByRL) ? 'ok' : 'low';
 
     // --- Rako (vain ovet) ---
     let gapOption = 8;
@@ -6569,6 +6595,10 @@ function scanner_parse(tokens, W, H) {
     conf.sideDoorWidth = 'low';
     if (isWindow) {
         if (uniqW.length) mainDoorWidth = uniqW[0];
+    } else if (isPariByRL) {
+        // Käytetään jo laskettuja vyöhyketaulukoita (_kayntiWidths / _lisaWidths)
+        if (_kayntiWidths.length) { mainDoorWidth = Math.max(..._kayntiWidths.map(o => o.v)); conf.mainDoorWidth = 'ok'; }
+        if (_lisaWidths.length)   { sideDoorWidth = Math.max(..._lisaWidths.map(o => o.v));   conf.sideDoorWidth = 'ok'; }
     } else if (isPari) {
         if (uniqW.length >= 3) { mainDoorWidth = uniqW[1]; sideDoorWidth = uniqW[2]; }
         else if (uniqW.length === 2) { mainDoorWidth = uniqW[0]; sideDoorWidth = uniqW[1]; }
@@ -6579,15 +6609,25 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Ruudun korkeus (pysty, keskialue) ---
+    // Oven ulkopuolinen kokonaiskorkeus (esim. 2150) on piirustuksen oikeassa marginaalissa
+    // (nx > 0.82), joten se rajataan pois kaikista hauista.
     let paneHeight = '';
     conf.paneHeight = 'low';
     let phCands = norm
-        .filter(t => t.vertical && t.nx > 0.3 && t.nx < 0.68 && /^\d{3,4}$/.test(t.text.trim()))
+        .filter(t => t.vertical && t.nx > 0.18 && t.nx < 0.80 && /^\d{3,4}$/.test(t.text.trim()))
         .map(t => parseInt(t.text, 10))
         .filter(v => v >= 200 && v <= 4000);
+    // Pariovi: tarkennetaan R/L-tokenin nx-ympäristöön jos primääri ei löydä mitään
+    if (!phCands.length && isPariByRL) {
+        phCands = norm
+            .filter(t => t.vertical && Math.abs(t.nx - rlTok.nx) < 0.22 && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => parseInt(t.text, 10))
+            .filter(v => v >= 200 && v <= 4000);
+    }
+    // Fallback: löysempi haku, marginaalit silti poissuljettu
     if (!phCands.length) {
         phCands = norm
-            .filter(t => t.vertical && /^\d{3,4}$/.test(t.text.trim()))
+            .filter(t => t.vertical && t.nx > 0.08 && t.nx < 0.82 && /^\d{3,4}$/.test(t.text.trim()))
             .map(t => parseInt(t.text, 10))
             .filter(v => v >= 200 && v <= 4000);
     }
@@ -6628,6 +6668,14 @@ function scanner_parse(tokens, W, H) {
     } else if (ralAll.length) {
         color = 'RAL ' + ralAll[0][1];
         conf.color = ralAll.length === 1 ? 'ok' : 'low';
+    }
+    // RR-värit (Ruukki), esim. "RR 23" — käytetään jos RAL ei löytynyt
+    if (!color) {
+        const rrM = all.match(/\bRR\s*(\d{2,3})\b/i);
+        if (rrM) {
+            color = 'RR ' + rrM[1];
+            conf.color = 'ok';
+        }
     }
 
     // --- Nimi (otsikkolohko, vasen ylä) ---
