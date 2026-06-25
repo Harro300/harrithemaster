@@ -6508,6 +6508,14 @@ function scanner_parse(tokens, W, H) {
     const low = all.toLowerCase();
     const conf = {};
 
+    // --- Orientaatio: vaaka vs pysty ---
+    // Luotettavin indikaattori on sivun itsensä dimensiosuhde W/H:
+    //   Landscape-piirustus (Kontulan tyyli): PDF-sivu on vaakasuuntainen → W > H
+    //   Portrait-piirustus (Kaakonojantie tyyli): PDF-sivu on pystysuuntainen → H > W
+    const isLandscape = W > H;
+    // Vaakakuvassa piirrustus alkaa vasta nx > 0.38 → suodatetaan vasemman tekstipalkin numerot pois
+    const drawingMinNx = isLandscape ? 0.38 : 0.08;
+
     // --- Laskuri: ovi/ikkuna, pari/käynti, janisol/economy ---
     const hasIkkuna = /ikkuna/.test(low);
     const hasOvi = /ovi|ovet|luukku/.test(low);
@@ -6525,15 +6533,47 @@ function scanner_parse(tokens, W, H) {
     // Pariovi: molemmat puolet sivua tuottavat leveysmitta.
     // Käyntiovi: mitat löytyvät vain yhdeltä puolelta (lisäovi-puoli jää tyhjäksi).
     let _kayntiWidths = [], _lisaWidths = [];
+    let splitNx = 0.5;
+    let rlOnRight = false;
     if (rlTok) {
-        const _isRightSide = rlTok.nx >= 0.5;
-        const _pw = norm
-            .filter(t => !t.vertical && t.ny > 0.50 && t.ny < 0.80
-                      && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
-            .filter(o => o.v >= 150 && o.v <= 1800);
-        _kayntiWidths = _pw.filter(o => _isRightSide ? o.nx >= 0.5 : o.nx < 0.5);
-        _lisaWidths   = _pw.filter(o => _isRightSide ? o.nx < 0.5  : o.nx >= 0.5);
+        // Vaakakuvassa leveysmitat ovat piirrustuksen yläosassa (kiinteä zona).
+        // Pystykuvassa leveysmitat ovat lähellä R/L-kirjainta (ny-suhteinen).
+        const _pw = isLandscape
+            ? norm
+                .filter(t => !t.vertical &&
+                          t.nx > drawingMinNx && t.nx < 0.88 &&
+                          t.ny > 0.25 && t.ny < 0.50 &&
+                          /^\d{3,4}$/.test(t.text.trim()))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+                .filter(o => o.v >= 150 && o.v <= 1800)
+            : norm
+                .filter(t => !t.vertical &&
+                          t.ny > 0.50 && t.ny < 0.80 &&
+                          /^\d{3,4}$/.test(t.text.trim()))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+                .filter(o => o.v >= 150 && o.v <= 1800);
+        if (_pw.length >= 2) {
+            // Etsi leveyskandidaattien suurin nx-väli = paneelien välinen raja
+            const sorted = [..._pw].sort((a, b) => a.nx - b.nx);
+            let maxGap = 0;
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const gap = sorted[i + 1].nx - sorted[i].nx;
+                if (gap > maxGap) { maxGap = gap; splitNx = (sorted[i].nx + sorted[i + 1].nx) / 2; }
+            }
+            // rlTok kertoo kumpi puoli on käyntiovi
+            rlOnRight = rlTok.nx >= splitNx;
+            _kayntiWidths = _pw.filter(o => rlOnRight ? o.nx >= splitNx : o.nx < splitNx);
+            _lisaWidths   = _pw.filter(o => rlOnRight ? o.nx < splitNx  : o.nx >= splitNx);
+        }
+        // Vaakakuvassa (landscape): käyntioven ja lisäoven leveydet ovat samalla rivillä.
+        // Filtteröidään käyntiovi-kandidaatit lisäoven ny:n perusteella,
+        // jotta ylärivin kokonaisleveysviiva (eri ny) ei päädy syötteeksi.
+        // Pystykuvassa tätä ei tehdä — OCR saattaa sijoittaa mitat hieman eri ny:lle.
+        if (isLandscape && _lisaWidths.length > 0 && _kayntiWidths.length > 0) {
+            const refNy = _lisaWidths[0].ny;
+            const sameRow = _kayntiWidths.filter(o => Math.abs(o.ny - refNy) < 0.05);
+            _kayntiWidths = sameRow.length > 0 ? sameRow : [];
+        }
     }
     // Pariovi vain jos MOLEMMAT puolet sisältävät leveysmitta
     const isPariByRL = rlTok != null && _kayntiWidths.length > 0 && _lisaWidths.length > 0;
@@ -6561,7 +6601,7 @@ function scanner_parse(tokens, W, H) {
     // --- Lasilista / lyöntilista paksuus (esim 12x20) ---
     let lasilistaSize = '';
     conf.lasilistaSize = 'low';
-    const sm = all.match(/\b(12|15|20|25|30|35|40)\s*[xX×]\s*20\b/);
+    const sm = all.match(/\b(12|15|20|25|30|35|40)\s*[xX×*]\s*20\b/);
     if (sm) {
         lasilistaSize = sm[1] + 'x20';
         conf.lasilistaSize = 'ok';
@@ -6573,7 +6613,7 @@ function scanner_parse(tokens, W, H) {
     conf.kickPlateHeight = 'low';
     if (kickPlateEnabled) {
         const kc = norm
-            .filter(t => t.nx > 0.5 && t.ny > 0.62 && /^\d{3}$/.test(t.text.trim()))
+            .filter(t => t.nx > drawingMinNx && t.nx > (isLandscape ? 0.75 : 0.5) && t.ny > 0.62 && /^\d{3}$/.test(t.text.trim()))
             .map(t => ({ v: parseInt(t.text, 10), ny: t.ny }))
             .filter(o => o.v >= 100 && o.v <= 600);
         if (kc.length) {
@@ -6585,7 +6625,7 @@ function scanner_parse(tokens, W, H) {
 
     // --- Leveydet (vaaka, alaosa) ---
     const widthCands = norm
-        .filter(t => !t.vertical && t.ny > 0.6 && /^\d{3,4}$/.test(t.text.trim()))
+        .filter(t => !t.vertical && t.nx > drawingMinNx && t.ny > 0.6 && /^\d{3,4}$/.test(t.text.trim()))
         .map(t => parseInt(t.text, 10))
         .filter(v => v >= 400 && v <= 4000);
     const uniqW = [...new Set(widthCands)].sort((a, b) => b - a);
@@ -6609,30 +6649,42 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Ruudun korkeus (pysty, keskialue) ---
-    // Oven ulkopuolinen kokonaiskorkeus (esim. 2150) on piirustuksen oikeassa marginaalissa
-    // (nx > 0.82), joten se rajataan pois kaikista hauista.
+    // Landscape + rlTok: paneelin korkeusmerkki on aina lähimpänä rlTok:ia (molemmat ovat
+    // käyntiovi-paneelin sisällä). Ulkopuolinen kokonaiskorkeus on kauempana → valitaan lähin.
+    // Portrait / ei rlTok: käytetään kiinteää nx-aluetta ja Math.max:ia (commitattu logiikka).
+    const phMinNx = Math.max(drawingMinNx, 0.08);
+    const phMaxNx = isLandscape ? 0.90 : 0.80;
     let paneHeight = '';
     conf.paneHeight = 'low';
     let phCands = norm
-        .filter(t => t.vertical && t.nx > 0.18 && t.nx < 0.80 && /^\d{3,4}$/.test(t.text.trim()))
-        .map(t => parseInt(t.text, 10))
-        .filter(v => v >= 200 && v <= 4000);
-    // Pariovi: tarkennetaan R/L-tokenin nx-ympäristöön jos primääri ei löydä mitään
-    if (!phCands.length && isPariByRL) {
+        .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+        .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+        .filter(o => o.v >= 200 && o.v <= 4000);
+    // Portrait pariovi -fallback: tarkennetaan R/L-tokenin nx-ympäristöön (commitattu logiikka)
+    if (!phCands.length && !isLandscape && isPariByRL) {
         phCands = norm
             .filter(t => t.vertical && Math.abs(t.nx - rlTok.nx) < 0.22 && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => parseInt(t.text, 10))
-            .filter(v => v >= 200 && v <= 4000);
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 200 && o.v <= 4000);
     }
-    // Fallback: löysempi haku, marginaalit silti poissuljettu
+    // Fallback: löysempi haku, marginaalit silti rajattu
     if (!phCands.length) {
+        const fbMinNx = isLandscape ? phMinNx : 0.08;
+        const fbMaxNx = isLandscape ? 0.90 : 0.82;
         phCands = norm
-            .filter(t => t.vertical && t.nx > 0.08 && t.nx < 0.82 && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => parseInt(t.text, 10))
-            .filter(v => v >= 200 && v <= 4000);
+            .filter(t => t.vertical && t.nx > fbMinNx && t.nx < fbMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 200 && o.v <= 4000);
     }
     if (phCands.length) {
-        paneHeight = Math.max(...phCands);
+        if (isLandscape && rlTok) {
+            // Landscape: valitaan lähimpänä rlTok.nx:ää oleva kandidaatti
+            phCands.sort((a, b) => Math.abs(a.nx - rlTok.nx) - Math.abs(b.nx - rlTok.nx));
+            paneHeight = phCands[0].v;
+        } else {
+            // Portrait: Math.max (ulkopuolinen kokonaiskorkeus rajattu nx-suodatuksella)
+            paneHeight = Math.max(...phCands.map(o => o.v));
+        }
         conf.paneHeight = 'ok';
     }
 
@@ -6679,6 +6731,7 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Nimi (otsikkolohko, vasen ylä) ---
+    // Otsikkolohkon rakenne on AINA: Rivi1=Pos./Määrä, Rivi2=Tuotekoodi, Rivi3=Työmaa, Rivi4=Työnumero, Rivi5=Ulkoa katsottuna
     let itemName = '';
     conf.itemName = 'low';
     const titleToks = norm
@@ -6693,13 +6746,43 @@ function scanner_parse(tokens, W, H) {
         }
         line.parts.push(t);
     });
+    lines.sort((a, b) => a.ny - b.ny);
     const lineStrs = lines.map(L => L.parts.sort((a, b) => a.nx - b.nx).map(p => p.text).join(' ').trim());
-    const exclude = /ty[öo]|numero|m[äa]{1,2}r|pos\.|\bral\b|janisol|economy|lasi|kynnys|profiili|matta|lyönti/i;
-    for (const s of lineStrs) {
-        if (/ovi|ikkuna|ovet|luukku/i.test(s) && !exclude.test(s)) {
-            itemName = s.replace(/\s+/g, ' ').trim();
+
+    // Rakenteellinen poiminta: etsi "Pos."-rivi → seuraava rivi on tuotekoodi/nimi
+    // Nimi saattaa jakautua kahdelle riville: Rivi2=koodi, Rivi3=tyyppi.
+    // Rivi3 otetaan mukaan jos se ei ole "Työ:", "Työnumero:", "Ulkoa katsottuna" jne.
+    const skipLine = /ty[öo]\s*:|työnumero|ulkoa\s*katsottuna|pos\./i;
+    const posLineIdx = lines.findIndex(L =>
+        L.parts.some(p => /^pos\./i.test(p.text.trim()))
+    );
+    if (posLineIdx >= 0 && posLineIdx + 1 < lines.length) {
+        const nextLine = lines[posLineIdx + 1];
+        const candidate = nextLine.parts.sort((a, b) => a.nx - b.nx).map(p => p.text).join(' ').trim();
+        if (candidate.length >= 2) {
+            itemName = candidate;
             conf.itemName = 'ok';
-            break;
+            // Tarkista myös Pos.+2 — nimi saattaa jakautua kahdelle riville
+            if (posLineIdx + 2 < lines.length) {
+                const nextLine2 = lines[posLineIdx + 2];
+                const candidate2 = nextLine2.parts.sort((a, b) => a.nx - b.nx).map(p => p.text).join(' ').trim();
+                if (candidate2.length >= 2 && !skipLine.test(candidate2)) {
+                    itemName = itemName + ' ' + candidate2;
+                }
+            }
+        }
+    }
+
+    // Fallback: avainsana- ja exclude-pohjainen haku
+    // Exclude-regex: m[äa]{1,2}r\b ei osu "MÄRKÄET"-sanaan (K seuraa R:ää, ei sanarajaa)
+    const exclude = /ty[öo]|numero|m[äa]{1,2}r\b|pos\.|\bral\b|janisol|economy|lasi|kynnys|profiili|matta|lyönti/i;
+    if (!itemName) {
+        for (const s of lineStrs) {
+            if (/ovi|ikkuna|ovet|luukku/i.test(s) && !exclude.test(s)) {
+                itemName = s.replace(/\s+/g, ' ').trim();
+                conf.itemName = 'ok';
+                break;
+            }
         }
     }
     if (!itemName) {
