@@ -6644,8 +6644,26 @@ function scanner_parse(tokens, W, H) {
         else if (uniqW.length === 2) { mainDoorWidth = uniqW[0]; sideDoorWidth = uniqW[1]; }
         else if (uniqW.length === 1) { mainDoorWidth = uniqW[0]; }
     } else {
-        if (uniqW.length >= 2) mainDoorWidth = uniqW[1];
-        else if (uniqW.length === 1) mainDoorWidth = uniqW[0];
+        // Käyntiovi (yksittäinen): etsi ruudun sisäinen leveys piirustuksen yläosasta.
+        // Landscape-sivulla sisämitta on ny < 0.50, portrait-sivulla ny < 0.55.
+        // Ulkokehysmitta on alaosassa (ny > 0.6) → widthCands-fallback jos ei löydy.
+        const topNyMax = isLandscape ? 0.50 : 0.55;
+        const topNxMin = isLandscape ? drawingMinNx : 0.42;
+        const upperW = norm
+            .filter(t => !t.vertical &&
+                         t.nx > topNxMin && t.nx < 0.92 &&
+                         t.ny > 0.10 && t.ny < topNyMax &&
+                         /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => parseInt(t.text, 10))
+            .filter(v => v >= 200 && v <= 1800);
+        if (upperW.length) {
+            mainDoorWidth = Math.min(...upperW);
+            conf.mainDoorWidth = 'ok';
+        }
+        if (!mainDoorWidth) {
+            if (uniqW.length >= 2) mainDoorWidth = uniqW[1];
+            else if (uniqW.length === 1) mainDoorWidth = uniqW[0];
+        }
     }
 
     // --- Ruudun korkeus (pysty, keskialue) ---
