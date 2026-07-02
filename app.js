@@ -4432,7 +4432,26 @@ function loadPaketitView() {
         return latest;
     };
 
+    // Päivämääräväli-haussa näytetään tulokset kronologisesti (pienin pakkausaika ylimpänä)
+    const isRangeQuery = PAKETIT_DATE_RANGE_REGEX.test((paketitSearchQuery || '').toLowerCase().trim());
+
+    const getEarliestMatchedTimestamp = (jobNumber) => {
+        let earliest = Number.POSITIVE_INFINITY;
+        (packedByJob[jobNumber] || []).forEach((item) => {
+            if (item.packageNumber == null) return;
+            const ts = packedTimestamps[`${jobNumber}-${item.packageNumber}`];
+            const parsed = ts ? new Date(ts).getTime() : NaN;
+            if (Number.isFinite(parsed) && parsed < earliest) earliest = parsed;
+        });
+        return earliest;
+    };
+
     const jobNumbers = Object.keys(packedByJob).sort((a, b) => {
+        if (isRangeQuery) {
+            const diff = getEarliestMatchedTimestamp(a) - getEarliestMatchedTimestamp(b);
+            if (diff !== 0) return diff;
+            return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+        }
         const diff = getLatestPackedTimestamp(b) - getLatestPackedTimestamp(a);
         if (diff !== 0) return diff;
         return b.localeCompare(a, 'fi', { numeric: true, sensitivity: 'base' });
@@ -4485,6 +4504,12 @@ function loadPaketitView() {
             packageGroups.get(key).push(packedItem);
         });
         const sortedPackageKeys = Array.from(packageGroups.keys()).sort((a, b) => {
+            if (isRangeQuery) {
+                const tsA = a === 0 ? Number.POSITIVE_INFINITY : (new Date(packedTimestamps[`${jobNumber}-${a}`] || 0).getTime() || Number.POSITIVE_INFINITY);
+                const tsB = b === 0 ? Number.POSITIVE_INFINITY : (new Date(packedTimestamps[`${jobNumber}-${b}`] || 0).getTime() || Number.POSITIVE_INFINITY);
+                if (tsA !== tsB) return tsA - tsB;
+                return a - b;
+            }
             if (a === 0) return 1;
             if (b === 0) return -1;
             return b - a;
@@ -4816,9 +4841,27 @@ function handlePaketitSearchInput(value) {
     loadPaketitView();
 }
 
+const PAKETIT_DATE_RANGE_REGEX = /^(\d{1,2})\.(\d{1,2})\.(\d{4})\s*-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+
 function matchesPaketitSearch(jobNumber, packedItem, query, packedTimestamps) {
     if (!query) return true;
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
+
+    // Päivämääräväli, esim. "01.06.2026-15.06.2026" -> osuu pakkausaikaan välillä (molemmat päivät mukaan lukien)
+    const rangeMatch = q.match(PAKETIT_DATE_RANGE_REGEX);
+    if (rangeMatch) {
+        const [, d1, m1, y1, d2, m2, y2] = rangeMatch;
+        let start = new Date(Number(y1), Number(m1) - 1, Number(d1), 0, 0, 0, 0).getTime();
+        let end = new Date(Number(y2), Number(m2) - 1, Number(d2), 23, 59, 59, 999).getTime();
+        if (start > end) [start, end] = [end, start];
+
+        if (packedItem.packageNumber != null && packedTimestamps) {
+            const ts = packedTimestamps[`${jobNumber}-${packedItem.packageNumber}`];
+            const parsed = ts ? new Date(ts).getTime() : NaN;
+            if (Number.isFinite(parsed) && parsed >= start && parsed <= end) return true;
+        }
+        return false;
+    }
 
     if (String(jobNumber).toLowerCase().includes(q)) return true;
     if (String(packedItem.itemName).toLowerCase().includes(q)) return true;
