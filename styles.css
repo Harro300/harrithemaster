@@ -1179,6 +1179,15 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     border-bottom: 2px solid var(--accent-color);
 }
 
+.mitat-job-title-blink {
+    animation: mitatJobTitleBlink 1s infinite;
+}
+
+@keyframes mitatJobTitleBlink {
+    0%, 100% { color: var(--accent-color); }
+    50% { color: #dc3545; }
+}
+
 .mitat-job-header .mitat-toggle-icon {
     font-size: 0.85rem;
     margin-left: 10px;
@@ -1232,6 +1241,10 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 2px;
+}
+
+.mitat-item-title-hidden {
+    color: #dc3545 !important;
 }
 
 .mitat-item-header small {

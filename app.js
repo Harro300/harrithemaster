@@ -4054,6 +4054,14 @@ function loadMittatView() {
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    let hiddenItemsCount = 0;
+    Object.keys(mittatData).forEach((jobNumber) => {
+        Object.keys(mittatData[jobNumber]).forEach((itemName) => {
+            if (hiddenMitatItems[`${jobNumber}-${itemName}`]) {
+                hiddenItemsCount++;
+            }
+        });
+    });
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
     const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
     const toggleShowHiddenItemsBtn = document.getElementById('toggleShowHiddenItemsBtn');
@@ -4074,7 +4082,7 @@ function loadMittatView() {
     if (toggleShowHiddenItemsBtn) {
         toggleShowHiddenItemsBtn.classList.toggle('btn-outline-secondary', !isShowingHiddenItems);
         toggleShowHiddenItemsBtn.classList.toggle('btn-secondary', isShowingHiddenItems);
-        toggleShowHiddenItemsBtn.textContent = isShowingHiddenItems ? 'Piilota piilotetut' : 'Näytä piilotetut';
+        toggleShowHiddenItemsBtn.textContent = isShowingHiddenItems ? `Piilota piilotetut (${hiddenItemsCount})` : `Näytä piilotetut (${hiddenItemsCount})`;
     }
     
     // Check if empty
@@ -4127,6 +4135,7 @@ function loadMittatView() {
         const jobNoteClass = hasJobNote ? 'btn-note-active' : 'btn-note-empty';
         
         const itemNames = Object.keys(mittatData[jobNumber]).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' }));
+        const jobHasHiddenItems = itemNames.some((itemName) => hiddenMitatItems[`${jobNumber}-${itemName}`]);
         const visibleItemNames = itemNames.filter((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;
             const passesHidden = isShowingHiddenItems || !hiddenMitatItems[checkKey];
@@ -4145,7 +4154,8 @@ function loadMittatView() {
         html += `<div class="mitat-job-section">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
-        html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
+        const jobTitleClass = isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title mitat-job-title-blink' : 'mitat-job-title';
+        html += `<h4 class="${jobTitleClass}">Työ ${jobNumber}</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         html += `<span class="mitat-mini-label" id="${jobId}-done-counter">(${totalCount} KPL / ${doneCount} TEHTY)</span>`;
         if (isPackingListMode) {
@@ -4187,6 +4197,7 @@ function loadMittatView() {
             const date = new Date(item.timestamp).toLocaleString('fi-FI');
             const uniqueId = `mitat-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
             const checkKey = `${jobNumber}-${itemName}`;
+            const isHidden = !!hiddenMitatItems[checkKey];
             
             // Get checked state
             const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
@@ -4206,13 +4217,13 @@ function loadMittatView() {
             html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${uniqueId}" aria-label="Avaa/sulje ${itemName}">`;
             html += `<div class="mitat-item-header-main">`;
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
-            html += `<h5 class="mitat-item-title">- ${itemName}</h5>`;
+            const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
+            html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
             const safeJobAttr = sanitizeForAttribute(jobNumber);
             const safeItemAttr = sanitizeForAttribute(itemName);
             html += `<div class="dropdown mitat-item-actions">`;
             html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
             html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
-            const isHidden = !!hiddenMitatItems[checkKey];
             const hideLabel = isHidden && isShowingHiddenItems ? 'Palauta näkyviin' : 'Piilota';
             const hideCls = isHidden && isShowingHiddenItems ? 'btn btn-sm btn-outline-success w-100' : 'btn btn-sm btn-outline-danger w-100';
             html += `<li class="d-flex align-items-center gap-2">`;
