@@ -4157,7 +4157,16 @@ function loadMittatView() {
         const jobTitleClass = isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title mitat-job-title-blink' : 'mitat-job-title';
         html += `<h4 class="${jobTitleClass}">Työ ${jobNumber}</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
-        html += `<span class="mitat-mini-label" id="${jobId}-done-counter">(${totalCount} KPL / ${doneCount} TEHTY)</span>`;
+        const progressCircumference = 2 * Math.PI * 15.5;
+        const progressPercent = totalCount > 0 ? doneCount / totalCount : 0;
+        const progressOffset = (progressCircumference * (1 - progressPercent)).toFixed(2);
+        html += `<div class="mitat-job-progress" id="${jobId}-done-counter" title="${doneCount}/${totalCount} tehty">`;
+        html += `<svg viewBox="0 0 36 36" class="mitat-job-progress-ring" aria-hidden="true">`;
+        html += `<circle class="mitat-job-progress-track" cx="18" cy="18" r="15.5"></circle>`;
+        html += `<circle class="mitat-job-progress-fill" id="${jobId}-progress-fill" cx="18" cy="18" r="15.5" stroke-dasharray="${progressCircumference.toFixed(2)}" stroke-dashoffset="${progressOffset}"></circle>`;
+        html += `</svg>`;
+        html += `<span class="mitat-job-progress-text" id="${jobId}-progress-text">${doneCount}/${totalCount}</span>`;
+        html += `</div>`;
         if (isPackingListMode) {
             const isSelectedJob = selectedPackingJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
@@ -4178,15 +4187,26 @@ function loadMittatView() {
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
         if (isAdmin) {
-            html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')">🗑️</button>`;
+            html += `<button class="mitat-job-delete-btn" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')" title="Poista työ">🗑️</button>`;
         }
         const isSearchExpanded = mitatSearchQuery.length > 0;
-        html += `<span class="mitat-toggle-icon${isSearchExpanded ? ' rotated' : ''}" id="${jobId}-icon">${isSearchExpanded ? '▲' : '▼'}</span>`;
+        html += `<span class="mitat-job-expand-btn"><span class="mitat-toggle-icon${isSearchExpanded ? ' rotated' : ''}" id="${jobId}-icon">${isSearchExpanded ? '▲' : '▼'}</span></span>`;
         html += `</div>`;
         html += `</div>`;
         
         // Job items container (auto-expanded when searching)
         html += `<div class="mitat-job-items" id="${jobId}" style="${isSearchExpanded ? '' : 'display: none;'}">`;
+
+        const isPackingSelectedForJob = isPackingListMode && selectedPackingJobNumber === jobNumber;
+        const isLasilistaSelectedForJob = isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber;
+        const jobPackingBtnClass = isPackingSelectedForJob ? 'btn btn-success' : 'btn btn-primary';
+        const jobPackingBtnText = isPackingSelectedForJob ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
+        const jobLasilistaBtnClass = isLasilistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
+        const jobLasilistaBtnText = isLasilistaSelectedForJob ? '✅ Lasilistat PDF -tila päällä' : '📄 Lasilistat PDF';
+        html += `<div class="mitat-job-quick-actions d-flex gap-2">`;
+        html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
+        html += `<button class="${jobLasilistaBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startLasilistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobLasilistaBtnText}</button>`;
+        html += `</div>`;
 
         if (visibleItemNames.length === 0) {
             html += `<p class="text-muted small mb-0 px-2 py-2">Kaikki tuotteet on piilotettu.</p>`;
@@ -4980,6 +5000,40 @@ function hideMitatItem(jobNumber, itemName) {
 
 function formatFinnishDate(date) {
     return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+}
+
+function startPackingListForJob(jobNumber) {
+    const isAlreadySelected = isPackingListMode && selectedPackingJobNumber === jobNumber;
+    if (isAlreadySelected) {
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+    } else {
+        isPackingListMode = true;
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+        selectedPackingJobNumber = jobNumber;
+        selectedPackingItems = {};
+    }
+    loadMittatView();
+}
+
+function startLasilistaPdfForJob(jobNumber) {
+    const isAlreadySelected = isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber;
+    if (isAlreadySelected) {
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+    } else {
+        isLasilistaPdfMode = true;
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+        selectedLasilistaPdfJobNumber = jobNumber;
+        selectedLasilistaPdfItems = {};
+    }
+    loadMittatView();
 }
 
 function togglePackingListMode() {
@@ -6034,16 +6088,23 @@ function toggleMittatCheck(checkKey, checkboxElement) {
 
 function updateJobDoneCounter(jobNumber) {
     const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    const counterElement = document.getElementById(`${jobId}-done-counter`);
-    if (!counterElement) return;
+    const wrapperElement = document.getElementById(`${jobId}-done-counter`);
+    const fillElement = document.getElementById(`${jobId}-progress-fill`);
+    const textElement = document.getElementById(`${jobId}-progress-text`);
+    if (!wrapperElement || !fillElement || !textElement) return;
 
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const itemNames = Object.keys(mittatData[jobNumber] || {});
     const totalCount = itemNames.length;
     const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
+    const circumference = 2 * Math.PI * 15.5;
+    const percent = totalCount > 0 ? doneCount / totalCount : 0;
+    const offset = circumference * (1 - percent);
 
-    counterElement.textContent = `(${totalCount} KPL / ${doneCount} TEHTY)`;
+    fillElement.style.strokeDashoffset = offset.toFixed(2);
+    textElement.textContent = `${doneCount}/${totalCount}`;
+    wrapperElement.title = `${doneCount}/${totalCount} tehty`;
 }
 
 // Toggle mitta checkbox (tehty)

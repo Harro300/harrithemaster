@@ -7,7 +7,7 @@
     <title>Gradus</title>
     <link rel="icon" type="image/svg+xml" href="gradus-icon.svg?v=20260609R2">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260703R2">
+    <link rel="stylesheet" href="styles.css?v=20260703R7">
 </head>
 <body>
     <a href="#calculatorScreen" class="skip-link">Siirry sisältöön</a>
@@ -46,12 +46,14 @@
         <!-- Header with Calculator Selection -->
         <div class="card shadow-lg mb-4">
             <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-3">
+                <div class="app-header-row">
+                    <div class="app-header-left">
                         <span class="gradus-brand" aria-label="Gradus">
                             <img src="gradus-logo.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-light" width="180" height="40">
                             <img src="gradus-logo-dark.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-dark" width="180" height="40">
                         </span>
+                    </div>
+                    <div class="app-header-center">
                         <!-- View Toggle: Laskin / Mitat -->
                         <div class="view-toggle-container">
                             <button class="view-toggle-btn active" id="btn-view-laskin" onclick="switchView('laskin')">
@@ -65,13 +67,13 @@
                             </button>
                         </div>
                     </div>
-                    <div class="d-flex gap-2 align-items-center">
+                    <div class="app-header-right">
                         <div id="syncStatus" class="sync-status" title="Synkronointitila">
                             <span class="sync-indicator">🔴</span>
                             <span class="sync-text">Offline</span>
                         </div>
                         <button class="btn-admin-lock" id="adminLockButton" onclick="openAdminPanel()" title="Kaavahallinta" aria-label="Kaavahallinta" style="display: none;">🔒</button>
-                        <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
+                        <button class="app-logout-btn" onclick="logout()">Kirjaudu ulos</button>
                     </div>
                 </div>
                 <hr class="my-3">
@@ -431,12 +433,14 @@
     <div id="mittatView" class="container d-none py-4">
         <div class="card shadow-lg mb-4">
             <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-3">
+                <div class="app-header-row">
+                    <div class="app-header-left">
                         <span class="gradus-brand" aria-label="Gradus">
                             <img src="gradus-logo.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-light" width="180" height="40">
                             <img src="gradus-logo-dark.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-dark" width="180" height="40">
                         </span>
+                    </div>
+                    <div class="app-header-center">
                         <!-- View Toggle: Laskin / Mitat -->
                         <div class="view-toggle-container">
                             <button class="view-toggle-btn" id="btn-view-laskin-2" onclick="switchView('laskin')">
@@ -448,10 +452,10 @@
                             <button class="view-toggle-btn" id="btn-view-paketit-2" onclick="switchView('paketit')">
                                 Paketit
                             </button>
-                </div>
-            </div>
-                    <div class="d-flex gap-2 align-items-center">
-                        <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
+                        </div>
+                    </div>
+                    <div class="app-header-right">
+                        <button class="app-logout-btn" onclick="logout()">Kirjaudu ulos</button>
                     </div>
                 </div>
             </div>
@@ -489,12 +493,14 @@
     <div id="paketitView" class="container d-none py-4">
         <div class="card shadow-lg mb-4">
             <div class="card-body p-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-3">
+                <div class="app-header-row">
+                    <div class="app-header-left">
                         <span class="gradus-brand" aria-label="Gradus">
                             <img src="gradus-logo.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-light" width="180" height="40">
                             <img src="gradus-logo-dark.svg?v=20260609R2" alt="Gradus" class="gradus-logo gradus-logo-dark" width="180" height="40">
                         </span>
+                    </div>
+                    <div class="app-header-center">
                         <div class="view-toggle-container">
                             <button class="view-toggle-btn" id="btn-view-laskin-3" onclick="switchView('laskin')">
                                 Laskin
@@ -507,8 +513,8 @@
                             </button>
                         </div>
                     </div>
-                    <div class="d-flex gap-2 align-items-center">
-                        <button class="btn btn-secondary btn-sm" onclick="logout()">Kirjaudu ulos</button>
+                    <div class="app-header-right">
+                        <button class="app-logout-btn" onclick="logout()">Kirjaudu ulos</button>
                     </div>
                 </div>
             </div>
@@ -2308,6 +2314,6 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260703R2"></script>
+    <script src="app.js?v=20260703R5"></script>
 </body>
 </html>
