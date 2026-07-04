@@ -1453,15 +1453,28 @@ function calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calculatorTyp
             const gapInnerHeight = activeFormulaSet?.[`umpiovi_potku_sisa_${gapSuffix}`];
             const gapOuterHeight = activeFormulaSet?.[`umpiovi_potku_ulko_${gapSuffix}`];
 
-            const innerHeightAdjust = useSideFormulas
+            // Tiivistekynnys ei koskaan vaikuta uretaaniin (umpiovi-tilassa uretaania ei muutenkaan ole)
+            // eikä leveyteen — ainoastaan potkupellin korkeuteen.
+            const sealInnerHeight = settings.sealThresholdEnabled
+                ? (useSideFormulas
+                    ? activeFormulaSet?.tiiviste_umpiovi_potku_lisa_sisa_korkeus ?? activeFormulaSet?.tiiviste_umpiovi_potku_sisa_korkeus
+                    : activeFormulaSet?.tiiviste_umpiovi_potku_sisa_korkeus)
+                : null;
+            const sealOuterHeight = settings.sealThresholdEnabled
+                ? (useSideFormulas
+                    ? activeFormulaSet?.tiiviste_umpiovi_potku_lisa_ulko_korkeus ?? activeFormulaSet?.tiiviste_umpiovi_potku_ulko_korkeus
+                    : activeFormulaSet?.tiiviste_umpiovi_potku_ulko_korkeus)
+                : null;
+
+            const innerHeightAdjust = sealInnerHeight ?? (useSideFormulas
                 ? (gapInnerHeight ?? activeFormulaSet?.umpiovi_potku_lisa_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_korkeus ?? fallbackInnerHeight)
-                : (gapInnerHeight ?? activeFormulaSet?.umpiovi_potku_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_korkeus ?? fallbackInnerHeight);
+                : (gapInnerHeight ?? activeFormulaSet?.umpiovi_potku_sisa_korkeus ?? activeFormulaSet?.umpiovi_potku_korkeus ?? fallbackInnerHeight));
             const innerWidthAdjust = useSideFormulas
                 ? (activeFormulaSet?.umpiovi_potku_lisa_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_leveys ?? fallbackInnerWidth)
                 : (activeFormulaSet?.umpiovi_potku_sisa_leveys ?? activeFormulaSet?.umpiovi_potku_leveys ?? fallbackInnerWidth);
-            const outerHeightAdjust = useSideFormulas
+            const outerHeightAdjust = sealOuterHeight ?? (useSideFormulas
                 ? (gapOuterHeight ?? activeFormulaSet?.umpiovi_potku_lisa_ulko_korkeus ?? activeFormulaSet?.umpiovi_potku_ulko_korkeus ?? fallbackOuterHeight)
-                : (gapOuterHeight ?? activeFormulaSet?.umpiovi_potku_ulko_korkeus ?? fallbackOuterHeight);
+                : (gapOuterHeight ?? activeFormulaSet?.umpiovi_potku_ulko_korkeus ?? fallbackOuterHeight));
             const outerWidthAdjust = useSideFormulas
                 ? (activeFormulaSet?.umpiovi_potku_lisa_ulko_leveys ?? activeFormulaSet?.umpiovi_potku_ulko_leveys ?? fallbackOuterWidth)
                 : (activeFormulaSet?.umpiovi_potku_ulko_leveys ?? fallbackOuterWidth);
@@ -2651,7 +2664,11 @@ function getDefaultFormulas() {
             umpiovi_potku_lisa_sisa_korkeus: -67,
             umpiovi_potku_lisa_sisa_leveys: 140,
             umpiovi_potku_lisa_ulko_korkeus: -18,
-            umpiovi_potku_lisa_ulko_leveys: 140
+            umpiovi_potku_lisa_ulko_leveys: 140,
+            tiiviste_umpiovi_potku_sisa_korkeus: -67,
+            tiiviste_umpiovi_potku_ulko_korkeus: -18,
+            tiiviste_umpiovi_potku_lisa_sisa_korkeus: -67,
+            tiiviste_umpiovi_potku_lisa_ulko_korkeus: -18
         },
         janisol_kayntiovi: {
             rako_10_inner: 32,
@@ -2687,7 +2704,9 @@ function getDefaultFormulas() {
             umpiovi_potku_ulko_8mm: -18,
             umpiovi_potku_ulko_10mm: -18,
             umpiovi_potku_ulko_15mm: -18,
-            umpiovi_potku_ulko_saneeraus: -18
+            umpiovi_potku_ulko_saneeraus: -18,
+            tiiviste_umpiovi_potku_sisa_korkeus: -67,
+            tiiviste_umpiovi_potku_ulko_korkeus: -18
         },
         economy_pariovi: {
             lasilista_pysty: 38,
@@ -2740,7 +2759,11 @@ function getDefaultFormulas() {
             umpiovi_potku_lisa_sisa_korkeus: -65,
             umpiovi_potku_lisa_sisa_leveys: 135,
             umpiovi_potku_lisa_ulko_korkeus: -20,
-            umpiovi_potku_lisa_ulko_leveys: 135
+            umpiovi_potku_lisa_ulko_leveys: 135,
+            tiiviste_umpiovi_potku_sisa_korkeus: -65,
+            tiiviste_umpiovi_potku_ulko_korkeus: -20,
+            tiiviste_umpiovi_potku_lisa_sisa_korkeus: -65,
+            tiiviste_umpiovi_potku_lisa_ulko_korkeus: -20
         },
         economy_kayntiovi: {
             rako_10_inner: 32,
@@ -2776,7 +2799,9 @@ function getDefaultFormulas() {
             umpiovi_potku_ulko_8mm: -20,
             umpiovi_potku_ulko_10mm: -20,
             umpiovi_potku_ulko_15mm: -20,
-            umpiovi_potku_ulko_saneeraus: -20
+            umpiovi_potku_ulko_saneeraus: -20,
+            tiiviste_umpiovi_potku_sisa_korkeus: -65,
+            tiiviste_umpiovi_potku_ulko_korkeus: -20
         },
         janisol_ikkuna: {
             lasilista_pysty: 41,
@@ -3208,7 +3233,11 @@ function collectFormulasFromPanel() {
             umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_sisa_korkeus').value),
             umpiovi_potku_lisa_sisa_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_sisa_leveys').value),
             umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_ulko_korkeus').value),
-            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_ulko_leveys').value)
+            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('janisol_pariovi_umpiovi_potku_lisa_ulko_leveys').value),
+            tiiviste_umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_umpiovi_potku_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_umpiovi_potku_ulko_korkeus').value),
+            tiiviste_umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_umpiovi_potku_lisa_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('janisol_pariovi_tiiviste_umpiovi_potku_lisa_ulko_korkeus').value)
         },
         janisol_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('janisol_kayntiovi_rako_10_inner').value),
@@ -3244,7 +3273,9 @@ function collectFormulasFromPanel() {
             umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_8mm').value),
             umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_10mm').value),
             umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_15mm').value),
-            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_saneeraus').value)
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('janisol_kayntiovi_umpiovi_potku_ulko_saneeraus').value),
+            tiiviste_umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_umpiovi_potku_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('janisol_kayntiovi_tiiviste_umpiovi_potku_ulko_korkeus').value)
         },
         economy_pariovi: {
             lasilista_pysty: parseFloat(document.getElementById('economy_pariovi_lasilista_pysty').value),
@@ -3297,7 +3328,11 @@ function collectFormulasFromPanel() {
             umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_sisa_korkeus').value),
             umpiovi_potku_lisa_sisa_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_sisa_leveys').value),
             umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_ulko_korkeus').value),
-            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_ulko_leveys').value)
+            umpiovi_potku_lisa_ulko_leveys: parseFloat(document.getElementById('economy_pariovi_umpiovi_potku_lisa_ulko_leveys').value),
+            tiiviste_umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('economy_pariovi_tiiviste_umpiovi_potku_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_tiiviste_umpiovi_potku_ulko_korkeus').value),
+            tiiviste_umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('economy_pariovi_tiiviste_umpiovi_potku_lisa_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('economy_pariovi_tiiviste_umpiovi_potku_lisa_ulko_korkeus').value)
         },
         economy_kayntiovi: {
             rako_10_inner: parseFloat(document.getElementById('economy_kayntiovi_rako_10_inner').value),
@@ -3333,7 +3368,9 @@ function collectFormulasFromPanel() {
             umpiovi_potku_ulko_8mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_8mm').value),
             umpiovi_potku_ulko_10mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_10mm').value),
             umpiovi_potku_ulko_15mm: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_15mm').value),
-            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_saneeraus').value)
+            umpiovi_potku_ulko_saneeraus: parseFloat(document.getElementById('economy_kayntiovi_umpiovi_potku_ulko_saneeraus').value),
+            tiiviste_umpiovi_potku_sisa_korkeus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_umpiovi_potku_sisa_korkeus').value),
+            tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('economy_kayntiovi_tiiviste_umpiovi_potku_ulko_korkeus').value)
         },
         janisol_ikkuna: {
             lasilista_pysty: parseFloat(document.getElementById('janisol_ikkuna_lasilista_pysty').value),
