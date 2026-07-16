@@ -1194,6 +1194,180 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     border-radius: 10px;
 }
 
+.mitat-split-layout {
+    display: flex;
+    align-items: stretch;
+    height: calc(100vh - 260px);
+    min-height: 360px;
+}
+
+.mitat-job-sidebar {
+    width: 230px;
+    flex-shrink: 0;
+    height: 100%;
+    padding-right: 8px;
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.mitat-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-left: 3px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.mitat-sidebar-item:hover,
+.mitat-sidebar-item:focus-visible {
+    background: var(--bg-tertiary);
+    outline: none;
+}
+
+.mitat-sidebar-item--selected {
+    padding-left: 7px;
+    border-left-color: var(--accent-color);
+    background: var(--bg-tertiary);
+}
+
+.mitat-sidebar-item + .mitat-sidebar-item {
+    margin-top: 4px;
+}
+
+.mitat-sidebar-item .mitat-job-progress {
+    width: 32px;
+    height: 32px;
+}
+
+.mitat-sidebar-title {
+    min-width: 0;
+    flex: 1;
+    font-size: 0.9rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mitat-sidebar-chevron {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.mitat-job-panel {
+    min-width: 0;
+    flex: 1;
+    height: 100%;
+    padding-left: 16px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.mitat-job-panel .mitat-job-section {
+    margin-bottom: 0;
+}
+
+.mitat-split-layout--fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+    height: 100vh;
+    min-height: 0;
+    padding: 16px;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.mitat-split-layout--fullscreen .mitat-job-sidebar {
+    display: none;
+}
+
+.mitat-split-layout--fullscreen .mitat-job-panel {
+    width: 100%;
+    height: 100%;
+    padding-left: 0;
+}
+
+.mitat-job-fullscreen-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--border-light);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mitat-job-fullscreen-btn:hover,
+.mitat-job-fullscreen-btn:focus-visible {
+    border-color: var(--accent-color);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    outline: none;
+}
+
+@media (max-width: 768px) {
+    .mitat-split-layout {
+        flex-direction: column;
+        height: auto;
+        min-height: 0;
+    }
+
+    .mitat-job-sidebar {
+        display: flex;
+        gap: 6px;
+        width: 100%;
+        max-height: 164px;
+        padding: 0 0 8px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-color);
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    .mitat-sidebar-item {
+        min-width: 142px;
+    }
+
+    .mitat-sidebar-item + .mitat-sidebar-item {
+        margin-top: 0;
+    }
+
+    .mitat-job-panel {
+        height: auto;
+        max-height: calc(100vh - 320px);
+        padding: 12px 0 0;
+    }
+
+    .mitat-split-layout--fullscreen {
+        height: 100vh;
+        padding: 10px;
+    }
+
+    .mitat-split-layout--fullscreen .mitat-job-panel {
+        height: 100%;
+        max-height: none;
+        padding: 0;
+    }
+}
+
 .mitat-job-section {
     margin-bottom: 15px;
     padding: 8px;

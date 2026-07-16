@@ -4124,7 +4124,7 @@ function loadMittatView() {
     
     // Check if empty
     if (Object.keys(mittatData).length === 0) {
-        container.innerHTML = '<p class="text-muted text-center">Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.</p>';
+        showMitatSplitMessage('Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.');
         return;
     }
     
@@ -4188,7 +4188,7 @@ function loadMittatView() {
 
         if (mitatSearchQuery && visibleItemNames.length === 0) return;
 
-        html += `<div class="mitat-job-section">`;
+        html += `<div class="mitat-job-section" data-job-number="${encodeURIComponent(jobNumber)}">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         const jobTitleClass = isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title mitat-job-title-blink' : 'mitat-job-title';
@@ -4375,11 +4375,11 @@ function loadMittatView() {
     });
     
     if (html === '' && mitatSearchQuery) {
-        container.innerHTML = `<p class="text-muted text-center">Ei hakutuloksia haulle "<strong>${mitatSearchQuery}</strong>".</p>`;
+        showMitatSplitMessage(`Ei hakutuloksia haulle "<strong>${mitatSearchQuery}</strong>".`);
         return;
     }
     if (html === '') {
-        container.innerHTML = '<p class="text-muted text-center">Kaikki työnumerot on pakattu. Katso Paketit-sivu.</p>';
+        showMitatSplitMessage('Kaikki työnumerot on pakattu. Katso Paketit-sivu.');
         return;
     }
     container.innerHTML = html;
@@ -4390,6 +4390,134 @@ function loadMittatView() {
             restoreMitatOpenState(openState);
         }
     }
+    setupMitatSplitLayout();
+}
+
+function showMitatSplitMessage(message) {
+    const container = document.getElementById('mittatContainer');
+    const sidebar = document.getElementById('mitatJobSidebar');
+    const panel = document.getElementById('mitatJobPanel');
+    if (container) container.innerHTML = '';
+    if (sidebar) sidebar.innerHTML = '';
+    if (panel) panel.innerHTML = `<p class="text-muted text-center">${message}</p>`;
+}
+
+function setupMitatSplitLayout() {
+    const container = document.getElementById('mittatContainer');
+    const sidebar = document.getElementById('mitatJobSidebar');
+    const panel = document.getElementById('mitatJobPanel');
+    if (!container || !sidebar || !panel) return;
+
+    const jobSections = Array.from(container.querySelectorAll('.mitat-job-section'));
+    if (jobSections.length === 0) return;
+
+    const visibleJobNumbers = jobSections.map((section) => decodeURIComponent(section.dataset.jobNumber));
+    if (!visibleJobNumbers.includes(selectedMitatJobNumber)) {
+        selectedMitatJobNumber = visibleJobNumbers[visibleJobNumbers.length - 1];
+    }
+
+    sidebar.innerHTML = '';
+    panel.innerHTML = '';
+
+    jobSections.forEach((section) => {
+        const jobNumber = decodeURIComponent(section.dataset.jobNumber);
+        const isSelected = jobNumber === selectedMitatJobNumber;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `mitat-sidebar-item${isSelected ? ' mitat-sidebar-item--selected' : ''}`;
+        button.setAttribute('aria-current', isSelected ? 'true' : 'false');
+        button.setAttribute('aria-label', `Avaa työ ${jobNumber}`);
+
+        const progress = section.querySelector('.mitat-job-progress');
+        if (progress) {
+            const progressClone = progress.cloneNode(true);
+            progressClone.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+            button.appendChild(progressClone);
+        }
+
+        const title = document.createElement('span');
+        title.className = 'mitat-sidebar-title';
+        title.textContent = `Työ ${jobNumber}`;
+        if (section.querySelector('.mitat-job-title-blink')) {
+            title.classList.add('mitat-job-title-blink');
+        }
+        button.appendChild(title);
+
+        const chevron = document.createElement('span');
+        chevron.className = 'mitat-sidebar-chevron';
+        chevron.setAttribute('aria-hidden', 'true');
+        chevron.textContent = '›';
+        button.appendChild(chevron);
+
+        button.addEventListener('click', () => selectMitatJob(jobNumber));
+        sidebar.appendChild(button);
+
+        if (!isSelected) {
+            section.remove();
+            return;
+        }
+
+        const jobItems = section.querySelector('.mitat-job-items');
+        const jobIcon = section.querySelector('.mitat-job-expand-btn .mitat-toggle-icon');
+        const jobHeader = section.querySelector('.mitat-job-header');
+        if (jobItems) jobItems.style.display = 'block';
+        if (jobIcon) {
+            jobIcon.textContent = '▲';
+            jobIcon.classList.add('rotated');
+        }
+        if (jobHeader) jobHeader.setAttribute('aria-expanded', 'true');
+        panel.appendChild(section);
+        addMitatPanelFullscreenControl(jobHeader);
+    });
+}
+
+function selectMitatJob(jobNumber) {
+    if (selectedMitatJobNumber === jobNumber) return;
+    selectedMitatJobNumber = jobNumber;
+    loadMittatView();
+}
+
+function addMitatPanelFullscreenControl(jobHeader) {
+    if (!jobHeader || jobHeader.querySelector('.mitat-job-fullscreen-btn')) return;
+
+    const actions = jobHeader.children[1];
+    if (!actions) return;
+
+    const fullscreenButton = document.createElement('button');
+    fullscreenButton.type = 'button';
+    fullscreenButton.className = 'mitat-job-fullscreen-btn';
+    fullscreenButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMitatPanelFullscreen();
+    });
+    actions.insertBefore(fullscreenButton, actions.firstChild);
+
+    jobHeader.addEventListener('dblclick', (event) => {
+        if (event.target.closest('button, input, a, [role="checkbox"]')) return;
+        toggleMitatPanelFullscreen();
+    });
+
+    updateMitatPanelFullscreenControl();
+}
+
+function toggleMitatPanelFullscreen() {
+    isMitatPanelFullscreen = !isMitatPanelFullscreen;
+    const layout = document.querySelector('.mitat-split-layout');
+    if (layout) {
+        layout.classList.toggle('mitat-split-layout--fullscreen', isMitatPanelFullscreen);
+    }
+    updateMitatPanelFullscreenControl();
+}
+
+function updateMitatPanelFullscreenControl() {
+    const isFullscreen = isMitatPanelFullscreen;
+    document.querySelectorAll('.mitat-job-fullscreen-btn').forEach((button) => {
+        button.textContent = isFullscreen ? '×' : '⛶';
+        button.title = isFullscreen ? 'Poistu koko näytön tilasta' : 'Näytä tuotelista koko näytössä';
+        button.setAttribute('aria-label', button.title);
+        button.setAttribute('aria-pressed', String(isFullscreen));
+    });
 }
 
 // Capture currently open Mitat accordion state before rerender
@@ -4902,6 +5030,8 @@ let selectedLasilistaPdfItems = {};
 let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
+let selectedMitatJobNumber = null;
+let isMitatPanelFullscreen = false;
 let paketitSearchQuery = '';
 
 function handlePaketitSearchInput(value) {
