@@ -759,6 +759,10 @@ function switchView(view) {
         view = 'mitat';
     }
 
+    if (view !== 'mitat' && isMitatPanelFullscreen) {
+        setMitatPanelFullscreen(false);
+    }
+
     if (calculatorScreen) calculatorScreen.classList.add('d-none');
     if (mittatView) mittatView.classList.add('d-none');
     if (paketitView) paketitView.classList.add('d-none');
@@ -794,6 +798,10 @@ async function logout() {
     stopRealtimeListeners();
     mitatStateLoaded = false;
     lastKnownJobCount = -1;
+
+    if (isMitatPanelFullscreen) {
+        setMitatPanelFullscreen(false);
+    }
     
     // Sign out from Firebase
     if (window.firebase && currentUser) {
@@ -4469,6 +4477,8 @@ function setupMitatSplitLayout() {
         panel.appendChild(section);
         addMitatPanelFullscreenControl(jobHeader);
     });
+
+    syncMitatFullscreenDom();
 }
 
 function selectMitatJob(jobNumber) {
@@ -4501,13 +4511,90 @@ function addMitatPanelFullscreenControl(jobHeader) {
     updateMitatPanelFullscreenControl();
 }
 
-function toggleMitatPanelFullscreen() {
-    isMitatPanelFullscreen = !isMitatPanelFullscreen;
-    const layout = document.querySelector('.mitat-split-layout');
-    if (layout) {
-        layout.classList.toggle('mitat-split-layout--fullscreen', isMitatPanelFullscreen);
+function updateMitatPanelFullscreenTop() {
+    const headerCard = document.querySelector('#mittatView > .card');
+    const root = getMitatFullscreenRoot();
+    if (!headerCard || !root) return;
+
+    root.style.setProperty(
+        '--mitat-fullscreen-top',
+        `${Math.max(0, Math.ceil(headerCard.getBoundingClientRect().bottom))}px`
+    );
+}
+
+function getMitatFullscreenRoot() {
+    const root = document.getElementById('mitatFullscreenRoot');
+    if (root && root.parentElement !== document.body) {
+        document.body.appendChild(root);
     }
+    return root;
+}
+
+function getMitatSplitLayout() {
+    const root = getMitatFullscreenRoot();
+    return root?.querySelector('.mitat-split-layout')
+        || document.querySelector('#mitatSplitLayoutHost .mitat-split-layout');
+}
+
+function syncMitatFullscreenDom() {
+    const host = document.getElementById('mitatSplitLayoutHost');
+    const root = getMitatFullscreenRoot();
+    const layout = getMitatSplitLayout();
+    if (!host || !root || !layout) return;
+
+    if (isMitatPanelFullscreen && layout.parentElement !== root) {
+        root.appendChild(layout);
+    } else if (!isMitatPanelFullscreen && layout.parentElement !== host) {
+        host.appendChild(layout);
+    }
+}
+
+function setMitatPanelFullscreen(enabled) {
+    const host = document.getElementById('mitatSplitLayoutHost');
+    const root = getMitatFullscreenRoot();
+    const layout = getMitatSplitLayout();
+    if (!host || !root || !layout) return;
+
+    if (isMitatPanelFullscreen === enabled) {
+        syncMitatFullscreenDom();
+        return;
+    }
+
+    if (enabled) {
+        isMitatPanelFullscreen = true;
+        mitatFullscreenPreviousBodyOverflow = document.body.style.overflow;
+        mitatFullscreenPreviousDocumentOverflow = document.documentElement.style.overflow;
+        layout.classList.add('mitat-split-layout--fullscreen');
+        root.appendChild(layout);
+        updateMitatPanelFullscreenTop();
+        root.hidden = false;
+        root.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        mitatFullscreenResizeHandler = updateMitatPanelFullscreenTop;
+        window.addEventListener('resize', mitatFullscreenResizeHandler);
+    } else {
+        root.hidden = true;
+        root.setAttribute('aria-hidden', 'true');
+        layout.classList.remove('mitat-split-layout--fullscreen');
+        host.appendChild(layout);
+        document.body.style.overflow = mitatFullscreenPreviousBodyOverflow;
+        document.documentElement.style.overflow = mitatFullscreenPreviousDocumentOverflow;
+        mitatFullscreenPreviousBodyOverflow = '';
+        mitatFullscreenPreviousDocumentOverflow = '';
+        root.style.removeProperty('--mitat-fullscreen-top');
+        if (mitatFullscreenResizeHandler) {
+            window.removeEventListener('resize', mitatFullscreenResizeHandler);
+            mitatFullscreenResizeHandler = null;
+        }
+        isMitatPanelFullscreen = false;
+    }
+
     updateMitatPanelFullscreenControl();
+}
+
+function toggleMitatPanelFullscreen() {
+    setMitatPanelFullscreen(!isMitatPanelFullscreen);
 }
 
 function updateMitatPanelFullscreenControl() {
@@ -5032,6 +5119,9 @@ let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
 let selectedMitatJobNumber = null;
 let isMitatPanelFullscreen = false;
+let mitatFullscreenResizeHandler = null;
+let mitatFullscreenPreviousBodyOverflow = '';
+let mitatFullscreenPreviousDocumentOverflow = '';
 let paketitSearchQuery = '';
 
 function handlePaketitSearchInput(value) {

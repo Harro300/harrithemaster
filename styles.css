@@ -1277,25 +1277,41 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin-bottom: 0;
 }
 
-.mitat-split-layout--fullscreen {
+.mitat-fullscreen-root {
     position: fixed;
-    inset: 0;
+    top: var(--mitat-fullscreen-top, 96px);
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 1040;
-    height: 100vh;
-    min-height: 0;
+    box-sizing: border-box;
     padding: 16px;
     overflow: hidden;
     background: var(--bg-primary);
 }
 
-.mitat-split-layout--fullscreen .mitat-job-sidebar {
+.mitat-fullscreen-root[hidden] {
     display: none;
 }
 
-.mitat-split-layout--fullscreen .mitat-job-panel {
+.mitat-fullscreen-root .mitat-split-layout {
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.mitat-fullscreen-root .mitat-job-sidebar {
+    display: none;
+}
+
+.mitat-fullscreen-root .mitat-job-panel {
     width: 100%;
     height: 100%;
     padding-left: 0;
+    overflow-y: scroll;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .mitat-job-fullscreen-btn {
@@ -1356,12 +1372,12 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
         padding: 12px 0 0;
     }
 
-    .mitat-split-layout--fullscreen {
-        height: 100vh;
+    .mitat-fullscreen-root {
+        height: auto;
         padding: 10px;
     }
 
-    .mitat-split-layout--fullscreen .mitat-job-panel {
+    .mitat-fullscreen-root .mitat-job-panel {
         height: 100%;
         max-height: none;
         padding: 0;
