@@ -6938,11 +6938,10 @@ function scanner_parse(tokens, W, H) {
             _kayntiWidths = _pw.filter(o => rlOnRight ? o.nx >= splitNx : o.nx < splitNx);
             _lisaWidths   = _pw.filter(o => rlOnRight ? o.nx < splitNx  : o.nx >= splitNx);
         }
-        // Vaakakuvassa (landscape): käyntioven ja lisäoven leveydet ovat samalla rivillä.
-        // Filtteröidään käyntiovi-kandidaatit lisäoven ny:n perusteella,
-        // jotta ylärivin kokonaisleveysviiva (eri ny) ei päädy syötteeksi.
-        // Pystykuvassa tätä ei tehdä — OCR saattaa sijoittaa mitat hieman eri ny:lle.
-        if (isLandscape && _lisaWidths.length > 0 && _kayntiWidths.length > 0) {
+        // Käyntioven ja lisäoven leveydet samalla rivillä (landscape + portrait).
+        // Filtteröidään käyntiovi-kandidaatit lisäoven ny:n perusteella (Δny < 0.05),
+        // jotta eri rivin kokonaisleveys (esim. alaosan 1390/990) ei päädy syötteeksi.
+        if (_lisaWidths.length > 0 && _kayntiWidths.length > 0) {
             const refNy = _lisaWidths[0].ny;
             const sameRow = _kayntiWidths.filter(o => Math.abs(o.ny - refNy) < 0.05);
             _kayntiWidths = sameRow.length > 0 ? sameRow : [];
@@ -6987,15 +6986,25 @@ function scanner_parse(tokens, W, H) {
                          t.nx > drawingMinNx && t.nx < 0.92 &&
                          t.ny > 0.40 && t.ny < 0.70 &&
                          /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
             .filter(o => o.v >= 150 && o.v <= 1800 && o.v !== multiPaneHeight);
         if (multiPwProbe.length >= 2) {
             const sorted = [...multiPwProbe].sort((a, b) => a.nx - b.nx);
-            let maxGap = 0;
+            let localSplit = 0.5, maxGap = 0;
             for (let i = 0; i < sorted.length - 1; i++) {
-                maxGap = Math.max(maxGap, sorted[i + 1].nx - sorted[i].nx);
+                const gap = sorted[i + 1].nx - sorted[i].nx;
+                if (gap > maxGap) { maxGap = gap; localSplit = (sorted[i].nx + sorted[i + 1].nx) / 2; }
             }
-            isMultiPanePari = maxGap > 0.06;
+            if (maxGap > 0.06) {
+                const kayntiOnRight = rlTok.nx >= localSplit;
+                let kW = multiPwProbe.filter(o => kayntiOnRight ? o.nx >= localSplit : o.nx < localSplit);
+                const lW = multiPwProbe.filter(o => kayntiOnRight ? o.nx < localSplit : o.nx >= localSplit);
+                if (kW.length && lW.length) {
+                    const refNy = lW[0].ny;
+                    kW = kW.filter(o => Math.abs(o.ny - refNy) < 0.05);
+                    isMultiPanePari = kW.length > 0;
+                }
+            }
         }
     }
     const isPari = isMultiPanePari || (!isMultiPane && (isPariByRL || /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low)));
@@ -7067,13 +7076,13 @@ function scanner_parse(tokens, W, H) {
     if (isWindow) {
         if (uniqW.length) mainDoorWidth = uniqW[0];
     } else if (isMultiPanePari) {
-        // Moniruutu-pariovi: leveydet ruudun sisalla (ny 0.40-0.70), ei alaosan kokonaisleveytta.
+        // Moniruutu-pariovi: leveydet ruudun sisalla (ny 0.40-0.70), sama rivi (Δny < 0.05).
         const multiPw = norm
             .filter(t => !t.vertical &&
                          t.nx > drawingMinNx && t.nx < 0.92 &&
                          t.ny > 0.40 && t.ny < 0.70 &&
                          /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
             .filter(o => o.v >= 150 && o.v <= 1800 && o.v !== multiPaneHeight);
         if (multiPw.length >= 2) {
             const sorted = [...multiPw].sort((a, b) => a.nx - b.nx);
@@ -7083,8 +7092,12 @@ function scanner_parse(tokens, W, H) {
                 if (gap > maxGap) { maxGap = gap; localSplit = (sorted[i].nx + sorted[i + 1].nx) / 2; }
             }
             const kayntiOnRight = rlTok.nx >= localSplit;
-            const kW = multiPw.filter(o => kayntiOnRight ? o.nx >= localSplit : o.nx < localSplit);
+            let kW = multiPw.filter(o => kayntiOnRight ? o.nx >= localSplit : o.nx < localSplit);
             const lW = multiPw.filter(o => kayntiOnRight ? o.nx < localSplit : o.nx >= localSplit);
+            if (kW.length && lW.length) {
+                const refNy = lW[0].ny;
+                kW = kW.filter(o => Math.abs(o.ny - refNy) < 0.05);
+            }
             if (kW.length) { mainDoorWidth = Math.max(...kW.map(o => o.v)); conf.mainDoorWidth = 'ok'; }
             if (lW.length) { sideDoorWidth = Math.max(...lW.map(o => o.v)); conf.sideDoorWidth = 'ok'; }
         }
