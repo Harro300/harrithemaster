@@ -6893,10 +6893,11 @@ function scanner_parse(tokens, W, H) {
     const hasOvi = /ovi|ovet|luukku/.test(low);
     const isWindow = hasIkkuna && !hasOvi;
 
-    // Etsi käyntioven R/L-kirjain ruudun sisältä
+    // Etsi käyntioven R/L-kirjain ruudun sisältä.
+    // Landscape: vain vaakateksti (Kontula). Portrait: myös pysty-R/L (moniruutu-pariovi).
     const rlTok = norm.find(t =>
         /^[RLrl]$/.test(t.text.trim()) &&
-        !t.vertical &&
+        (isLandscape ? !t.vertical : true) &&
         t.ny > 0.22 && t.ny < 0.82 &&
         t.nx > 0.15 && t.nx < 0.88
     );
@@ -6947,15 +6948,63 @@ function scanner_parse(tokens, W, H) {
             _kayntiWidths = sameRow.length > 0 ? sameRow : [];
         }
     }
-    // Pariovi vain jos MOLEMMAT puolet sisältävät leveysmitta
+    // --- Moniruutu-tunnistus ENNEN pariovi/kayntiovi-valintaa ---
+    // >=2 samaa pystykorkeutta alueella 200-900 -> lasiruudut (ei kokonaiskorkeus 1400+)
+    const phMinNx = Math.max(drawingMinNx, 0.08);
+    const phMaxNx = isLandscape ? 0.90 : 0.80;
+    let paneCount = 1;
+    conf.paneCount = 'low';
+    let isMultiPane = false;
+    let multiPaneHeight = null;
+    {
+        const multiCands = norm
+            .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => parseInt(t.text, 10))
+            .filter(v => v >= 200 && v <= 900);
+        const freq = {};
+        multiCands.forEach(v => { freq[v] = (freq[v] || 0) + 1; });
+        let bestV = null, bestN = 0;
+        Object.keys(freq).forEach(k => {
+            const n = freq[k];
+            const v = parseInt(k, 10);
+            if (n >= 2 && n > bestN) { bestN = n; bestV = v; }
+        });
+        if (bestV != null && bestN >= 2 && bestN <= 12) {
+            isMultiPane = true;
+            paneCount = bestN;
+            multiPaneHeight = bestV;
+            conf.paneCount = 'ok';
+        }
+    }
+
+    // Pariovi: isPariByRL TAI moniruutu-pariovi (vahvistettu kahdella leveydella).
+    // Moniruutu-kayntiovi: katisyys-L + alaosan 990 ei saa tehda pariovea.
     const isPariByRL = rlTok != null && _kayntiWidths.length > 0 && _lisaWidths.length > 0;
-    const isPari = isPariByRL || /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low);
+    let isMultiPanePari = false;
+    if (isMultiPane && isPariByRL) {
+        const multiPwProbe = norm
+            .filter(t => !t.vertical &&
+                         t.nx > drawingMinNx && t.nx < 0.92 &&
+                         t.ny > 0.40 && t.ny < 0.70 &&
+                         /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 150 && o.v <= 1800 && o.v !== multiPaneHeight);
+        if (multiPwProbe.length >= 2) {
+            const sorted = [...multiPwProbe].sort((a, b) => a.nx - b.nx);
+            let maxGap = 0;
+            for (let i = 0; i < sorted.length - 1; i++) {
+                maxGap = Math.max(maxGap, sorted[i + 1].nx - sorted[i].nx);
+            }
+            isMultiPanePari = maxGap > 0.06;
+        }
+    }
+    const isPari = isMultiPanePari || (!isMultiPane && (isPariByRL || /pariov|pari\s*-?\s*ov|2\s*-?\s*lehti|kaksilehti/.test(low)));
 
     const family = /economy|\beco\b/.test(low) ? 'economy' : 'janisol';
     let calculator;
     if (isWindow) calculator = family + '-ikkuna';
     else calculator = family + (isPari ? '-pariovi' : '-kayntiovi');
-    conf.calculator = (hasIkkuna || hasOvi || isPariByRL) ? 'ok' : 'low';
+    conf.calculator = (hasIkkuna || hasOvi || isPariByRL || isMultiPane) ? 'ok' : 'low';
 
     // --- Rako (vain ovet) ---
     let gapOption = 8;
@@ -6985,12 +7034,22 @@ function scanner_parse(tokens, W, H) {
     conf.kickPlateHeight = 'low';
     if (kickPlateEnabled) {
         const kc = norm
-            .filter(t => t.nx > drawingMinNx && t.nx > (isLandscape ? 0.75 : 0.5) && t.ny > 0.62 && /^\d{3}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), ny: t.ny }))
-            .filter(o => o.v >= 100 && o.v <= 600);
+            .filter(t => {
+                const raw = t.text.trim();
+                if (!(t.nx > drawingMinNx && t.nx > (isLandscape ? 0.75 : 0.5) && t.ny > 0.62)) return false;
+                return /^[Ll]?\d{3}$/.test(raw);
+            })
+            .map(t => ({
+                v: parseInt(t.text.trim().replace(/^[Ll]/, ''), 10),
+                ny: t.ny,
+                vertical: !!t.vertical
+            }))
+            .filter(o => o.v >= 100 && o.v <= 800);
         if (kc.length) {
-            kc.sort((a, b) => b.ny - a.ny);
-            kickPlateHeight = kc[0].v;
+            const vert = kc.filter(o => o.vertical);
+            const pool = vert.length ? vert : kc;
+            pool.sort((a, b) => b.ny - a.ny);
+            kickPlateHeight = pool[0].v;
             conf.kickPlateHeight = 'ok';
         }
     }
@@ -7007,8 +7066,50 @@ function scanner_parse(tokens, W, H) {
     conf.sideDoorWidth = 'low';
     if (isWindow) {
         if (uniqW.length) mainDoorWidth = uniqW[0];
+    } else if (isMultiPanePari) {
+        // Moniruutu-pariovi: leveydet ruudun sisalla (ny 0.40-0.70), ei alaosan kokonaisleveytta.
+        const multiPw = norm
+            .filter(t => !t.vertical &&
+                         t.nx > drawingMinNx && t.nx < 0.92 &&
+                         t.ny > 0.40 && t.ny < 0.70 &&
+                         /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 150 && o.v <= 1800 && o.v !== multiPaneHeight);
+        if (multiPw.length >= 2) {
+            const sorted = [...multiPw].sort((a, b) => a.nx - b.nx);
+            let localSplit = 0.5, maxGap = 0;
+            for (let i = 0; i < sorted.length - 1; i++) {
+                const gap = sorted[i + 1].nx - sorted[i].nx;
+                if (gap > maxGap) { maxGap = gap; localSplit = (sorted[i].nx + sorted[i + 1].nx) / 2; }
+            }
+            const kayntiOnRight = rlTok.nx >= localSplit;
+            const kW = multiPw.filter(o => kayntiOnRight ? o.nx >= localSplit : o.nx < localSplit);
+            const lW = multiPw.filter(o => kayntiOnRight ? o.nx < localSplit : o.nx >= localSplit);
+            if (kW.length) { mainDoorWidth = Math.max(...kW.map(o => o.v)); conf.mainDoorWidth = 'ok'; }
+            if (lW.length) { sideDoorWidth = Math.max(...lW.map(o => o.v)); conf.sideDoorWidth = 'ok'; }
+        }
+    } else if (isMultiPane) {
+        // Moniruutu-kayntiovi: leveys ruudun sisalla (ny 0.40-0.70); ei lisaovea
+        const topNxMin = isLandscape ? drawingMinNx : 0.42;
+        const multiW = norm
+            .filter(t => !t.vertical &&
+                         t.nx > topNxMin && t.nx < 0.92 &&
+                         t.ny > 0.40 && t.ny < 0.70 &&
+                         /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => parseInt(t.text, 10))
+            .filter(v => v >= 200 && v <= 1800 && v !== multiPaneHeight);
+        if (multiW.length) {
+            mainDoorWidth = Math.min(...multiW);
+            conf.mainDoorWidth = 'ok';
+        }
+        if (!mainDoorWidth) {
+            if (uniqW.length >= 2) mainDoorWidth = uniqW[1];
+            else if (uniqW.length === 1) mainDoorWidth = uniqW[0];
+        }
+        sideDoorWidth = '';
+        conf.sideDoorWidth = 'ok';
     } else if (isPariByRL) {
-        // Käytetään jo laskettuja vyöhyketaulukoita (_kayntiWidths / _lisaWidths)
+        // Kaytetaan jo laskettuja vyohyketaulukoita (_kayntiWidths / _lisaWidths)
         if (_kayntiWidths.length) { mainDoorWidth = Math.max(..._kayntiWidths.map(o => o.v)); conf.mainDoorWidth = 'ok'; }
         if (_lisaWidths.length)   { sideDoorWidth = Math.max(..._lisaWidths.map(o => o.v));   conf.sideDoorWidth = 'ok'; }
     } else if (isPari) {
@@ -7039,43 +7140,42 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Ruudun korkeus (pysty, keskialue) ---
-    // Landscape + rlTok: paneelin korkeusmerkki on aina lähimpänä rlTok:ia (molemmat ovat
-    // käyntiovi-paneelin sisällä). Ulkopuolinen kokonaiskorkeus on kauempana → valitaan lähin.
-    // Portrait / ei rlTok: käytetään kiinteää nx-aluetta ja Math.max:ia (commitattu logiikka).
-    const phMinNx = Math.max(drawingMinNx, 0.08);
-    const phMaxNx = isLandscape ? 0.90 : 0.80;
+    // Moniruutu: toistuva lasiruudun korkeus (isMultiPane) - ei Math.max / kokonaiskorkeus.
+    // Landscape + rlTok: paneelin korkeusmerkki on aina lahimpana rlTok:ia.
+    // Portrait / ei rlTok: kaytetaan kiinteaa nx-aluetta ja Math.max:ia.
     let paneHeight = '';
     conf.paneHeight = 'low';
-    let phCands = norm
-        .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
-        .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
-        .filter(o => o.v >= 200 && o.v <= 4000);
-    // Portrait pariovi -fallback: tarkennetaan R/L-tokenin nx-ympäristöön (commitattu logiikka)
-    if (!phCands.length && !isLandscape && isPariByRL) {
-        phCands = norm
-            .filter(t => t.vertical && Math.abs(t.nx - rlTok.nx) < 0.22 && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
-            .filter(o => o.v >= 200 && o.v <= 4000);
-    }
-    // Fallback: löysempi haku, marginaalit silti rajattu
-    if (!phCands.length) {
-        const fbMinNx = isLandscape ? phMinNx : 0.08;
-        const fbMaxNx = isLandscape ? 0.90 : 0.82;
-        phCands = norm
-            .filter(t => t.vertical && t.nx > fbMinNx && t.nx < fbMaxNx && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
-            .filter(o => o.v >= 200 && o.v <= 4000);
-    }
-    if (phCands.length) {
-        if (isLandscape && rlTok) {
-            // Landscape: valitaan lähimpänä rlTok.nx:ää oleva kandidaatti
-            phCands.sort((a, b) => Math.abs(a.nx - rlTok.nx) - Math.abs(b.nx - rlTok.nx));
-            paneHeight = phCands[0].v;
-        } else {
-            // Portrait: Math.max (ulkopuolinen kokonaiskorkeus rajattu nx-suodatuksella)
-            paneHeight = Math.max(...phCands.map(o => o.v));
-        }
+    if (isMultiPane && multiPaneHeight != null) {
+        paneHeight = multiPaneHeight;
         conf.paneHeight = 'ok';
+    } else {
+        let phCands = norm
+            .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .filter(o => o.v >= 200 && o.v <= 4000);
+        if (!phCands.length && !isLandscape && isPariByRL) {
+            phCands = norm
+                .filter(t => t.vertical && Math.abs(t.nx - rlTok.nx) < 0.22 && /^\d{3,4}$/.test(t.text.trim()))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+                .filter(o => o.v >= 200 && o.v <= 4000);
+        }
+        if (!phCands.length) {
+            const fbMinNx = isLandscape ? phMinNx : 0.08;
+            const fbMaxNx = isLandscape ? 0.90 : 0.82;
+            phCands = norm
+                .filter(t => t.vertical && t.nx > fbMinNx && t.nx < fbMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+                .filter(o => o.v >= 200 && o.v <= 4000);
+        }
+        if (phCands.length) {
+            if (isLandscape && rlTok) {
+                phCands.sort((a, b) => Math.abs(a.nx - rlTok.nx) - Math.abs(b.nx - rlTok.nx));
+                paneHeight = phCands[0].v;
+            } else {
+                paneHeight = Math.max(...phCands.map(o => o.v));
+            }
+            conf.paneHeight = 'ok';
+        }
     }
 
     // --- Työnumero ---
@@ -7180,13 +7280,13 @@ function scanner_parse(tokens, W, H) {
         if (cand) itemName = cand.replace(/\s+/g, ' ').trim();
     }
 
-    // --- Ruutumäärä ---
-    let paneCount = 1;
-    conf.paneCount = 'low';
-    const pcm = all.match(/\b(\d{1,2})\s*ruut/i);
-    if (pcm) {
-        const v = parseInt(pcm[1], 10);
-        if (v >= 1 && v <= 12) { paneCount = v; conf.paneCount = 'ok'; }
+    // --- Ruutumaara (teksti) — moniruutu-haara asettaa paneCount jo aiemmin ---
+    if (!isMultiPane) {
+        const pcm = all.match(/\b(\d{1,2})\s*ruut/i);
+        if (pcm) {
+            const v = parseInt(pcm[1], 10);
+            if (v >= 1 && v <= 12) { paneCount = v; conf.paneCount = 'ok'; }
+        }
     }
 
     // --- Umpiovi ---
@@ -7211,6 +7311,51 @@ function scanner_parse(tokens, W, H) {
         paneCount, umpioviEnabled, umpivasikkaEnabled, sealThresholdEnabled,
         jobNumber, itemName, quantity, color, conf
     };
+}
+
+
+function updateScanPaneInputs(count, heights) {
+    let container = document.getElementById('scanPaneHeightInputs');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'row';
+        container.id = 'scanPaneHeightInputs';
+        const kickWrap = document.getElementById('scanKickHeightWrap');
+        const measureRow = kickWrap && kickWrap.parentElement;
+        if (measureRow && measureRow.parentElement) {
+            measureRow.insertAdjacentElement('afterend', container);
+        } else {
+            const body = document.querySelector('#scanReviewCard .card-body');
+            const prod = body && body.querySelector('.border-top');
+            if (!body) return;
+            if (prod) body.insertBefore(container, prod);
+            else body.appendChild(container);
+        }
+    }
+    const n = Math.max(1, Math.min(12, parseInt(count, 10) || 1));
+    const vals = Array.isArray(heights) ? heights : [];
+    container.innerHTML = '';
+    for (let i = 1; i <= n; i++) {
+        const col = document.createElement('div');
+        col.className = 'col-md-6 col-lg-3';
+        const wrap = document.createElement('div');
+        wrap.className = 'mb-3';
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.setAttribute('for', 'scanPaneHeight' + i);
+        label.textContent = n === 1 ? 'Ruudun korkeus (mm)' : ('Ruutu ' + i + ' korkeus (mm)');
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'form-control';
+        input.id = 'scanPaneHeight' + i;
+        const hv = vals[i - 1];
+        input.value = (hv == null || hv === '') ? '' : hv;
+        input.addEventListener('input', () => calculateFromScanReview());
+        wrap.appendChild(label);
+        wrap.appendChild(input);
+        col.appendChild(wrap);
+        container.appendChild(col);
+    }
 }
 
 function updateScanReviewVisibility() {
@@ -7247,7 +7392,9 @@ function showScanReview(parsed) {
     setV('scanMainWidth', parsed.mainDoorWidth);
     setV('scanSideWidth', parsed.sideDoorWidth);
     setV('scanKickHeight', parsed.kickPlateHeight);
-    setV('scanPaneHeight', parsed.paneHeight);
+    const _pc = parsed.paneCount || 1;
+    const _ph = parsed.paneHeight;
+    updateScanPaneInputs(_pc, Array.from({ length: _pc }, () => _ph));
     setV('scanJobNumber', parsed.jobNumber);
     setV('scanItemName', parsed.itemName);
     setV('scanQuantity', parsed.quantity || 1);
@@ -7274,7 +7421,7 @@ function showScanReview(parsed) {
     mark('scanMainWidth', parsed.conf.mainDoorWidth);
     mark('scanSideWidth', isPari ? parsed.conf.sideDoorWidth : 'ok');
     mark('scanKickHeight', parsed.kickPlateEnabled ? parsed.conf.kickPlateHeight : 'ok');
-    mark('scanPaneHeight', parsed.conf.paneHeight);
+    mark('scanPaneHeight1', parsed.conf.paneHeight);
     mark('scanPaneCount', parsed.conf.paneCount);
     const umpioviLabel = document.getElementById('scanUmpiovi')?.closest('.form-check');
     if (umpioviLabel) umpioviLabel.classList.toggle('scan-uncertain', isWindow ? false : parsed.conf.umpioviEnabled !== 'ok');
@@ -7345,7 +7492,10 @@ function applyScanResult() {
     setInput('mainDoorWidth', val('scanMainWidth'));
     if (isPari) setInput('sideDoorWidth', val('scanSideWidth'));
     if (kickEnabled) setInput('kickPlateHeight', val('scanKickHeight'));
-    setInput('paneHeight1', val('scanPaneHeight'));
+    for (let i = 1; i <= paneCount; i++) {
+        const v = val('scanPaneHeight' + i) || val('scanPaneHeight');
+        setInput('paneHeight' + i, v);
+    }
 
     updateCalculatorInputVisibility();
     updateSettingsInfo();
