@@ -6695,7 +6695,7 @@ function initScanner() {
     const scanCalcFields = [
         'scanCalculator', 'scanGap', 'scanPaneCount',
         'scanMainWidth', 'scanSideWidth', 'scanKickEnabled',
-        'scanKickHeight', 'scanPaneHeight',
+        'scanKickHeight',
         'scanUmpiovi', 'scanUmpivasikka', 'scanSealThreshold'
     ];
     scanCalcFields.forEach(id => {
@@ -7560,17 +7560,36 @@ function calculateFromScanReview() {
     const kickHeight  = parseInt(document.getElementById('scanKickHeight')?.value, 10) || 0;
     const mainWidth   = parseInt(document.getElementById('scanMainWidth')?.value, 10)  || 0;
     const sideWidth   = parseInt(document.getElementById('scanSideWidth')?.value, 10)  || 0;
-    const paneHeight  = parseInt(document.getElementById('scanPaneHeight')?.value, 10) || 0;
+    const paneCount   = Math.max(1, Math.min(12, parseInt(document.getElementById('scanPaneCount')?.value, 10) || 1));
     const umpioviEnabled     = !!document.getElementById('scanUmpiovi')?.checked;
     const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
     const sealEnabled        = !!document.getElementById('scanSealThreshold')?.checked;
+
+    const heightContainer = document.getElementById('scanPaneHeightInputs');
+    const existingInputs = heightContainer
+        ? Array.from(heightContainer.querySelectorAll('input[id^="scanPaneHeight"]'))
+        : [];
+    if (existingInputs.length !== paneCount) {
+        const keepHeights = existingInputs.map(el => {
+            const v = parseInt(el.value, 10);
+            return Number.isFinite(v) ? v : '';
+        });
+        updateScanPaneInputs(paneCount, keepHeights);
+    }
+
+    const paneHeights = [];
+    for (let i = 1; i <= paneCount; i++) {
+        paneHeights.push(parseInt(document.getElementById('scanPaneHeight' + i)?.value, 10) || 0);
+    }
 
     const prevCalc     = currentCalculator;
     const prevSettings = { ...settings };
 
     currentCalculator = calc;
     settings = {
-        gapOption, paneCount: 1,
+        ...prevSettings,
+        gapOption,
+        paneCount,
         kickPlateEnabled: kickEnabled,
         sealThresholdEnabled: sealEnabled,
         umpioviEnabled,
@@ -7579,8 +7598,34 @@ function calculateFromScanReview() {
 
     const isWindow  = calc.includes('ikkuna');
     const isUmpiovi = !isWindow && umpioviEnabled;
-    const paneHeights = [paneHeight];
     const paneWidths  = [mainWidth];
+
+    const restore = () => {
+        currentCalculator = prevCalc;
+        settings = prevSettings;
+    };
+
+    if (isUmpioviNoResultsMode()) {
+        document.getElementById('results').innerHTML = '<p class="text-muted">Umpiovi + Tiivistekynnys ilman potkupeltiä: ei laskettavia mittoja.</p>';
+        restore();
+        return;
+    }
+    if (!isWindow && mainWidth < 500) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
+        restore();
+        return;
+    }
+    if (isWindow && paneCount === 1 && mainWidth < 100) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
+        restore();
+        return;
+    }
+    if (kickEnabled && kickHeight < 100) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
+        restore();
+        return;
+    }
+
     let results = {};
 
     if      (calc === 'janisol-pariovi')   results = isUmpiovi ? calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calc) : calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights);
@@ -7591,7 +7636,5 @@ function calculateFromScanReview() {
     else if (calc === 'economy-ikkuna')    results = calculateEconomyIkkuna(paneWidths, paneHeights, kickEnabled ? kickHeight : 0);
 
     displayResults(results);
-
-    currentCalculator = prevCalc;
-    settings = prevSettings;
+    restore();
 }
