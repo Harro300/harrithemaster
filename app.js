@@ -7192,9 +7192,11 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Työnumero ---
+    // Labelin jälkeen: viivamuoto (123-26) TAI kompakti 4–6 numeroa (12326 / 15926).
+    // Fallback ilman labelia: vain viivamuoto (ei pelkkää 4–6-numeroista → mitat kuten 1875).
     let jobNumber = '';
     conf.jobNumber = 'low';
-    const jm = all.match(/ty[öo]\s*-?\s*numero\s*:?\s*([0-9]{1,4}\s*-\s*[0-9]{2,4})/i);
+    const jm = all.match(/ty[öo]\s*-?\s*numero\s*:?\s*([0-9]{1,4}\s*-\s*[0-9]{2,4}|[0-9]{4,6})/i);
     if (jm) {
         jobNumber = jm[1].replace(/\s+/g, '');
         conf.jobNumber = 'ok';
