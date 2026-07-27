@@ -3684,9 +3684,15 @@ function prefillTransferFields() {
     if (!jobInput || !itemNameInput || !sizeSelect || !colorInput) return;
 
     const jobNumber = jobInput.value.trim();
+    const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
 
     if (!jobNumber) {
         [itemNameInput, sizeSelect, colorInput].forEach((field) => {
+            if (field === sizeSelect && isUmpiovi) {
+                field.value = 'ei-lasilistaa';
+                field.dataset.autofilled = '1';
+                return;
+            }
             if (field.dataset.autofilled === '1') {
                 field.value = '';
             }
@@ -3696,9 +3702,10 @@ function prefillTransferFields() {
     }
 
     const defaults = getJobLatestTransferDefaults(jobNumber);
+    const sizeSuggestion = isUmpiovi ? 'ei-lasilistaa' : defaults.lasilistaSize;
 
     applyTransferFieldAutofill(itemNameInput, defaults.itemName);
-    applyTransferFieldAutofill(sizeSelect, defaults.lasilistaSize);
+    applyTransferFieldAutofill(sizeSelect, sizeSuggestion);
     applyTransferFieldAutofill(colorInput, defaults.lasilistaColor);
     updateYhdistettyCheckbox();
 }
