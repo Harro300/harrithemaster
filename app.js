@@ -5010,7 +5010,7 @@ function renamePaketitItem(jobNumber, itemName, btn) {
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
 
-function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1) {
+function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, editMeta = false) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber]?.[itemName];
     if (!item) {
@@ -5040,9 +5040,15 @@ function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1) {
         { label: 'Laskin', value: calcLabel },
         { label: 'Siirretty', value: date }
     ];
-    if (item.lasilistaSize) headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
-    if (item.lasilistaColor) headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
-    html += renderInputsRows(headerRows);
+    if (editMeta) {
+        html += renderInputsRows(headerRows);
+        html += buildLasilistaMetaEditForm(item, jobNumber, itemName, 'paketit');
+    } else {
+        if (item.lasilistaSize) headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
+        if (item.lasilistaColor) headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
+        html += renderInputsRows(headerRows);
+        html += `<div class="mt-2 mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,-1,true)">Muokkaa lasilistaa</button></div>`;
+    }
 
     const fallback = JSON.parse(localStorage.getItem('mitatInputs') || '{}')?.[jobNumber]?.[itemName] || {};
     const inputsHistory = item.inputsHistory || fallback.inputsHistory || null;
@@ -6157,7 +6163,68 @@ function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 
     }
 }
 
-function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1) {
+function buildLasilistaMetaEditForm(item, jobNumber, itemName, context = 'mitat') {
+    const safeJob = sanitizeForAttribute(jobNumber);
+    const safeItem = sanitizeForAttribute(itemName);
+    const currentSize = String(item?.lasilistaSize || '').trim();
+    const sizeVal = currentSize || 'ei-lasilistaa';
+    const colorVal = String(item?.lasilistaColor || '').replace(/"/g, '&quot;');
+    const sizeOpts = [
+        ['ei-lasilistaa', 'Ei lasilistaa'],
+        ['12x20', '12x20'], ['15x20', '15x20'], ['20x20', '20x20'],
+        ['25x20', '25x20'], ['30x20', '30x20'], ['35x20', '35x20'], ['40x20', '40x20']
+    ].map(([v, l]) => `<option value="${v}"${sizeVal === v ? ' selected' : ''}>${l}</option>`).join('');
+
+    const editRow = (label, controlHtml) =>
+        `<div class="mitat-inputs-row mitat-inputs-edit-row">
+            <span class="mitat-inputs-label">${label}</span>
+            <div class="mitat-inputs-edit-control">${controlHtml}</div>
+        </div>`;
+
+    const saveCtx = context === 'paketit' ? `,'paketit'` : '';
+    const cancelOnclick = context === 'paketit'
+        ? `showPaketitItemDetails('${safeJob}','${safeItem}',null)`
+        : `showMitatItemInputs('${safeJob}','${safeItem}')`;
+
+    let html = `<div class="mitat-inputs-edit-form" data-meta-edit="1">`;
+    html += editRow('Lasilistan koko',
+        `<select name="lasilistaSize" class="form-select form-select-sm" style="width:auto">${sizeOpts}</select>`);
+    html += editRow('Lasilistan väri',
+        `<input type="text" name="lasilistaColor" class="form-control form-control-sm" value="${colorVal}" placeholder="esim. RAL 7024" style="width:140px">`);
+    html += `<div class="d-flex gap-2 mt-3">
+        <button class="btn btn-sm btn-primary" onclick="saveEditedMitatLasilistaMeta('${safeJob}','${safeItem}',this.closest('.mitat-inputs-edit-form')${saveCtx})">Tallenna</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="${cancelOnclick}">Peruuta</button>
+    </div>`;
+    html += `</div>`;
+    return html;
+}
+
+function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mitat') {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber]?.[itemName];
+    if (!item) { showToast('Mittaa ei löytynyt.', 'warning'); return; }
+
+    const rawSize = formEl?.querySelector('[name="lasilistaSize"]')?.value || '';
+    const rawColor = formEl?.querySelector('[name="lasilistaColor"]')?.value || '';
+    item.lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
+    item.lasilistaColor = normalizeLasilistaColor(rawColor);
+
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+
+    if (context === 'paketit') {
+        loadPaketitView();
+        showToast('Lasilistan tiedot päivitetty.', 'success');
+        showPaketitItemDetails(jobNumber, itemName, null);
+    } else {
+        loadMittatView();
+        showToast('Lasilistan tiedot päivitetty.', 'success');
+        showMitatItemInputs(jobNumber, itemName);
+    }
+}
+
+function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1, editMeta = false) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber] && mittatData[jobNumber][itemName];
     if (!item) {
@@ -6184,15 +6251,21 @@ function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1) {
         { label: 'Laskin', value: calcLabel },
         { label: 'Siirretty', value: date }
     ];
-    if (item.lasilistaSize) {
-        headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
-    } else if (item.lasilistaSize === '' && !item.metadataOnly) {
-        headerRows.push({ label: 'Lasilistan koko', value: 'Ei lasilistaa' });
+    if (editMeta) {
+        html += renderInputsRows(headerRows);
+        html += buildLasilistaMetaEditForm(item, jobNumber, itemName, 'mitat');
+    } else {
+        if (item.lasilistaSize) {
+            headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
+        } else if (item.lasilistaSize === '' && !item.metadataOnly) {
+            headerRows.push({ label: 'Lasilistan koko', value: 'Ei lasilistaa' });
+        }
+        if (item.lasilistaColor) {
+            headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
+        }
+        html += renderInputsRows(headerRows);
+        html += `<div class="mt-2 mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="showMitatItemInputs('${safeJob}','${safeItem}',-1,true)">Muokkaa lasilistaa</button></div>`;
     }
-    if (item.lasilistaColor) {
-        headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
-    }
-    html += renderInputsRows(headerRows);
 
     if (inputsHistory && inputsHistory.length > 1) {
         // Multi-transfer: show each set of inputs as a separate block
