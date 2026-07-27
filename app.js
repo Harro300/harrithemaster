@@ -6825,6 +6825,24 @@ function scanner_resetPanel() {
     scanner_showError('');
     const fi = document.getElementById('scannerFileInput');
     if (fi) fi.value = '';
+    clearScanPdfPreview();
+}
+
+function clearScanPdfPreview() {
+    const preview = document.getElementById('scanPdfPreview');
+    const host = document.getElementById('scanPdfPreviewHost');
+    if (host) host.innerHTML = '';
+    if (preview) preview.style.display = 'none';
+}
+
+function showScanPdfPreview(canvas) {
+    const preview = document.getElementById('scanPdfPreview');
+    const host = document.getElementById('scanPdfPreviewHost');
+    if (!preview || !host || !canvas) return;
+    host.innerHTML = '';
+    canvas.className = 'scan-pdf-preview-canvas';
+    host.appendChild(canvas);
+    preview.style.display = '';
 }
 
 async function processScanFile(file) {
@@ -6851,7 +6869,7 @@ async function processScanFile(file) {
         scanner_setStatus(true, 'Tulkitaan tietoja…', 96);
         const parsed = scanner_parse(tokens, width, height);
         scanner_setStatus(false);
-        showScanReview(parsed);
+        showScanReview(parsed, canvas);
     } catch (err) {
         console.error('Skannausvirhe:', err);
         scanner_setStatus(false);
@@ -7478,9 +7496,11 @@ function updateScanReviewVisibility() {
     if (kickHeightWrap) kickHeightWrap.style.display = kickEnabled ? '' : 'none';
 }
 
-function showScanReview(parsed) {
+function showScanReview(parsed, canvas) {
     const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
     const mark = (id, ok) => { const el = document.getElementById(id); if (el) el.classList.toggle('scan-uncertain', ok !== 'ok'); };
+
+    if (canvas) showScanPdfPreview(canvas);
 
     setV('scanCalculator', parsed.calculator);
     setV('scanGap', String(parsed.gapOption));
@@ -7530,10 +7550,9 @@ function showScanReview(parsed) {
     mark('scanColor', parsed.conf.color);
 
     const card = document.getElementById('scanReviewCard');
-    if (card) {
-        card.style.display = '';
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (card) card.style.display = '';
+    const scrollTarget = document.getElementById('scanPdfPreview') || card;
+    if (scrollTarget) scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
     calculateFromScanReview();
 }
 
@@ -7626,6 +7645,7 @@ function applyScanResult() {
 function closeScanReview() {
     const card = document.getElementById('scanReviewCard');
     if (card) card.style.display = 'none';
+    clearScanPdfPreview();
     scanner_resetPanel();
 }
 

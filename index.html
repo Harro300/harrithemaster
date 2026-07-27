@@ -7,7 +7,7 @@
     <title>Gradus</title>
     <link rel="icon" type="image/svg+xml" href="gradus-icon.svg?v=20260609R2">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260718R10">
+    <link rel="stylesheet" href="styles.css?v=20260727R8">
 </head>
 <body>
     <a href="#calculatorScreen" class="skip-link">Siirry sisältöön</a>
@@ -229,6 +229,13 @@
             </div>
         </div>
     </div>
+
+        <!-- Skannatun PDF:n esikatselu (tarkistuskortin yläpuolella) -->
+        <div id="scanPdfPreview" class="scan-pdf-preview card shadow-lg mb-3" style="display:none;" aria-label="Skannattu piirustus">
+            <div class="card-body p-2">
+                <div id="scanPdfPreviewHost" class="scan-pdf-preview-host"></div>
+            </div>
+        </div>
 
         <!-- Skannauksen tarkistus (inline, piilotettu kunnes skannaus valmis) -->
         <div id="scanReviewCard" class="card shadow-lg mb-4" style="display:none;">
@@ -2387,7 +2394,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260727R3"></script>
+    <script src="app.js?v=20260727R8"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>

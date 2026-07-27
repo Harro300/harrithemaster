@@ -2107,3 +2107,29 @@ body.dark-mode .gradus-logo-dark {
     border-color: var(--warning-color) !important;
     box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.25) !important;
 }
+
+.scan-pdf-preview-host {
+    max-height: 60.5vh;
+    overflow: hidden;
+    text-align: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 0.5rem;
+}
+
+.scan-pdf-preview-canvas {
+    max-width: 100%;
+    max-height: calc(60.5vh - 1rem);
+    width: auto;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border: 1px solid #adb5bd;
+    box-sizing: border-box;
+    background: #fff;
+}
+
+body.dark-mode .scan-pdf-preview-canvas {
+    border-color: var(--border-light);
+}
