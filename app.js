@@ -25,6 +25,8 @@ let mitatStateUnsubscribe = null;
 let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
 let lastKnownJobCount = -1;
+let pendingJobDeepLink = null;
+let deepLinkHighlightTimer = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -40,34 +42,55 @@ const COORDINATOR_EMAILS = [
 
 // ========== UTILITY FUNCTIONS ==========
 
-// Show toast notification
+// Show toast notification (textContent only — no HTML from message/title)
 function showToast(message, type = 'info', title = null) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     const icons = {
         success: '✅',
         error: '❌',
         warning: '⚠️',
         info: 'ℹ️'
     };
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     // Assertive announcement for errors, polite otherwise (matches container).
     toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
 
-    toast.innerHTML = `
-        <span class="toast-icon" aria-hidden="true">${icons[type] || icons.info}</span>
-        <div class="toast-content">
-            ${title ? `<div class="toast-title">${title}</div>` : ''}
-            <div class="toast-message">${message}</div>
-        </div>
-        <button class="toast-close" onclick="this.parentElement.remove()" aria-label="Sulje ilmoitus">×</button>
-    `;
-    
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = icons[type] || icons.info;
+
+    const content = document.createElement('div');
+    content.className = 'toast-content';
+
+    if (title) {
+        const titleEl = document.createElement('div');
+        titleEl.className = 'toast-title';
+        titleEl.textContent = title;
+        content.appendChild(titleEl);
+    }
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'toast-message';
+    messageEl.textContent = message == null ? '' : String(message);
+    content.appendChild(messageEl);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Sulje ilmoitus');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => toast.remove());
+
+    toast.appendChild(icon);
+    toast.appendChild(content);
+    toast.appendChild(closeBtn);
     container.appendChild(toast);
-    
+
     // Auto remove after 4 seconds
     setTimeout(() => {
         toast.classList.add('hiding');
@@ -227,6 +250,173 @@ async function syncMitatInputsToFirestore() {
     }
 }
 
+// ========== JOB DEEP LINK (?tyo=) ==========
+
+function readJobDeepLinkFromUrl() {
+    try {
+        const tyo = new URLSearchParams(window.location.search).get('tyo');
+        if (tyo && String(tyo).trim()) {
+            pendingJobDeepLink = String(tyo).trim();
+        }
+    } catch (error) {
+        console.warn('Deep link URL-luku epäonnistui:', error);
+    }
+}
+
+function jobDomId(prefix, jobNumber) {
+    return `${prefix}-${String(jobNumber).replace(/[^a-zA-Z0-9]/g, '_')}`;
+}
+
+function isJobFullyPacked(jobNumber) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const itemNames = Object.keys(mittatData[jobNumber] || {});
+    return itemNames.length > 0 &&
+        itemNames.every((itemName) => packedMitat[`${jobNumber}-${itemName}`]);
+}
+
+function clearJobDeepLinkFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has('tyo')) return;
+        url.searchParams.delete('tyo');
+        const search = url.searchParams.toString();
+        const newUrl = url.pathname + (search ? `?${search}` : '') + url.hash;
+        history.replaceState(null, '', newUrl);
+    } catch (error) {
+        console.warn('Deep link URL-siivous epäonnistui:', error);
+    }
+}
+
+function focusJobSection(jobId) {
+    const itemsEl = document.getElementById(jobId);
+    if (!itemsEl) return false;
+
+    if (itemsEl.style.display === 'none') {
+        toggleJobDetails(jobId);
+    }
+
+    const section = itemsEl.closest('.mitat-job-section') || itemsEl;
+    section.classList.add('mitat-job-deep-link-target');
+    if (deepLinkHighlightTimer) {
+        clearTimeout(deepLinkHighlightTimer);
+    }
+    deepLinkHighlightTimer = setTimeout(() => {
+        section.classList.remove('mitat-job-deep-link-target');
+        deepLinkHighlightTimer = null;
+    }, 2000);
+
+    const mitatPanel = document.getElementById('mitatJobPanel');
+    if (mitatPanel && mitatPanel.contains(section)) {
+        mitatPanel.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+
+    const sidebarBtn = document.querySelector('#mitatJobSidebar .mitat-sidebar-item--selected');
+    if (sidebarBtn) {
+        sidebarBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    return true;
+}
+
+function applyPendingJobDeepLink() {
+    if (!pendingJobDeepLink || !mitatStateLoaded) return;
+
+    const jobNumber = pendingJobDeepLink;
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+
+    if (!Object.prototype.hasOwnProperty.call(mittatData, jobNumber)) {
+        showToast(`Työnumeroa ${jobNumber} ei löytynyt.`, 'warning');
+        pendingJobDeepLink = null;
+        clearJobDeepLinkFromUrl();
+        return;
+    }
+
+    if (isJobFullyPacked(jobNumber)) {
+        const paketitView = document.getElementById('paketitView');
+        const paketitVisible = paketitView && !paketitView.classList.contains('d-none');
+        if (!paketitVisible) {
+            switchView('paketit');
+            return;
+        }
+        const jobId = jobDomId('paketit-job', jobNumber);
+        if (focusJobSection(jobId)) {
+            pendingJobDeepLink = null;
+            clearJobDeepLinkFromUrl();
+        } else {
+            showToast(`Työnumeroa ${jobNumber} ei löytynyt paketeista.`, 'warning');
+            pendingJobDeepLink = null;
+            clearJobDeepLinkFromUrl();
+        }
+        return;
+    }
+
+    selectedMitatJobNumber = jobNumber;
+    const mittatView = document.getElementById('mittatView');
+    const mitatVisible = mittatView && !mittatView.classList.contains('d-none');
+    if (!mitatVisible) {
+        switchView('mitat');
+        return;
+    }
+
+    const panelSection = document.querySelector('#mitatJobPanel .mitat-job-section');
+    const panelJob = panelSection && panelSection.dataset.jobNumber
+        ? decodeURIComponent(panelSection.dataset.jobNumber)
+        : null;
+    if (panelJob !== jobNumber) {
+        loadMittatView();
+        return;
+    }
+
+    const jobId = jobDomId('job', jobNumber);
+    if (focusJobSection(jobId)) {
+        pendingJobDeepLink = null;
+        clearJobDeepLinkFromUrl();
+    } else {
+        showToast(`Työnumeroa ${jobNumber} ei löytynyt tuotannosta.`, 'warning');
+        pendingJobDeepLink = null;
+        clearJobDeepLinkFromUrl();
+    }
+}
+
+function enterAuthenticatedApp() {
+    const loginScreen = document.getElementById('loginScreen');
+    if (!loginScreen || loginScreen.classList.contains('d-none')) {
+        return;
+    }
+
+    console.log('🔵 Piilotetaan loginScreen...');
+    loginScreen.classList.add('d-none');
+    updateSyncStatus(true);
+    setupRealtimeListeners();
+
+    if (pendingJobDeepLink || isCoordinator) {
+        console.log('🔵 Avataan Mitat-näkymä (deep link tai koordinaattori)');
+        switchView('mitat');
+    } else {
+        console.log('🔵 Näytetään calculatorScreen...');
+        document.getElementById('calculatorScreen').classList.remove('d-none');
+
+        scannerEnabled = false;
+        localStorage.setItem('scannerEnabled', 'false');
+        const scanToggle = document.getElementById('scannerToggle');
+        if (scanToggle) scanToggle.checked = false;
+        const scannerPanel = document.getElementById('scannerPanel');
+        const inputsRow = document.getElementById('calculatorInputsRow');
+        if (scannerPanel) scannerPanel.style.display = 'none';
+        if (inputsRow) inputsRow.style.display = '';
+        const scanReviewCard = document.getElementById('scanReviewCard');
+        if (scanReviewCard) scanReviewCard.style.display = 'none';
+
+        console.log('🔵 Valitaan default-laskuri...');
+        selectCalculator('janisol-pariovi');
+    }
+
+    showToast(`Tervetuloa${isAdmin ? ' Admin' : ''}!`, 'success');
+    console.log('✅ Kirjautuminen valmis!');
+}
+
 // Firebase Auth State Listener
 async function initializeFirebaseAuth() {
     await waitForFirebase();
@@ -241,6 +431,10 @@ async function initializeFirebaseAuth() {
             isCoordinator = checkIsCoordinator(user.email);
             updateSyncStatus(true);
             updateAdminAccessUI();
+            const loginScreen = document.getElementById('loginScreen');
+            if (loginScreen && !loginScreen.classList.contains('d-none')) {
+                enterAuthenticatedApp();
+            }
         } else {
             console.log('🔓 Ei kirjautunutta käyttäjää');
             currentUser = null;
@@ -364,6 +558,10 @@ function setupRealtimeListeners() {
                     loadPaketitView();
                 }
 
+                if (isFirstLoadMitat || pendingJobDeepLink) {
+                    applyPendingJobDeepLink();
+                }
+
                 if (!isFirstLoadMitat && !isOwnUpdate) {
                     showToast('Mitat-sivu päivitetty reaaliajassa', 'info');
                 }
@@ -477,6 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize Firebase Auth listener
+    readJobDeepLinkFromUrl();
     initializeFirebaseAuth();
     
     // Update settings info display
@@ -670,47 +869,7 @@ function attachLoginHandler() {
         isCoordinator = checkIsCoordinator(currentUser.email);
         console.log('🔵 Käyttäjä asetettu:', currentUser.email, 'Admin:', isAdmin);
         updateAdminAccessUI();
-        
-        // Hide login screen
-        console.log('🔵 Piilotetaan loginScreen...');
-        document.getElementById('loginScreen').classList.add('d-none');
-        
-        // Update sync status
-        updateSyncStatus(true);
-        
-        // Setup realtime listeners
-        setupRealtimeListeners();
-
-        // Coordinator sees only Mitat view
-        if (isCoordinator) {
-            console.log('🔵 Koordinaattori: avataan vain Mitat-näkymä');
-            switchView('mitat');
-        } else {
-            // Show calculator screen
-            console.log('🔵 Näytetään calculatorScreen...');
-            document.getElementById('calculatorScreen').classList.remove('d-none');
-            console.log('✅ Näyttö vaihdettu!');
-            
-            // Always start with manual input mode (disable scanner on login)
-            scannerEnabled = false;
-            localStorage.setItem('scannerEnabled', 'false');
-            const scanToggle = document.getElementById('scannerToggle');
-            if (scanToggle) scanToggle.checked = false;
-            const scannerPanel = document.getElementById('scannerPanel');
-            const inputsRow = document.getElementById('calculatorInputsRow');
-            if (scannerPanel) scannerPanel.style.display = 'none';
-            if (inputsRow) inputsRow.style.display = '';
-            const scanReviewCard = document.getElementById('scanReviewCard');
-            if (scanReviewCard) scanReviewCard.style.display = 'none';
-
-            // Select default calculator
-            console.log('🔵 Valitaan default-laskuri...');
-            selectCalculator('janisol-pariovi');
-        }
-        
-        // Show welcome toast
-        showToast(`Tervetuloa${isAdmin ? ' Admin' : ''}!`, 'success');
-        console.log('✅ Kirjautuminen valmis!');
+        enterAuthenticatedApp();
         
     } catch (error) {
         console.error('❌ Firebase kirjautuminen epäonnistui:', error);
@@ -4391,10 +4550,12 @@ function loadMittatView() {
     
     if (html === '' && mitatSearchQuery) {
         showMitatSplitMessage(`Ei hakutuloksia haulle "<strong>${mitatSearchQuery}</strong>".`);
+        applyPendingJobDeepLink();
         return;
     }
     if (html === '') {
         showMitatSplitMessage('Kaikki työnumerot on pakattu. Katso Paketit-sivu.');
+        applyPendingJobDeepLink();
         return;
     }
     container.innerHTML = html;
@@ -4406,6 +4567,7 @@ function loadMittatView() {
         }
     }
     setupMitatSplitLayout();
+    applyPendingJobDeepLink();
 }
 
 function showMitatSplitMessage(message) {
@@ -4753,6 +4915,7 @@ function loadPaketitView() {
         } else {
             container.innerHTML = '<p class="text-muted text-center">Ei pakattuja tuotteita. Tuotteet siirtyvät tänne, kun niistä tehdään pakkausluettelo.</p>';
         }
+        applyPendingJobDeepLink();
         return;
     }
 
@@ -4864,6 +5027,7 @@ function loadPaketitView() {
     if (isAdmin) {
         initPaketitDragAndDrop(container);
     }
+    applyPendingJobDeepLink();
 }
 
 // ============================================

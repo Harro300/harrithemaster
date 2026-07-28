@@ -1424,6 +1424,13 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     50% { color: #dc3545; }
 }
 
+.mitat-job-deep-link-target {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-color) 25%, transparent);
+    transition: outline-color 0.2s ease, box-shadow 0.2s ease;
+}
+
 .mitat-job-header .mitat-toggle-icon {
     font-size: 0.85rem;
     margin-left: 10px;
