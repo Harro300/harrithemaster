@@ -26,6 +26,7 @@ let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
 let lastKnownJobCount = -1;
 let pendingJobDeepLink = null;
+let skipNextPaketitViewReload = false;
 let deepLinkHighlightTimer = null;
 
 // Admin email addresses
@@ -308,14 +309,14 @@ function focusJobSection(jobId) {
 
     const mitatPanel = document.getElementById('mitatJobPanel');
     if (mitatPanel && mitatPanel.contains(section)) {
-        mitatPanel.scrollTo({ top: 0, behavior: 'smooth' });
+        mitatPanel.scrollTo({ top: 0, behavior: 'auto' });
     } else {
-        section.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        section.scrollIntoView({ block: 'start', behavior: 'auto' });
     }
 
     const sidebarBtn = document.querySelector('#mitatJobSidebar .mitat-sidebar-item--selected');
     if (sidebarBtn) {
-        sidebarBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        sidebarBtn.scrollIntoView({ block: 'nearest', behavior: 'auto' });
     }
     return true;
 }
@@ -337,7 +338,11 @@ function applyPendingJobDeepLink() {
         const paketitView = document.getElementById('paketitView');
         const paketitVisible = paketitView && !paketitView.classList.contains('d-none');
         if (!paketitVisible) {
+            // switchView → loadPaketitView → applyPendingJobDeepLink again (single focus)
             switchView('paketit');
+            // Prevent mitatState listener from re-rendering Paketit in the same snapshot turn
+            // (would collapse the accordion opened by focusJobSection).
+            skipNextPaketitViewReload = true;
             return;
         }
         const jobId = jobDomId('paketit-job', jobNumber);
@@ -555,7 +560,11 @@ function setupRealtimeListeners() {
                 }
                 const paketitView = document.getElementById('paketitView');
                 if (paketitView && !paketitView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
-                    loadPaketitView();
+                    if (skipNextPaketitViewReload) {
+                        skipNextPaketitViewReload = false;
+                    } else {
+                        loadPaketitView();
+                    }
                 }
 
                 if (isFirstLoadMitat || pendingJobDeepLink) {
@@ -4934,7 +4943,7 @@ function loadPaketitView() {
         const packageCount = numberedPackageCount + (hasUnnumberedItems ? 1 : 0);
 
         html += `<div class="mitat-job-section">`;
-        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
+        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="${isSearchExpanded}" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
         html += `<span class="mitat-mini-label">(${packedItems.length} PAKATTU / ${packageCount} PAKETTIA)</span>`;
