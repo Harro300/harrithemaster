@@ -6870,6 +6870,13 @@ function deleteMitta(jobNumber, itemName) {
    =========================================================================== */
 
 let scannerEnabled = false;
+let scanBatchFiles = [];
+let scanBatchIndex = 0;
+let scanBatchJobNumber = null;
+let scanBatchActive = false;
+let scanTransferQueue = [];
+let scanTransferQueueOpen = false;
+let scanQueueIdSeq = 1;
 
 function toggleScanner(enabled) {
     scannerEnabled = !!enabled;
@@ -6922,8 +6929,8 @@ function initScanner() {
         dz.addEventListener('drop', e => {
             e.preventDefault();
             dz.classList.remove('dragover');
-            const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-            if (f) processScanFile(f);
+            const list = e.dataTransfer && e.dataTransfer.files;
+            if (list && list.length) startScanBatch(Array.from(list));
         });
         dz.dataset.bound = '1';
     }
@@ -6962,8 +6969,466 @@ function initScanner() {
 }
 
 function handleScanFileInput(event) {
-    const f = event.target && event.target.files && event.target.files[0];
-    if (f) processScanFile(f);
+    const list = event.target && event.target.files;
+    if (list && list.length) startScanBatch(Array.from(list));
+}
+
+function isScanBatchMode() {
+    return scanBatchActive && scanBatchFiles.length > 1;
+}
+
+function collectPdfFiles(files) {
+    return (files || []).filter(f => f && (f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')));
+}
+
+function startScanBatch(files) {
+    const pdfs = collectPdfFiles(files);
+    if (!pdfs.length) {
+        scanner_showError('Valitse PDF-tiedosto.');
+        return;
+    }
+    if (pdfs.length === 1) {
+        scanBatchFiles = [];
+        scanBatchIndex = 0;
+        scanBatchActive = false;
+        setScanBatchErrorActions(false);
+        updateScanBatchActions();
+        processScanFile(pdfs[0]);
+        return;
+    }
+    scanBatchFiles = pdfs;
+    scanBatchIndex = 0;
+    if (!scanTransferQueue.length) {
+        scanBatchJobNumber = null;
+    } else if (!scanBatchJobNumber) {
+        scanBatchJobNumber = scanTransferQueue[0].jobNumber || null;
+    }
+    scanBatchActive = true;
+    updateScanBatchActions();
+    renderScanTransferQueue();
+    processScanFile(scanBatchFiles[0]);
+}
+
+function clearScanBatchState(keepQueue) {
+    scanBatchFiles = [];
+    scanBatchIndex = 0;
+    scanBatchJobNumber = null;
+    scanBatchActive = false;
+    if (!keepQueue) {
+        // keepQueue=true: säilytä siirtojono (Peruuta kesken erän)
+    }
+    setScanBatchErrorActions(false);
+    updateScanBatchActions();
+    renderScanTransferQueue();
+}
+
+function setScanBatchErrorActions(show) {
+    const el = document.getElementById('scannerBatchErrorActions');
+    if (!el) return;
+    el.style.display = show ? 'flex' : 'none';
+}
+
+function updateScanBatchActions() {
+    const batch = isScanBatchMode();
+    const prog = document.getElementById('scanBatchProgress');
+    if (prog) {
+        if (batch) {
+            prog.style.display = '';
+            prog.textContent = `PDF ${scanBatchIndex + 1} / ${scanBatchFiles.length}`;
+        } else {
+            prog.style.display = 'none';
+        }
+    }
+    const skipBtn = document.getElementById('scanSkipBtn');
+    const singleBtn = document.getElementById('scanAcceptSingleBtn');
+    const queueBtn = document.getElementById('scanAcceptQueueBtn');
+    if (skipBtn) skipBtn.style.display = batch ? '' : 'none';
+    if (singleBtn) singleBtn.style.display = batch ? 'none' : '';
+    if (queueBtn) queueBtn.style.display = batch ? '' : 'none';
+}
+
+function applyScanBatchJobLock(parsedJob) {
+    const jobEl = document.getElementById('scanJobNumber');
+    const warn = document.getElementById('scanJobMismatchWarn');
+    if (!jobEl) return;
+
+    if (!isScanBatchMode()) {
+        jobEl.readOnly = false;
+        if (warn) { warn.style.display = 'none'; warn.textContent = ''; }
+        return;
+    }
+
+    if (scanBatchJobNumber) {
+        jobEl.value = scanBatchJobNumber;
+        jobEl.readOnly = true;
+        const ocrJob = (parsedJob || '').trim();
+        if (warn) {
+            if (ocrJob && ocrJob !== scanBatchJobNumber) {
+                warn.style.display = '';
+                warn.textContent = `Piirustuksen työnumero (${ocrJob}) poikkeaa erän työnumerosta (${scanBatchJobNumber}). Käytetään erän työnumeroa.`;
+            } else {
+                warn.style.display = 'none';
+                warn.textContent = '';
+            }
+        }
+    } else {
+        jobEl.readOnly = false;
+        if (warn) { warn.style.display = 'none'; warn.textContent = ''; }
+    }
+}
+
+async function advanceScanBatch() {
+    if (!scanBatchActive) return;
+    scanBatchIndex += 1;
+    if (scanBatchIndex >= scanBatchFiles.length) {
+        const card = document.getElementById('scanReviewCard');
+        if (card) card.style.display = 'none';
+        clearScanPdfPreview();
+        scanner_resetPanel();
+        scanBatchFiles = [];
+        scanBatchActive = false;
+        scanBatchIndex = 0;
+        // scanBatchJobNumber säilyy kunnes jono tyhjennetään / siirretään
+        updateScanBatchActions();
+        renderScanTransferQueue();
+        if (scanTransferQueue.length) {
+            scanTransferQueueOpen = true;
+            renderScanTransferQueue();
+            const panel = document.getElementById('scanTransferQueuePanel');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showToast(`Erä valmis. Siirtojonossa ${scanTransferQueue.length} tuotetta.`, 'success');
+        } else {
+            showToast('Erä valmis. Siirtojono on tyhjä.', 'info');
+        }
+        return;
+    }
+    updateScanBatchActions();
+    await processScanFile(scanBatchFiles[scanBatchIndex]);
+}
+
+function retryCurrentScanBatchFile() {
+    if (!scanBatchActive || !scanBatchFiles[scanBatchIndex]) return;
+    setScanBatchErrorActions(false);
+    processScanFile(scanBatchFiles[scanBatchIndex]);
+}
+
+function skipScanInBatch() {
+    if (!isScanBatchMode()) return;
+    setScanBatchErrorActions(false);
+    const card = document.getElementById('scanReviewCard');
+    if (card) card.style.display = 'none';
+    clearScanPdfPreview();
+    advanceScanBatch();
+}
+
+function toggleScanTransferQueuePanel() {
+    scanTransferQueueOpen = !scanTransferQueueOpen;
+    renderScanTransferQueue();
+}
+
+function removeFromScanTransferQueue(id) {
+    scanTransferQueue = scanTransferQueue.filter(e => e.id !== id);
+    renderScanTransferQueue();
+}
+
+function renderScanTransferQueue() {
+    const panel = document.getElementById('scanTransferQueuePanel');
+    const countEl = document.getElementById('scanTransferQueueCount');
+    const body = document.getElementById('scanTransferQueueBody');
+    const list = document.getElementById('scanTransferQueueList');
+    const bulkBtn = document.getElementById('scanBulkTransferBtn');
+    const chevron = document.getElementById('scanTransferQueueChevron');
+    const n = scanTransferQueue.length;
+    if (countEl) countEl.textContent = String(n);
+    if (!panel) return;
+
+    const showPanel = n > 0 || (scanBatchActive && scanBatchFiles.length > 1);
+    panel.style.display = showPanel ? '' : 'none';
+    if (body) body.style.display = scanTransferQueueOpen ? '' : 'none';
+    if (chevron) chevron.textContent = scanTransferQueueOpen ? '▴' : '▾';
+
+    if (list) {
+        if (!n) {
+            list.innerHTML = '<p class="text-muted small mb-0 px-3 py-2">Jono on tyhjä.</p>';
+        } else {
+            list.innerHTML = scanTransferQueue.map(e => {
+                const calcLabel = (e.calculator || '').replace(/-/g, ' ');
+                const q = e.quantity > 1 ? ` · ${e.quantity} kpl` : '';
+                return `<div class="scan-transfer-queue-item">
+                    <div class="scan-transfer-queue-item-main">
+                        <div class="scan-transfer-queue-item-name">${escapeHtml(e.itemName || '(nimetön)')}</div>
+                        <div class="scan-transfer-queue-item-meta text-muted">${escapeHtml(calcLabel)}${q}${e.fileName ? ' · ' + escapeHtml(e.fileName) : ''}</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromScanTransferQueue(${e.id})">Poista</button>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    const canBulk = n > 0 && !scanBatchActive;
+    if (bulkBtn) {
+        bulkBtn.style.display = canBulk ? '' : 'none';
+        bulkBtn.textContent = n === 1 ? 'Siirrä 1 tuote Tuotantoon' : `Siirrä ${n} tuotetta Tuotantoon`;
+    }
+}
+
+function escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function applyScanReviewToCalculator() {
+    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+    const calc = val('scanCalculator');
+    const isPari = calc.includes('pariovi');
+
+    selectCalculator(calc);
+
+    const gapVal = val('scanGap');
+    settings.gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
+    const gapSel = document.getElementById('gapOption');
+    if (gapSel) gapSel.value = String(settings.gapOption);
+
+    const kickEnabled = document.getElementById('scanKickEnabled').checked;
+    settings.kickPlateEnabled = kickEnabled;
+    const kickToggle = document.getElementById('kickPlateToggle');
+    if (kickToggle) kickToggle.checked = kickEnabled;
+    localStorage.setItem('kickPlateEnabled', kickEnabled);
+
+    const umpioviEnabled = !!document.getElementById('scanUmpiovi')?.checked;
+    settings.umpioviEnabled = umpioviEnabled;
+    const umpioviToggle = document.getElementById('umpioviToggle');
+    if (umpioviToggle) umpioviToggle.checked = umpioviEnabled;
+    localStorage.setItem('umpioviEnabled', umpioviEnabled);
+
+    const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
+    settings.umpivasikkaEnabled = umpivasikkaEnabled;
+    const umpivasikkaToggle = document.getElementById('umpivasikkaToggle');
+    if (umpivasikkaToggle) umpivasikkaToggle.checked = umpivasikkaEnabled;
+    localStorage.setItem('umpivasikkaEnabled', umpivasikkaEnabled);
+
+    const sealEnabled = !!document.getElementById('scanSealThreshold')?.checked;
+    settings.sealThresholdEnabled = sealEnabled;
+    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
+    if (sealThresholdToggle) sealThresholdToggle.checked = sealEnabled;
+    localStorage.setItem('sealThresholdEnabled', sealEnabled);
+
+    const paneCount = parseInt(val('scanPaneCount'), 10) || 1;
+    settings.paneCount = paneCount;
+    const paneCountSel = document.getElementById('paneCount');
+    if (paneCountSel) paneCountSel.value = String(paneCount);
+    updatePaneInputs();
+
+    const setInput = (id, v) => { const el = document.getElementById(id); if (el && v !== '') el.value = v; };
+    setInput('mainDoorWidth', val('scanMainWidth'));
+    if (isPari) setInput('sideDoorWidth', val('scanSideWidth'));
+    if (kickEnabled) setInput('kickPlateHeight', val('scanKickHeight'));
+    for (let i = 1; i <= paneCount; i++) {
+        const v = val('scanPaneHeight' + i) || val('scanPaneHeight');
+        setInput('paneHeight' + i, v);
+    }
+
+    updateCalculatorInputVisibility();
+    updateSettingsInfo();
+    calculate();
+}
+
+function buildMittatResultsFromDom(lasilistaSize, lasilistaColor) {
+    const isNoResultsTransferMode = isUmpioviNoResultsMode();
+    const resultsDiv = document.getElementById('results');
+    const sections = resultsDiv ? resultsDiv.querySelectorAll('.result-section') : [];
+    const results = {
+        calculator: currentCalculator,
+        timestamp: new Date().toISOString(),
+        lasilistaSize: lasilistaSize || '',
+        lasilistaColor: lasilistaColor || '',
+        metadataOnly: isNoResultsTransferMode,
+        inputs: {
+            calculator: currentCalculator,
+            mainDoorWidth: document.getElementById('mainDoorWidth')?.value || '',
+            sideDoorWidth: document.getElementById('sideDoorWidth')?.value || '',
+            kickPlateHeight: document.getElementById('kickPlateHeight')?.value || '',
+            gapOption: settings.gapOption,
+            paneCount: settings.paneCount,
+            kickPlateEnabled: settings.kickPlateEnabled,
+            sealThresholdEnabled: settings.sealThresholdEnabled,
+            umpioviEnabled: settings.umpioviEnabled,
+            umpivasikkaEnabled: settings.umpivasikkaEnabled,
+            formulaSet: localStorage.getItem('activeFormulaSet') || 'default',
+            paneHeights: [],
+            paneWidths: []
+        },
+        data: []
+    };
+    const isWindowCalc = (currentCalculator || '').includes('ikkuna');
+    for (let i = 1; i <= settings.paneCount; i++) {
+        results.inputs.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '');
+        const widthEl = document.getElementById(`paneWidth${i}`);
+        const widthVal = widthEl?.value
+            || (isWindowCalc && !widthEl ? (document.getElementById('mainDoorWidth')?.value || '') : '')
+            || '';
+        results.inputs.paneWidths.push(widthVal);
+    }
+    sections.forEach(section => {
+        const titleEl = section.querySelector('h5');
+        const title = titleEl ? titleEl.textContent : '';
+        const items = [];
+        section.querySelectorAll('.result-item').forEach(item => {
+            const fullText = item.textContent.trim();
+            const colonIndex = fullText.indexOf(':');
+            if (colonIndex !== -1) {
+                items.push({
+                    label: fullText.substring(0, colonIndex).trim(),
+                    value: fullText.substring(colonIndex + 1).trim()
+                });
+            } else {
+                items.push({ label: fullText, value: '' });
+            }
+        });
+        results.data.push({ title, items });
+    });
+    return results;
+}
+
+function writeMittatItems(jobNumber, itemName, itemCount, results, opts) {
+    const silentMerge = !!(opts && opts.silentMerge);
+    let mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber]) mittatData[jobNumber] = {};
+
+    const namesToSave = [];
+    const count = Math.max(1, Math.min(99, parseInt(itemCount, 10) || 1));
+    if (count === 1) namesToSave.push(itemName);
+    else {
+        for (let i = 1; i <= count; i++) namesToSave.push(`${itemName} (${i}.)`);
+    }
+
+    namesToSave.forEach(finalName => {
+        const resultsCopy = JSON.parse(JSON.stringify(results));
+        resultsCopy.timestamp = new Date().toISOString();
+        if (mittatData[jobNumber][finalName]) {
+            if (silentMerge) {
+                mittatData[jobNumber][finalName] = mergeResults(mittatData[jobNumber][finalName], resultsCopy);
+            } else {
+                const action = confirm(
+                    `"${finalName}" on jo tallennettu työnumerolle ${jobNumber}.\n\n` +
+                    `OK = Yhdistä mitat\nPeruuta = Korvaa vanhat mitat`
+                );
+                if (action) {
+                    mittatData[jobNumber][finalName] = mergeResults(mittatData[jobNumber][finalName], resultsCopy);
+                } else {
+                    mittatData[jobNumber][finalName] = resultsCopy;
+                }
+            }
+        } else {
+            mittatData[jobNumber][finalName] = resultsCopy;
+        }
+    });
+
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+    return namesToSave.length;
+}
+
+function acceptScanToQueue() {
+    if (!isScanBatchMode()) return;
+    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+
+    let jobNumber = scanBatchJobNumber || val('scanJobNumber');
+    const itemName = val('scanItemName');
+    const quantity = Math.max(1, Math.min(99, parseInt(val('scanQuantity'), 10) || 1));
+    const rawSize = val('scanLasilistaSize');
+    const color = normalizeLasilistaColor(val('scanColor') || '');
+
+    if (!jobNumber) {
+        showToast('Syötä työnumero ennen hyväksyntää.', 'warning');
+        return;
+    }
+    if (!itemName) {
+        showToast('Syötä oven / ikkunan nimi ennen hyväksyntää.', 'warning');
+        return;
+    }
+
+    applyScanReviewToCalculator();
+
+    const isNoResultsTransferMode = isUmpioviNoResultsMode();
+    if (!isNoResultsTransferMode && !rawSize) {
+        showToast('Valitse lasilistojen koko ennen hyväksyntää.', 'warning');
+        return;
+    }
+    const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
+    const results = buildMittatResultsFromDom(lasilistaSize, color);
+    const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
+    if (sections.length === 0 && !isNoResultsTransferMode) {
+        showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
+        return;
+    }
+
+    if (!scanBatchJobNumber) scanBatchJobNumber = jobNumber;
+
+    const file = scanBatchFiles[scanBatchIndex];
+    scanTransferQueue.push({
+        id: scanQueueIdSeq++,
+        fileName: file ? file.name : '',
+        jobNumber: scanBatchJobNumber,
+        itemName,
+        quantity,
+        lasilistaSize,
+        lasilistaColor: color,
+        calculator: currentCalculator,
+        results
+    });
+
+    const card = document.getElementById('scanReviewCard');
+    if (card) card.style.display = 'none';
+    clearScanPdfPreview();
+    renderScanTransferQueue();
+    showToast(`Lisätty siirtojonoon: ${itemName}`, 'success');
+    advanceScanBatch();
+}
+
+function bulkTransferScanQueue() {
+    if (!scanTransferQueue.length) {
+        showToast('Siirtojono on tyhjä.', 'warning');
+        return;
+    }
+    if (scanBatchActive) {
+        showToast('Odota erän valmistumista ennen siirtoa.', 'warning');
+        return;
+    }
+
+    let saved = 0;
+    const jobs = new Set();
+    scanTransferQueue.forEach(entry => {
+        const jobNumber = entry.jobNumber || scanBatchJobNumber;
+        if (!jobNumber) return;
+        jobs.add(jobNumber);
+        saved += writeMittatItems(
+            jobNumber,
+            entry.itemName,
+            entry.quantity,
+            entry.results,
+            { silentMerge: true }
+        );
+    });
+
+    if (!saved) {
+        showToast('Työnumero puuttuu — siirto epäonnistui.', 'warning');
+        return;
+    }
+
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+    scanTransferQueue = [];
+    scanBatchJobNumber = null;
+    scanTransferQueueOpen = false;
+    renderScanTransferQueue();
+    const jobLabel = [...jobs].join(', ');
+    showToast(`Siirretty Tuotantoon: ${saved} tuotetta (työ ${jobLabel})`, 'success');
+    if (typeof loadMittatView === 'function') {
+        try { loadMittatView(); } catch (e) { /* ohitetaan */ }
+    }
 }
 
 function scanner_setStatus(active, text, pct) {
@@ -7029,7 +7494,11 @@ async function processScanFile(file) {
         return;
     }
     scanner_showError('');
-    scanner_setStatus(true, 'Avataan PDF…', 5);
+    setScanBatchErrorActions(false);
+    const batchLabel = isScanBatchMode()
+        ? `Avataan PDF ${scanBatchIndex + 1}/${scanBatchFiles.length}…`
+        : 'Avataan PDF…';
+    scanner_setStatus(true, batchLabel, 5);
     try {
         const { canvas, width, height, textTokens } = await scanner_loadPdf(file);
         let tokens = textTokens;
@@ -7047,6 +7516,7 @@ async function processScanFile(file) {
         console.error('Skannausvirhe:', err);
         scanner_setStatus(false);
         scanner_showError('Skannaus epäonnistui: ' + ((err && err.message) || err));
+        if (isScanBatchMode()) setScanBatchErrorActions(true);
     }
 }
 
@@ -7689,6 +8159,10 @@ function showScanReview(parsed, canvas) {
     setV('scanLasilistaSize', parsed.lasilistaSize);
     setV('scanColor', parsed.color);
 
+    applyScanBatchJobLock(parsed.jobNumber);
+    updateScanBatchActions();
+    renderScanTransferQueue();
+
     const kickToggle = document.getElementById('scanKickEnabled');
     if (kickToggle) kickToggle.checked = parsed.kickPlateEnabled;
 
@@ -7730,65 +8204,15 @@ function showScanReview(parsed, canvas) {
 }
 
 function applyScanResult() {
-    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-    const calc = val('scanCalculator');
-    const isPari = calc.includes('pariovi');
-    const isWindow = calc.includes('ikkuna');
-
-    // 1) Valitse laskuri (asettaa currentCalculator ja oletukset)
-    selectCalculator(calc);
-
-    // 2) Ylikirjoita asetukset skannatuilla arvoilla
-    const gapVal = val('scanGap');
-    settings.gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
-    const gapSel = document.getElementById('gapOption');
-    if (gapSel) gapSel.value = String(settings.gapOption);
-
-    const kickEnabled = document.getElementById('scanKickEnabled').checked;
-    settings.kickPlateEnabled = kickEnabled;
-    const kickToggle = document.getElementById('kickPlateToggle');
-    if (kickToggle) kickToggle.checked = kickEnabled;
-    localStorage.setItem('kickPlateEnabled', kickEnabled);
-
-    const umpioviEnabled = !!document.getElementById('scanUmpiovi')?.checked;
-    settings.umpioviEnabled = umpioviEnabled;
-    const umpioviToggle = document.getElementById('umpioviToggle');
-    if (umpioviToggle) umpioviToggle.checked = umpioviEnabled;
-    localStorage.setItem('umpioviEnabled', umpioviEnabled);
-
-    const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
-    settings.umpivasikkaEnabled = umpivasikkaEnabled;
-    const umpivasikkaToggle = document.getElementById('umpivasikkaToggle');
-    if (umpivasikkaToggle) umpivasikkaToggle.checked = umpivasikkaEnabled;
-    localStorage.setItem('umpivasikkaEnabled', umpivasikkaEnabled);
-
-    const sealEnabled = !!document.getElementById('scanSealThreshold')?.checked;
-    settings.sealThresholdEnabled = sealEnabled;
-    const sealThresholdToggle = document.getElementById('sealThresholdToggle');
-    if (sealThresholdToggle) sealThresholdToggle.checked = sealEnabled;
-    localStorage.setItem('sealThresholdEnabled', sealEnabled);
-
-    const paneCount = parseInt(val('scanPaneCount'), 10) || 1;
-    settings.paneCount = paneCount;
-    const paneCountSel = document.getElementById('paneCount');
-    if (paneCountSel) paneCountSel.value = String(paneCount);
-    updatePaneInputs();
-
-    // 3) Täytä syötekentät
-    const setInput = (id, v) => { const el = document.getElementById(id); if (el && v !== '') el.value = v; };
-    setInput('mainDoorWidth', val('scanMainWidth'));
-    if (isPari) setInput('sideDoorWidth', val('scanSideWidth'));
-    if (kickEnabled) setInput('kickPlateHeight', val('scanKickHeight'));
-    for (let i = 1; i <= paneCount; i++) {
-        const v = val('scanPaneHeight' + i) || val('scanPaneHeight');
-        setInput('paneHeight' + i, v);
+    if (isScanBatchMode()) {
+        acceptScanToQueue();
+        return;
     }
+    const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
-    updateCalculatorInputVisibility();
-    updateSettingsInfo();
-    calculate();
+    applyScanReviewToCalculator();
 
-    // 4) Piilota tarkistuskortti ja avaa esitäytetty siirtomodaali
+    // Piilota tarkistuskortti ja avaa esitäytetty siirtomodaali
     closeScanReview();
 
     const jobNumber = val('scanJobNumber');
@@ -7819,6 +8243,19 @@ function closeScanReview() {
     const card = document.getElementById('scanReviewCard');
     if (card) card.style.display = 'none';
     clearScanPdfPreview();
+    // Keskeytä jäljellä olevat PDF:t, säilytä siirtojono
+    if (scanBatchActive) {
+        scanBatchFiles = [];
+        scanBatchActive = false;
+        scanBatchIndex = 0;
+        setScanBatchErrorActions(false);
+        updateScanBatchActions();
+        renderScanTransferQueue();
+    }
+    const jobEl = document.getElementById('scanJobNumber');
+    if (jobEl) jobEl.readOnly = false;
+    const warn = document.getElementById('scanJobMismatchWarn');
+    if (warn) { warn.style.display = 'none'; warn.textContent = ''; }
     scanner_resetPanel();
 }
 

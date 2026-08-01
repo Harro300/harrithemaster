@@ -2140,3 +2140,56 @@ body.dark-mode .gradus-logo-dark {
 body.dark-mode .scan-pdf-preview-canvas {
     border-color: var(--border-light);
 }
+
+/* Siirtojono (massaskannaus) */
+.scan-transfer-queue-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 1.1rem;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.scan-transfer-queue-toggle:hover {
+    background: var(--bg-tertiary);
+}
+
+.scan-transfer-queue-chevron {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.scan-transfer-queue-body {
+    border-top: 1px solid var(--border-color);
+}
+
+.scan-transfer-queue-list {
+    padding: 0.5rem 0;
+}
+
+.scan-transfer-queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 1.1rem;
+}
+
+.scan-transfer-queue-item + .scan-transfer-queue-item {
+    border-top: 1px solid var(--border-color);
+}
+
+.scan-transfer-queue-item-name {
+    font-weight: 500;
+}
+
+.scan-transfer-queue-item-meta {
+    font-size: 0.8rem;
+}
