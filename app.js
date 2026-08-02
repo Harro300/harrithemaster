@@ -8210,33 +8210,46 @@ function applyScanResult() {
     }
     const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
-    applyScanReviewToCalculator();
-
-    // Piilota tarkistuskortti ja avaa esitäytetty siirtomodaali
-    closeScanReview();
-
     const jobNumber = val('scanJobNumber');
     const itemName = val('scanItemName');
-    const quantity = val('scanQuantity') || '1';
-    const size = val('scanLasilistaSize');
-    const color = val('scanColor');
+    const quantity = Math.max(1, Math.min(99, parseInt(val('scanQuantity'), 10) || 1));
+    const rawSize = val('scanLasilistaSize');
+    const color = normalizeLasilistaColor(val('scanColor') || '');
 
-    transferResults();
-    setTimeout(() => {
-        const job = document.getElementById('transferJobNumber');
-        if (job) job.value = jobNumber;
-        const name = document.getElementById('transferItemName');
-        if (name) { name.value = itemName; name.dataset.autofilled = '0'; }
-        const count = document.getElementById('transferItemCount');
-        if (count) count.value = quantity;
-        const sizeSel = document.getElementById('transferLasilistaSize');
-        if (sizeSel && size) { sizeSel.value = size; sizeSel.dataset.autofilled = '0'; }
-        const colorInput = document.getElementById('transferLasilistaColor');
-        if (colorInput) { colorInput.value = color; colorInput.dataset.autofilled = '0'; }
-        if (typeof prefillTransferFields === 'function') {
-            try { prefillTransferFields(); } catch (e) { /* ohitetaan */ }
-        }
-    }, 200);
+    if (!jobNumber) {
+        showToast('Syötä työnumero ennen hyväksyntää.', 'warning');
+        return;
+    }
+    if (!itemName) {
+        showToast('Syötä oven / ikkunan nimi ennen hyväksyntää.', 'warning');
+        return;
+    }
+
+    applyScanReviewToCalculator();
+
+    const isNoResultsTransferMode = isUmpioviNoResultsMode();
+    if (!isNoResultsTransferMode && !rawSize) {
+        showToast('Valitse lasilistojen koko ennen hyväksyntää.', 'warning');
+        return;
+    }
+    const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
+    const results = buildMittatResultsFromDom(lasilistaSize, color);
+    const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
+    if (sections.length === 0 && !isNoResultsTransferMode) {
+        showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
+        return;
+    }
+
+    const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+    closeScanReview();
+    const countLabel = quantity > 1 ? ` (${quantity} kpl)` : '';
+    showToast(`Mitat siirretty: ${jobNumber} - ${itemName}${countLabel}`, 'success');
+    if (typeof loadMittatView === 'function') {
+        try { loadMittatView(); } catch (e) { /* ohitetaan */ }
+    }
+    console.log('✅ Skanneri: mitat tallennettu suoraan', { jobNumber, itemName, quantity, saved });
 }
 
 function closeScanReview() {
