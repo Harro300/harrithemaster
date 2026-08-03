@@ -4507,7 +4507,9 @@ function loadMittatView() {
                 const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
                 const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
                 const btnText = pdfChecked ? 'Valittu' : 'Valitse';
-                html += `<button class="${btnClass}" onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
+                const disabledAttr = isChecked ? ' disabled' : '';
+                const titleAttr = isChecked ? ' title="Lasilistat jo merkitty"' : '';
+                html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
             if (doneChecked && packedMitat[checkKey]) {
                 html += `<span class="mitat-packed-label">(Pakattu!)</span>`;
@@ -5562,6 +5564,12 @@ function selectLasilistaPdfJob(jobNumber) {
 function toggleLasilistaPdfItem(jobNumber, itemName) {
     if (!isLasilistaPdfMode || selectedLasilistaPdfJobNumber !== jobNumber) return;
 
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    if (checkedMitat[`${jobNumber}-${itemName}`]) {
+        showToast('Tuote on jo merkitty lasilistat-checkpointilla.', 'warning');
+        return;
+    }
+
     const itemKey = `${jobNumber}||${itemName}`;
     selectedLasilistaPdfItems[itemKey] = !selectedLasilistaPdfItems[itemKey];
 
@@ -5724,7 +5732,14 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
 
     try {
         await generateLasilistaSummaryPdf(jobNumber, groupedRows, selectedColors[0] || '');
-        showToast('Lasilistat PDF ladattu.', 'success');
+
+        const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+        selectedItemNames.forEach((itemName) => {
+            checkedMitat[`${jobNumber}-${itemName}`] = true;
+        });
+        localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+        syncMitatStateToFirestore();
+
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
@@ -5732,6 +5747,7 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
         if (mittatView && !mittatView.classList.contains('d-none')) {
             loadMittatView();
         }
+        showToast('Lasilistat PDF ladattu. Lasilistat merkitty.', 'success');
     } catch (error) {
         console.error('❌ Lasilistat PDF -luonti epäonnistui:', error);
         showToast('Lasilistat PDF -luonti epäonnistui.', 'error');
