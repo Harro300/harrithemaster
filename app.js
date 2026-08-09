@@ -414,6 +414,13 @@ function enterAuthenticatedApp() {
         const scanReviewCard = document.getElementById('scanReviewCard');
         if (scanReviewCard) scanReviewCard.style.display = 'none';
 
+        pystypaneliEnabled = false;
+        localStorage.setItem('pystypaneliEnabled', 'false');
+        const pystypaneliToggle = document.getElementById('pystypaneliToggle');
+        if (pystypaneliToggle) pystypaneliToggle.checked = false;
+        const pystypaneliPanel = document.getElementById('pystypaneliPanel');
+        if (pystypaneliPanel) pystypaneliPanel.style.display = 'none';
+
         console.log('🔵 Valitaan default-laskuri...');
         selectCalculator('janisol-pariovi');
     }
@@ -692,6 +699,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCalculatorInputVisibility();
     bindSettingsLiveUpdateHandlers();
     initScanner();
+    initPystypaneli();
 });
 
 // Valid passwords
@@ -725,7 +733,7 @@ function hideScannerSettings() {
 }
 
 function updateCalculatorInputVisibility() {
-    if (scannerEnabled) {
+    if (scannerEnabled || pystypaneliEnabled) {
         hideScannerSettings();
         return;
     }
@@ -1152,9 +1160,13 @@ function openSettings() {
     if (umpivasikkaToggle) {
         umpivasikkaToggle.checked = settings.umpivasikkaEnabled === true;
     }
+    const pystypaneliToggle = document.getElementById('pystypaneliToggle');
+    if (pystypaneliToggle) {
+        pystypaneliToggle.checked = pystypaneliEnabled === true;
+    }
     
-    // Hide door-specific settings for window calculators (skip when scanner is active)
-    if (!scannerEnabled) {
+    // Hide door-specific settings for window calculators (skip when scanner/pystypaneli is active)
+    if (!scannerEnabled && !pystypaneliEnabled) {
         const gapOptionSetting = document.getElementById('gapOptionSetting');
         const umpioviSetting = document.getElementById('umpioviSetting');
         const kickPlateSetting = document.getElementById('kickPlateSetting');
@@ -6886,6 +6898,7 @@ function deleteMitta(jobNumber, itemName) {
    =========================================================================== */
 
 let scannerEnabled = false;
+let pystypaneliEnabled = false;
 let scanBatchFiles = [];
 let scanBatchIndex = 0;
 let scanBatchJobNumber = null;
@@ -6898,11 +6911,20 @@ function toggleScanner(enabled) {
     scannerEnabled = !!enabled;
     localStorage.setItem('scannerEnabled', scannerEnabled);
 
+    if (scannerEnabled && pystypaneliEnabled) {
+        pystypaneliEnabled = false;
+        localStorage.setItem('pystypaneliEnabled', 'false');
+        const pystypaneliToggle = document.getElementById('pystypaneliToggle');
+        if (pystypaneliToggle) pystypaneliToggle.checked = false;
+        const pystypaneliPanel = document.getElementById('pystypaneliPanel');
+        if (pystypaneliPanel) pystypaneliPanel.style.display = 'none';
+    }
+
     const panel = document.getElementById('scannerPanel');
     const inputsRow = document.getElementById('calculatorInputsRow');
     const toggle = document.getElementById('scannerToggle');
     if (panel) panel.style.display = scannerEnabled ? '' : 'none';
-    if (inputsRow) inputsRow.style.display = scannerEnabled ? 'none' : '';
+    if (inputsRow) inputsRow.style.display = (scannerEnabled || pystypaneliEnabled) ? 'none' : '';
     if (toggle) toggle.checked = scannerEnabled;
 
     if (scannerEnabled) {
@@ -6924,6 +6946,83 @@ function toggleScanner(enabled) {
     } else {
         calculate();
     }
+}
+
+function calculatePystypaneli() {
+    const resultEl = document.getElementById('pystypaneliResult');
+    if (!resultEl) return;
+
+    const X = parseFloat(document.getElementById('pystypaneliX')?.value);
+    const Y = parseFloat(document.getElementById('pystypaneliY')?.value);
+
+    if (!(X > 0) || !(Y > 0)) {
+        resultEl.className = 'pystypaneli-result text-muted';
+        resultEl.textContent = 'Syötä potkupellin leveys ja panelin peittoväli (molemmat > 0).';
+        return;
+    }
+
+    const Z = X % Y;
+    const W = (Y + Z) / 2;
+    const result = W - 5;
+
+    resultEl.className = 'pystypaneli-result';
+    resultEl.innerHTML = '';
+    const label = document.createElement('div');
+    label.className = 'pystypaneli-result-label';
+    label.textContent = 'Alotus-/lopetuspaneeli';
+    const value = document.createElement('div');
+    value.className = 'pystypaneli-result-value';
+    value.textContent = result.toFixed(1) + ' mm';
+    resultEl.appendChild(label);
+    resultEl.appendChild(value);
+}
+
+function togglePystypaneli(enabled) {
+    pystypaneliEnabled = !!enabled;
+    localStorage.setItem('pystypaneliEnabled', pystypaneliEnabled);
+
+    if (pystypaneliEnabled && scannerEnabled) {
+        scannerEnabled = false;
+        localStorage.setItem('scannerEnabled', 'false');
+        const scanToggle = document.getElementById('scannerToggle');
+        if (scanToggle) scanToggle.checked = false;
+        const scannerPanel = document.getElementById('scannerPanel');
+        if (scannerPanel) scannerPanel.style.display = 'none';
+        const scanReviewCard = document.getElementById('scanReviewCard');
+        if (scanReviewCard) scanReviewCard.style.display = 'none';
+        const scanPdfPreview = document.getElementById('scanPdfPreview');
+        if (scanPdfPreview) scanPdfPreview.style.display = 'none';
+    }
+
+    const panel = document.getElementById('pystypaneliPanel');
+    const inputsRow = document.getElementById('calculatorInputsRow');
+    const toggle = document.getElementById('pystypaneliToggle');
+    if (panel) panel.style.display = pystypaneliEnabled ? '' : 'none';
+    if (inputsRow) inputsRow.style.display = (pystypaneliEnabled || scannerEnabled) ? 'none' : '';
+    if (toggle) toggle.checked = pystypaneliEnabled;
+
+    if (pystypaneliEnabled) {
+        hideScannerSettings();
+        const resultsDiv = document.getElementById('results');
+        if (resultsDiv) {
+            resultsDiv.innerHTML = '<p class="text-muted text-center">Pystypanelilaskin — tulos näkyy Syötteet-kortissa.</p>';
+        }
+        calculatePystypaneli();
+    } else {
+        SCANNER_HIDDEN_SETTINGS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = '';
+        });
+        updateCalculatorInputVisibility();
+        calculate();
+    }
+}
+
+function initPystypaneli() {
+    pystypaneliEnabled = localStorage.getItem('pystypaneliEnabled') === 'true';
+    const toggle = document.getElementById('pystypaneliToggle');
+    if (toggle) toggle.checked = pystypaneliEnabled;
+    if (pystypaneliEnabled) togglePystypaneli(true);
 }
 
 function initScanner() {
