@@ -272,6 +272,8 @@
                     <div class="d-flex align-items-center gap-3 flex-wrap">
                         <h4 class="mb-0">Skannauksen tarkistus</h4>
                         <span id="scanBatchProgress" class="badge text-bg-secondary" style="display:none;">PDF 1 / 1</span>
+                        <span id="scanDoorWindowBadge" class="badge text-bg-info" style="display:none;">Ovi + ikkuna</span>
+                        <input type="checkbox" id="scanDoorWindowMode" class="d-none" tabindex="-1" aria-hidden="true">
                         <!-- Laskuri -->
                         <div class="d-flex align-items-center gap-1">
                             <label for="scanCalculator" class="form-label mb-0 text-uppercase" style="font-size:0.75rem">Laskuri</label>
@@ -350,6 +352,10 @@
                     </div>
                 </div>
 
+                <div id="scanDoorSectionLabel" class="mb-2" style="display:none;">
+                    <span class="text-uppercase fw-bold" style="font-size:0.75rem;color:var(--text-secondary)">Ovi</span>
+                </div>
+
                 <!-- Mittakentät — sama col-lg-3-ruudukko kuin Syötteet-kortissa -->
                 <div class="row">
                     <div class="col-md-6 col-lg-3">
@@ -373,6 +379,44 @@
                 </div>
                 <!-- Ruutukorkeudet: 1..N (updateScanPaneInputs) -->
                 <div class="row" id="scanPaneHeightInputs"></div>
+
+                <!-- Ikkuna (ovi+yläikkuna) -->
+                <div id="scanWindowSection" style="display:none;">
+                    <div class="row g-2 mt-1 pt-3 border-top">
+                        <div class="col-12 mb-1 d-flex align-items-center gap-2 flex-wrap">
+                            <span class="text-uppercase fw-bold" style="font-size:0.75rem;color:var(--text-secondary)">Ikkuna</span>
+                            <span class="small text-muted">Laskuri:</span>
+                            <span id="scanWindowCalculatorLabel" class="small fw-semibold">—</span>
+                            <input type="hidden" id="scanWindowCalculator" value="">
+                        </div>
+                        <div class="col-md-6 col-lg-3">
+                            <div class="mb-3">
+                                <label for="scanWindowWidth" class="form-label">Ruudun leveys (mm)</label>
+                                <input type="number" class="form-control" id="scanWindowWidth" oninput="calculateFromScanReview()">
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-lg-3">
+                            <div class="mb-3">
+                                <label for="scanWindowHeight" class="form-label">Ruudun korkeus (mm)</label>
+                                <input type="number" class="form-control" id="scanWindowHeight" oninput="calculateFromScanReview()">
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-lg-3">
+                            <div class="mb-3">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <label class="form-label mb-0 small text-uppercase" for="scanWindowKickEnabled">Potkupelti</label>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" id="scanWindowKickEnabled" onchange="updateScanReviewVisibility(); calculateFromScanReview();">
+                                    </div>
+                                </div>
+                                <div id="scanWindowKickHeightWrap" style="display:none;">
+                                    <label for="scanWindowKickHeight" class="form-label">Potkupellin korkeus (mm)</label>
+                                    <input type="number" class="form-control" id="scanWindowKickHeight" oninput="calculateFromScanReview()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Tuotantotiedot -->
                 <div class="row g-2 mt-1 pt-3 border-top">
@@ -2448,7 +2492,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260809R1"></script>
+    <script src="app.js?v=20260809R7"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>

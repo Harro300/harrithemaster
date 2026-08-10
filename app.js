@@ -5251,8 +5251,9 @@ function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, edi
             const editBtn = editEntryIdx !== idx
                 ? `<button class="btn btn-sm mitat-edit-btn btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,${idx})">Muokkaa</button>`
                 : '';
+            const partLabel = entryIsWindow ? 'Ikkuna' : 'Ovi';
             html += `<div class="mitat-inputs-section-header d-flex justify-content-between align-items-center">
-                <span>Siirto ${idx + 1} — ${entryCalcLabel} — ${entryDate}</span>${editBtn}
+                <span>${partLabel} — ${entryCalcLabel} — ${entryDate}</span>${editBtn}
             </div>`;
             if (editEntryIdx === idx) {
                 html += buildInputsEditForm(entry, entryIsWindow, entryIsPariovi, idx, jobNumber, itemName, 'paketit');
@@ -7465,15 +7466,24 @@ function acceptScanToQueue() {
         return;
     }
 
-    applyScanReviewToCalculator();
-
-    const isNoResultsTransferMode = isUmpioviNoResultsMode();
+    const isNoResultsTransferMode = !isScanDoorWindowMode() && isUmpioviNoResultsMode();
     if (!isNoResultsTransferMode && !rawSize) {
         showToast('Valitse lasilistojen koko ennen hyväksyntää.', 'warning');
         return;
     }
     const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
-    const results = buildMittatResultsFromDom(lasilistaSize, color);
+    let results;
+    if (isScanDoorWindowMode()) {
+        results = buildDoorWindowScanResults(lasilistaSize, color);
+        if (!results || !(results.data || []).length) {
+            showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
+            return;
+        }
+        applyScanReviewToCalculator();
+    } else {
+        applyScanReviewToCalculator();
+        results = buildMittatResultsFromDom(lasilistaSize, color);
+    }
     const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
     if (sections.length === 0 && !isNoResultsTransferMode) {
         showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
@@ -8020,12 +8030,12 @@ function scanner_parse(tokens, W, H) {
     } else {
         let phCands = norm
             .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
-            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
             .filter(o => o.v >= 200 && o.v <= 4000);
         if (!phCands.length && !isLandscape && isPariByRL) {
             phCands = norm
                 .filter(t => t.vertical && Math.abs(t.nx - rlTok.nx) < 0.22 && /^\d{3,4}$/.test(t.text.trim()))
-                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
                 .filter(o => o.v >= 200 && o.v <= 4000);
         }
         if (!phCands.length) {
@@ -8033,13 +8043,16 @@ function scanner_parse(tokens, W, H) {
             const fbMaxNx = isLandscape ? 0.90 : 0.82;
             phCands = norm
                 .filter(t => t.vertical && t.nx > fbMinNx && t.nx < fbMaxNx && /^\d{3,4}$/.test(t.text.trim()))
-                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
                 .filter(o => o.v >= 200 && o.v <= 4000);
         }
         if (phCands.length) {
             if (isLandscape && rlTok) {
-                phCands.sort((a, b) => Math.abs(a.nx - rlTok.nx) - Math.abs(b.nx - rlTok.nx));
-                paneHeight = phCands[0].v;
+                // Oven ruutu on R/L-lehden keskivyöhykkeellä — ei yläikkunan 345 (pdf.js: R vaakasuora)
+                const midPh = phCands.filter(o => o.ny > 0.40 && o.ny < 0.78);
+                const pool = midPh.length ? midPh : phCands;
+                pool.sort((a, b) => Math.abs(a.nx - rlTok.nx) - Math.abs(b.nx - rlTok.nx));
+                paneHeight = pool[0].v;
             } else {
                 paneHeight = Math.max(...phCands.map(o => o.v));
             }
@@ -8175,12 +8188,133 @@ function scanner_parse(tokens, W, H) {
     conf.sealThresholdEnabled = 'low';
     if (/tiiviste\s*kynnys|tiivistekynnys/i.test(all)) { sealThresholdEnabled = true; conf.sealThresholdEnabled = 'ok'; }
 
+    // --- Ovi + yläikkuna (erillinen haara; ei muuta _pw / isPariByRL) ---
+    let isDoorWindow = false;
+    let windowWidth = '';
+    let windowHeight = '';
+    let windowCalculator = '';
+    conf.windowWidth = 'low';
+    conf.windowHeight = 'low';
+    if (!isWindow && !isMultiPane) {
+        const winNyMax = isLandscape ? 0.38 : 0.32;
+        const winNyMin = isLandscape ? 0.12 : 0.08;
+        const doorLeafSet = new Set(
+            [mainDoorWidth, sideDoorWidth].filter(v => v !== '' && v != null).map(Number)
+        );
+        const wwCands = norm
+            .filter(t => !t.vertical &&
+                         t.nx > drawingMinNx && t.nx < 0.92 &&
+                         t.ny > winNyMin && t.ny < winNyMax &&
+                         /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+            .filter(o => o.v >= 400 && o.v <= 2500 && !doorLeafSet.has(o.v));
+        // Älä sulje pois early paneHeightia (pdf.js voi asettaa sen 345:ksi ennen ovi+ikkuna-haaraa)
+        const whCands = norm
+            .filter(t => t.vertical &&
+                         t.nx > drawingMinNx && t.nx < 0.88 &&
+                         t.ny > winNyMin && t.ny < winNyMax &&
+                         /^\d{3}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+            .filter(o => o.v >= 200 && o.v <= 700 &&
+                         o.v !== Number(kickPlateHeight));
+        if (wwCands.length && whCands.length) {
+            wwCands.sort((a, b) => b.v - a.v);
+            const ww = wwCands[0];
+            windowWidth = ww.v;
+
+            // R/L myös pystytokenina (TLO landscape) — ruutukorkeus luetaan tämän lehden SISÄLTÄ
+            const rlFlex = rlTok || norm.find(t =>
+                /^[RLrl]$/.test(t.text.trim()) &&
+                t.ny > 0.22 && t.ny < 0.82 &&
+                t.nx > drawingMinNx && t.nx < 0.88
+            );
+
+            // Landscape + pysty-R: palauta käynti/lisä oven vyöhykkeestä ikkunan alta
+            if (!mainDoorWidth || !sideDoorWidth || !rlTok) {
+                const doorPw = norm
+                    .filter(t => !t.vertical &&
+                                 t.nx > drawingMinNx && t.nx < 0.88 &&
+                                 t.ny >= winNyMax && t.ny < (isLandscape ? 0.55 : 0.80) &&
+                                 /^\d{3,4}$/.test(t.text.trim()))
+                    .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+                    .filter(o => o.v >= 150 && o.v <= 1800 && o.v !== windowWidth);
+                if (doorPw.length >= 2) {
+                    const sorted = [...doorPw].sort((a, b) => a.nx - b.nx);
+                    let localSplit = 0.5, maxGap = 0;
+                    for (let i = 0; i < sorted.length - 1; i++) {
+                        const gap = sorted[i + 1].nx - sorted[i].nx;
+                        if (gap > maxGap) { maxGap = gap; localSplit = (sorted[i].nx + sorted[i + 1].nx) / 2; }
+                    }
+                    const refNx = rlFlex ? rlFlex.nx : localSplit;
+                    const kayntiOnRight = refNx >= localSplit;
+                    let kW = doorPw.filter(o => kayntiOnRight ? o.nx >= localSplit : o.nx < localSplit);
+                    let lW = doorPw.filter(o => kayntiOnRight ? o.nx < localSplit : o.nx >= localSplit);
+                    if (kW.length && lW.length) {
+                        const refNy = lW[0].ny;
+                        kW = kW.filter(o => Math.abs(o.ny - refNy) < 0.05);
+                        if (kW.length) {
+                            mainDoorWidth = Math.max(...kW.map(o => o.v));
+                            sideDoorWidth = Math.max(...lW.map(o => o.v));
+                            conf.mainDoorWidth = 'ok';
+                            conf.sideDoorWidth = 'ok';
+                            if (!String(calculator).includes('pariovi') && !String(calculator).includes('ikkuna')) {
+                                calculator = family + '-pariovi';
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Oven ruutukorkeus: R/L-ruudun SISÄLTÄ (lähin rlFlex.nx) — ei ulkokehystä 2090/2530
+            const doorPhAll = norm
+                .filter(t => t.vertical &&
+                             t.nx > drawingMinNx && t.nx < 0.88 &&
+                             t.ny >= winNyMax && t.ny < 0.78 &&
+                             /^\d{3,4}$/.test(t.text.trim()))
+                .map(t => ({ v: parseInt(t.text, 10), nx: t.nx }))
+                .filter(o => o.v >= 800 && o.v <= 2500);
+            let doorPh = doorPhAll;
+            if (rlFlex) {
+                doorPh = doorPhAll.filter(o => Math.abs(o.nx - rlFlex.nx) < 0.22);
+                if (!doorPh.length) doorPh = doorPhAll;
+                doorPh = doorPh.slice().sort((a, b) => Math.abs(a.nx - rlFlex.nx) - Math.abs(b.nx - rlFlex.nx));
+            } else {
+                doorPh = doorPhAll.slice().sort((a, b) => Math.abs(a.nx - ww.nx) - Math.abs(b.nx - ww.nx));
+            }
+
+            if (doorPh.length) {
+                const doorPick = doorPh[0];
+                paneHeight = doorPick.v;
+                conf.paneHeight = 'ok';
+                // Ikkunan korkeus: sama pystylinja kuin oven ruutu (yläikkuna)
+                const whAligned = whCands
+                    .filter(o => o.v !== Number(paneHeight) && o.v !== Number(kickPlateHeight))
+                    .slice()
+                    .sort((a, b) => Math.abs(a.nx - doorPick.nx) - Math.abs(b.nx - doorPick.nx));
+                const wh = whAligned[0];
+                if (wh && Math.abs(wh.nx - doorPick.nx) < 0.12) {
+                    isDoorWindow = true;
+                    windowHeight = wh.v;
+                    windowCalculator = family + '-ikkuna';
+                    conf.windowWidth = 'ok';
+                    conf.windowHeight = 'ok';
+                } else {
+                    windowWidth = '';
+                }
+            } else {
+                windowWidth = '';
+            }
+        }
+    }
+
     return {
         calculator, gapOption, lasilistaSize,
         kickPlateEnabled, kickPlateHeight,
         mainDoorWidth, sideDoorWidth, paneHeight,
         paneCount, umpioviEnabled, umpivasikkaEnabled, sealThresholdEnabled,
-        jobNumber, itemName, quantity, color, conf
+        jobNumber, itemName, quantity, color,
+        isDoorWindow, windowWidth, windowHeight, windowCalculator,
+        conf
     };
 }
 
@@ -8235,6 +8369,7 @@ function updateScanReviewVisibility() {
     const isWindow = calc.includes('ikkuna');
     const isDoor = !isWindow;
     const umpioviChecked = !!document.getElementById('scanUmpiovi')?.checked;
+    const doorWindowOn = !!document.getElementById('scanDoorWindowMode')?.checked;
 
     const sideWrap = document.getElementById('scanSideWidthWrap');
     const gapWrap = document.getElementById('scanGapWrap');
@@ -8244,6 +8379,11 @@ function updateScanReviewVisibility() {
     const sealWrap = document.getElementById('scanSealThresholdWrap');
     const kickHeightWrap = document.getElementById('scanKickHeightWrap');
     const kickEnabled = !!document.getElementById('scanKickEnabled')?.checked;
+    const doorSec = document.getElementById('scanDoorSectionLabel');
+    const winSec = document.getElementById('scanWindowSection');
+    const badge = document.getElementById('scanDoorWindowBadge');
+    const winKickWrap = document.getElementById('scanWindowKickHeightWrap');
+    const winKickOn = !!document.getElementById('scanWindowKickEnabled')?.checked;
 
     if (sideWrap) sideWrap.style.display = isPari ? '' : 'none';
     if (gapWrap) gapWrap.style.display = isWindow ? 'none' : '';
@@ -8252,6 +8392,10 @@ function updateScanReviewVisibility() {
     if (sealWrap) sealWrap.style.display = isDoor ? '' : 'none';
     if (umpivasikkaWrap) umpivasikkaWrap.style.display = (isPari && !umpioviChecked) ? '' : 'none';
     if (kickHeightWrap) kickHeightWrap.style.display = kickEnabled ? '' : 'none';
+    if (doorSec) doorSec.style.display = doorWindowOn ? '' : 'none';
+    if (winSec) winSec.style.display = doorWindowOn ? '' : 'none';
+    if (badge) badge.style.display = doorWindowOn ? '' : 'none';
+    if (winKickWrap) winKickWrap.style.display = (doorWindowOn && winKickOn) ? '' : 'none';
 }
 
 function showScanReview(parsed, canvas) {
@@ -8289,11 +8433,28 @@ function showScanReview(parsed, canvas) {
     const sealEl = document.getElementById('scanSealThreshold');
     if (sealEl) sealEl.checked = !!parsed.sealThresholdEnabled;
 
+    const dwMode = document.getElementById('scanDoorWindowMode');
+    if (dwMode) dwMode.checked = !!parsed.isDoorWindow;
+    setV('scanWindowWidth', parsed.windowWidth || '');
+    setV('scanWindowHeight', parsed.windowHeight || '');
+    setV('scanWindowCalculator', parsed.windowCalculator || '');
+    const winCalcLabel = document.getElementById('scanWindowCalculatorLabel');
+    if (winCalcLabel) {
+        winCalcLabel.textContent = parsed.windowCalculator
+            ? getCalculatorLabel(parsed.windowCalculator)
+            : '—';
+    }
+    const winKick = document.getElementById('scanWindowKickEnabled');
+    if (winKick) winKick.checked = false;
+    setV('scanWindowKickHeight', '');
+
     updateScanReviewVisibility();
 
     const isWindow = parsed.calculator.includes('ikkuna');
     const isPari = parsed.calculator.includes('pariovi');
     mark('scanCalculator', parsed.conf.calculator);
+    mark('scanWindowWidth', parsed.conf && parsed.conf.windowWidth);
+    mark('scanWindowHeight', parsed.conf && parsed.conf.windowHeight);
     mark('scanGap', isWindow ? 'ok' : parsed.conf.gapOption);
     mark('scanMainWidth', parsed.conf.mainDoorWidth);
     mark('scanSideWidth', isPari ? parsed.conf.sideDoorWidth : 'ok');
@@ -8340,19 +8501,29 @@ function applyScanResult() {
         return;
     }
 
-    applyScanReviewToCalculator();
-
-    const isNoResultsTransferMode = isUmpioviNoResultsMode();
+    const isNoResultsTransferMode = !isScanDoorWindowMode() && isUmpioviNoResultsMode();
     if (!isNoResultsTransferMode && !rawSize) {
         showToast('Valitse lasilistojen koko ennen hyväksyntää.', 'warning');
         return;
     }
     const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
-    const results = buildMittatResultsFromDom(lasilistaSize, color);
-    const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
-    if (sections.length === 0 && !isNoResultsTransferMode) {
-        showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
-        return;
+
+    let results;
+    if (isScanDoorWindowMode()) {
+        results = buildDoorWindowScanResults(lasilistaSize, color);
+        if (!results || !(results.data || []).length) {
+            showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
+            return;
+        }
+        applyScanReviewToCalculator();
+    } else {
+        applyScanReviewToCalculator();
+        results = buildMittatResultsFromDom(lasilistaSize, color);
+        const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
+        if (sections.length === 0 && !isNoResultsTransferMode) {
+            showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
+            return;
+        }
     }
 
     const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
@@ -8387,9 +8558,181 @@ function closeScanReview() {
     scanner_resetPanel();
 }
 
+
+function isScanDoorWindowMode() {
+    return !!document.getElementById('scanDoorWindowMode')?.checked;
+}
+
+function readScanDoorSettings() {
+    const gapVal = document.getElementById('scanGap')?.value;
+    const gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
+    const kickEnabled = !!document.getElementById('scanKickEnabled')?.checked;
+    const kickHeight = parseInt(document.getElementById('scanKickHeight')?.value, 10) || 0;
+    const mainWidth = parseInt(document.getElementById('scanMainWidth')?.value, 10) || 0;
+    const sideWidth = parseInt(document.getElementById('scanSideWidth')?.value, 10) || 0;
+    const paneCount = Math.max(1, Math.min(12, parseInt(document.getElementById('scanPaneCount')?.value, 10) || 1));
+    const umpioviEnabled = !!document.getElementById('scanUmpiovi')?.checked;
+    const umpivasikkaEnabled = !!document.getElementById('scanUmpivasikka')?.checked;
+    const sealEnabled = !!document.getElementById('scanSealThreshold')?.checked;
+    const heightContainer = document.getElementById('scanPaneHeightInputs');
+    const existingInputs = heightContainer
+        ? Array.from(heightContainer.querySelectorAll('input[id^="scanPaneHeight"]'))
+        : [];
+    if (existingInputs.length !== paneCount) {
+        const keepHeights = existingInputs.map(el => {
+            const v = parseInt(el.value, 10);
+            return Number.isFinite(v) ? v : '';
+        });
+        updateScanPaneInputs(paneCount, keepHeights);
+    }
+    const paneHeights = [];
+    for (let i = 1; i <= paneCount; i++) {
+        paneHeights.push(parseInt(document.getElementById('scanPaneHeight' + i)?.value, 10) || 0);
+    }
+    return {
+        calc: document.getElementById('scanCalculator')?.value || '',
+        gapOption, kickEnabled, kickHeight, mainWidth, sideWidth,
+        paneCount, umpioviEnabled, umpivasikkaEnabled, sealEnabled, paneHeights
+    };
+}
+
+function computeScanRawResults(calc, s) {
+    const isWindow = calc.includes('ikkuna');
+    const isUmpiovi = !isWindow && s.umpioviEnabled;
+    const paneWidths = [s.mainWidth];
+    if (isUmpiovi) return calculateUmpioviResults(s.mainWidth, calc.includes('pariovi') ? s.sideWidth : 0, s.kickHeight, calc);
+    if (calc === 'janisol-pariovi') return calculateJanisolPariovi(s.mainWidth, s.sideWidth, s.kickHeight, s.paneHeights);
+    if (calc === 'janisol-kayntiovi') return calculateJanisolKayntiovi(s.mainWidth, s.kickHeight, s.paneHeights);
+    if (calc === 'janisol-ikkuna') return calculateJanisolIkkuna(paneWidths, s.paneHeights, s.kickEnabled ? s.kickHeight : 0, !!s.useYhdistettyLeveys);
+    if (calc === 'economy-pariovi') return calculateEconomyPariovi(s.mainWidth, s.sideWidth, s.kickHeight, s.paneHeights);
+    if (calc === 'economy-kayntiovi') return calculateEconomyKayntiovi(s.mainWidth, s.kickHeight, s.paneHeights);
+    if (calc === 'economy-ikkuna') return calculateEconomyIkkuna(paneWidths, s.paneHeights, s.kickEnabled ? s.kickHeight : 0, !!s.useYhdistettyLeveys);
+    return {};
+}
+
+function snapshotScanInputs(calc, s, opts) {
+    const isWin = calc.includes('ikkuna');
+    const paneHeights = (s.paneHeights || []).map(v => String(v || ''));
+    const n = s.paneCount || paneHeights.length || 1;
+    const paneWidths = [];
+    for (let i = 0; i < n; i++) {
+        paneWidths.push(isWin ? String(s.mainWidth || '') : '');
+    }
+    const out = {
+        calculator: calc,
+        mainDoorWidth: String(s.mainWidth || ''),
+        sideDoorWidth: String(s.sideWidth || ''),
+        kickPlateHeight: String(s.kickHeight || ''),
+        gapOption: s.gapOption,
+        paneCount: s.paneCount || 1,
+        kickPlateEnabled: !!s.kickEnabled,
+        sealThresholdEnabled: !!s.sealEnabled,
+        umpioviEnabled: !!s.umpioviEnabled,
+        umpivasikkaEnabled: !!s.umpivasikkaEnabled,
+        formulaSet: localStorage.getItem('activeFormulaSet') || 'default',
+        paneHeights,
+        paneWidths
+    };
+    if (opts && opts.yhdistettyLeveys) out.yhdistettyLeveys = true;
+    return out;
+}
+
+function buildDoorWindowScanResults(lasilistaSize, color) {
+    const door = readScanDoorSettings();
+    const winW = parseInt(document.getElementById('scanWindowWidth')?.value, 10) || 0;
+    const winH = parseInt(document.getElementById('scanWindowHeight')?.value, 10) || 0;
+    const winKickOn = !!document.getElementById('scanWindowKickEnabled')?.checked;
+    const winKickH = parseInt(document.getElementById('scanWindowKickHeight')?.value, 10) || 0;
+    let winCalc = document.getElementById('scanWindowCalculator')?.value || '';
+    if (!winCalc) {
+        winCalc = (door.calc || '').startsWith('economy') ? 'economy-ikkuna' : 'janisol-ikkuna';
+    }
+
+    const prevCalc = currentCalculator;
+    const prevSettings = { ...settings };
+    try {
+        currentCalculator = door.calc;
+        settings = {
+            ...prevSettings,
+            gapOption: door.gapOption,
+            paneCount: door.paneCount,
+            kickPlateEnabled: door.kickEnabled,
+            sealThresholdEnabled: door.sealEnabled,
+            umpioviEnabled: door.umpioviEnabled,
+            umpivasikkaEnabled: door.umpivasikkaEnabled
+        };
+        const doorRaw = computeScanRawResults(door.calc, door);
+        const doorBlob = {
+            calculator: door.calc,
+            timestamp: new Date().toISOString(),
+            lasilistaSize: lasilistaSize || '',
+            lasilistaColor: color || '',
+            metadataOnly: false,
+            inputs: snapshotScanInputs(door.calc, door),
+            data: formatResultToData(doorRaw, door.calc, { ...settings })
+        };
+
+        const winSettings = {
+            mainWidth: winW,
+            sideWidth: 0,
+            kickEnabled: winKickOn,
+            kickHeight: winKickH,
+            paneCount: 1,
+            paneHeights: [winH],
+            gapOption: 8,
+            umpioviEnabled: false,
+            umpivasikkaEnabled: false,
+            sealEnabled: false,
+            useYhdistettyLeveys: winKickOn
+        };
+        currentCalculator = winCalc;
+        settings = {
+            ...prevSettings,
+            gapOption: 8,
+            paneCount: 1,
+            kickPlateEnabled: winKickOn,
+            sealThresholdEnabled: false,
+            umpioviEnabled: false,
+            umpivasikkaEnabled: false
+        };
+        const winRaw = computeScanRawResults(winCalc, winSettings);
+        const winBlob = {
+            calculator: winCalc,
+            timestamp: new Date().toISOString(),
+            lasilistaSize: lasilistaSize || '',
+            lasilistaColor: color || '',
+            metadataOnly: false,
+            inputs: snapshotScanInputs(winCalc, winSettings, { yhdistettyLeveys: winKickOn }),
+            data: formatResultToData(winRaw, winCalc, { ...settings })
+        };
+        return mergeResults(doorBlob, winBlob);
+    } finally {
+        currentCalculator = prevCalc;
+        settings = prevSettings;
+    }
+}
+
 function calculateFromScanReview() {
     const card = document.getElementById('scanReviewCard');
     if (!card || card.style.display === 'none') return;
+
+    if (isScanDoorWindowMode()) {
+        const door = readScanDoorSettings();
+        if (!door.calc) return;
+        if (door.mainWidth < 500) {
+            document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
+            return;
+        }
+        const winW = parseInt(document.getElementById('scanWindowWidth')?.value, 10) || 0;
+        const winH = parseInt(document.getElementById('scanWindowHeight')?.value, 10) || 0;
+        if (winW < 100 || winH < 100) {
+            document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista ikkunan syötteet (leveys ja korkeus).</p>';
+            return;
+        }
+        const merged = buildDoorWindowScanResults('', '');
+        if (merged && merged.data) displayMergedResults(merged.data);
+        return;
+    }
 
     const calc = document.getElementById('scanCalculator')?.value;
     if (!calc) return;
