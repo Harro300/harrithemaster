@@ -8396,6 +8396,7 @@ function updateScanReviewVisibility() {
     if (winSec) winSec.style.display = doorWindowOn ? '' : 'none';
     if (badge) badge.style.display = doorWindowOn ? '' : 'none';
     if (winKickWrap) winKickWrap.style.display = (doorWindowOn && winKickOn) ? '' : 'none';
+    syncScanWindowCalculatorFromDoor();
 }
 
 function showScanReview(parsed, canvas) {
@@ -8563,6 +8564,20 @@ function isScanDoorWindowMode() {
     return !!document.getElementById('scanDoorWindowMode')?.checked;
 }
 
+function windowCalculatorForDoor(doorCalc) {
+    return String(doorCalc || '').startsWith('economy') ? 'economy-ikkuna' : 'janisol-ikkuna';
+}
+
+function syncScanWindowCalculatorFromDoor() {
+    if (!isScanDoorWindowMode()) return;
+    const doorCalc = document.getElementById('scanCalculator')?.value || '';
+    const winCalc = windowCalculatorForDoor(doorCalc);
+    const hidden = document.getElementById('scanWindowCalculator');
+    if (hidden) hidden.value = winCalc;
+    const label = document.getElementById('scanWindowCalculatorLabel');
+    if (label) label.textContent = getCalculatorLabel(winCalc);
+}
+
 function readScanDoorSettings() {
     const gapVal = document.getElementById('scanGap')?.value;
     const gapOption = gapVal === 'saneeraus' ? 'saneeraus' : (parseInt(gapVal, 10) || 8);
@@ -8643,10 +8658,7 @@ function buildDoorWindowScanResults(lasilistaSize, color) {
     const winH = parseInt(document.getElementById('scanWindowHeight')?.value, 10) || 0;
     const winKickOn = !!document.getElementById('scanWindowKickEnabled')?.checked;
     const winKickH = parseInt(document.getElementById('scanWindowKickHeight')?.value, 10) || 0;
-    let winCalc = document.getElementById('scanWindowCalculator')?.value || '';
-    if (!winCalc) {
-        winCalc = (door.calc || '').startsWith('economy') ? 'economy-ikkuna' : 'janisol-ikkuna';
-    }
+    const winCalc = windowCalculatorForDoor(door.calc);
 
     const prevCalc = currentCalculator;
     const prevSettings = { ...settings };
