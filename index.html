@@ -97,6 +97,12 @@
                         <button class="btn btn-outline-primary" onclick="selectCalculator('economy-ikkuna')" id="btn-economy-ikkuna">
                             Economy Ikkuna
                         </button>
+                        <button class="btn btn-outline-primary d-none" onclick="selectCalculator('verkko-ovi')" id="btn-verkko-ovi">
+                            Verkko-ovi
+                        </button>
+                        <button class="btn btn-outline-primary d-none" onclick="selectCalculator('verkko-seina')" id="btn-verkko-seina">
+                            Verkkoseinä
+                        </button>
                     </div>
                     <button class="btn btn-info" onclick="openSettings()">⚙️ Asetukset</button>
                     </div>
@@ -677,6 +683,16 @@
                             </div>
                         </div>
                         <div class="form-text">Kun päällä, Syötteet-kentät korvataan pystypanelilaskimella. Laskee alotus- ja lopetuspaneelin leveyden potkupellin leveyden ja panelin peittovälin perusteella.</div>
+                    </div>
+                    <hr>
+                    <div class="mb-1">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <label class="form-label mb-0" for="verkkoToggle">Verkkolaskin</label>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="verkkoToggle" onchange="toggleVerkko(this.checked)">
+                            </div>
+                        </div>
+                        <div class="form-text">Kun päällä, Janisol/Economy-valinnat korvataan Verkko-ovi- ja Verkkoseinä-laskureilla. Laskee kulmalistojen mitat ja reikävälit.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -2389,6 +2405,70 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Verkko-ovi -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+                        <span>🔲 VERKKO-OVI</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <p class="text-muted mb-3">Verkko-oven kulmalistalaskuri</p>
+
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+                                <span>📐 Kulmalista-kaavat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
+                            <div class="formula-row">
+                                <label>Pystysuora kulmalista:</label>
+                                <span>Ruudun korkeus +</span>
+                                <input type="number" id="verkko_ovi_kulmalista_pysty" class="formula-input" value="35">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Vaakasuora kulmalista:</label>
+                                <span>Leveys +</span>
+                                <input type="number" id="verkko_ovi_kulmalista_vaaka" class="formula-input" value="35">
+                                <span>mm</span>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Verkkoseinä -->
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+                        <span>🔲 VERKKOSEINÄ</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <p class="text-muted mb-3">Verkkoseinän kulmalistalaskuri</p>
+
+                        <div class="formula-sub-accordion">
+                            <div class="formula-sub-header" onclick="toggleFormulaSubAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+                                <span>📐 Kulmalista-kaavat</span>
+                                <span class="formula-sub-icon">▼</span>
+                            </div>
+                            <div class="formula-sub-content">
+                            <div class="formula-row">
+                                <label>Pystysuora kulmalista:</label>
+                                <span>Ruudun korkeus +</span>
+                                <input type="number" id="verkko_seina_kulmalista_pysty" class="formula-input" value="35">
+                                <span>mm</span>
+                            </div>
+                            <div class="formula-row">
+                                <label>Vaakasuora kulmalista:</label>
+                                <span>Leveys +</span>
+                                <input type="number" id="verkko_seina_kulmalista_vaaka" class="formula-input" value="35">
+                                <span>mm</span>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="admin-panel-footer">
@@ -2492,7 +2572,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260810R1"></script>
+    <script src="app.js?v=20260811R5"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>

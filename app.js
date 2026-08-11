@@ -421,6 +421,12 @@ function enterAuthenticatedApp() {
         const pystypaneliPanel = document.getElementById('pystypaneliPanel');
         if (pystypaneliPanel) pystypaneliPanel.style.display = 'none';
 
+        verkkoEnabled = false;
+        localStorage.setItem('verkkoEnabled', 'false');
+        const verkkoToggle = document.getElementById('verkkoToggle');
+        if (verkkoToggle) verkkoToggle.checked = false;
+        updateCalculatorButtonVisibility();
+
         console.log('🔵 Valitaan default-laskuri...');
         selectCalculator('janisol-pariovi');
     }
@@ -700,6 +706,7 @@ document.addEventListener('DOMContentLoaded', function() {
     bindSettingsLiveUpdateHandlers();
     initScanner();
     initPystypaneli();
+    initVerkko();
 });
 
 // Valid passwords
@@ -709,8 +716,12 @@ function isWindowCalculatorType(type = currentCalculator) {
     return Boolean(type && type.includes('ikkuna'));
 }
 
+function isVerkkoCalculatorType(type = currentCalculator) {
+    return Boolean(type && String(type).startsWith('verkko-'));
+}
+
 function isDoorCalculatorType(type = currentCalculator) {
-    return Boolean(type && !type.includes('ikkuna'));
+    return Boolean(type && !type.includes('ikkuna') && !String(type).startsWith('verkko-'));
 }
 
 function isUmpioviNoResultsMode() {
@@ -725,6 +736,19 @@ const SCANNER_HIDDEN_SETTINGS = [
     'umpioviSetting', 'umpivasikkaSetting', 'kickPlateSetting', 'sealThresholdSetting'
 ];
 
+const VERKKO_HIDDEN_SETTINGS = [
+    'gapOptionSetting', 'calculatorTogglesRow',
+    'umpioviSetting', 'umpivasikkaSetting', 'kickPlateSetting', 'sealThresholdSetting'
+];
+
+const STANDARD_CALC_BUTTON_IDS = [
+    'btn-janisol-pariovi', 'btn-janisol-kayntiovi',
+    'btn-economy-kayntiovi', 'btn-economy-pariovi',
+    'btn-janisol-ikkuna', 'btn-economy-ikkuna'
+];
+
+const VERKKO_CALC_BUTTON_IDS = ['btn-verkko-ovi', 'btn-verkko-seina'];
+
 function hideScannerSettings() {
     SCANNER_HIDDEN_SETTINGS.forEach(id => {
         const el = document.getElementById(id);
@@ -732,9 +756,42 @@ function hideScannerSettings() {
     });
 }
 
+function hideVerkkoSettings() {
+    VERKKO_HIDDEN_SETTINGS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+}
+
+function updateCalculatorButtonVisibility() {
+    STANDARD_CALC_BUTTON_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('d-none', !!verkkoEnabled);
+    });
+    VERKKO_CALC_BUTTON_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('d-none', !verkkoEnabled);
+    });
+}
+
 function updateCalculatorInputVisibility() {
     if (scannerEnabled || pystypaneliEnabled) {
         hideScannerSettings();
+        return;
+    }
+    if (verkkoEnabled || isVerkkoCalculatorType()) {
+        hideVerkkoSettings();
+        const mainWidthContainer = document.getElementById('mainDoorWidthContainer');
+        const sideDoorContainer = document.getElementById('sideDoorWidthContainer');
+        const kickPlateContainer = document.getElementById('kickPlateHeightContainer');
+        const paneInputsContainer = document.getElementById('paneHeightInputs');
+        const paneCountSetting = document.getElementById('paneCountSetting');
+        const isVerkkoSeinaMulti = currentCalculator === 'verkko-seina' && settings.paneCount > 1;
+        if (mainWidthContainer) mainWidthContainer.style.display = isVerkkoSeinaMulti ? 'none' : '';
+        if (sideDoorContainer) sideDoorContainer.style.display = 'none';
+        if (kickPlateContainer) kickPlateContainer.style.display = 'none';
+        if (paneInputsContainer) paneInputsContainer.style.display = '';
+        if (paneCountSetting) paneCountSetting.style.display = '';
         return;
     }
     const isWindowCalculator = isWindowCalculatorType();
@@ -1045,16 +1102,22 @@ function selectCalculator(type) {
     buttons.forEach(btn => {
         btn.classList.remove('active');
     });
-    document.getElementById(`btn-${type}`).classList.add('active');
+    const activeBtn = document.getElementById(`btn-${type}`);
+    if (activeBtn) activeBtn.classList.add('active');
     
     const isWindowCalculator = type.includes('ikkuna');
+    const isVerkkoCalculator = type.startsWith('verkko-');
     const cached = calculatorInputCache[type];
     
     const mainDoorInput = document.getElementById('mainDoorWidth');
     const mainDoorLabel = document.getElementById('mainDoorWidthLabel');
     
     if (mainDoorInput && mainDoorLabel) {
-        if (isWindowCalculator) {
+        if (isVerkkoCalculator) {
+            mainDoorLabel.textContent = 'Leveys (mm)';
+            mainDoorInput.min = type === 'verkko-seina' ? '100' : '500';
+            mainDoorInput.value = cached ? cached.mainDoorWidth : '765';
+        } else if (isWindowCalculator) {
             mainDoorLabel.textContent = 'Ruudun leveys (mm)';
             mainDoorInput.min = '100';
             mainDoorInput.value = cached ? cached.mainDoorWidth : '800';
@@ -1164,9 +1227,13 @@ function openSettings() {
     if (pystypaneliToggle) {
         pystypaneliToggle.checked = pystypaneliEnabled === true;
     }
+    const verkkoToggle = document.getElementById('verkkoToggle');
+    if (verkkoToggle) {
+        verkkoToggle.checked = verkkoEnabled === true;
+    }
     
-    // Hide door-specific settings for window calculators (skip when scanner/pystypaneli is active)
-    if (!scannerEnabled && !pystypaneliEnabled) {
+    // Hide door-specific settings for window calculators (skip when scanner/pystypaneli/verkko is active)
+    if (!scannerEnabled && !pystypaneliEnabled && !verkkoEnabled) {
         const gapOptionSetting = document.getElementById('gapOptionSetting');
         const umpioviSetting = document.getElementById('umpioviSetting');
         const kickPlateSetting = document.getElementById('kickPlateSetting');
@@ -1184,6 +1251,8 @@ function openSettings() {
         if (sealThresholdSetting) {
             sealThresholdSetting.style.display = isWindowCalculator ? 'none' : '';
         }
+    } else if (verkkoEnabled) {
+        hideVerkkoSettings();
     } else {
         hideScannerSettings();
     }
@@ -1300,6 +1369,7 @@ function fillFieldsBelow(currentIndex, fieldType) {
 function updatePaneInputs() {
     const container = document.getElementById('paneHeightInputs');
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isVerkkoSeinaMulti = currentCalculator === 'verkko-seina' && settings.paneCount > 1;
     const isUmpioviMode = isDoorCalculatorType() && settings.umpioviEnabled === true;
 
     if (isUmpioviMode) {
@@ -1308,8 +1378,8 @@ function updatePaneInputs() {
         return;
     }
     
-    // For window calculators with multiple panes, show width + height for each
-    if (isWindowCalculator && settings.paneCount > 1) {
+    // For window / verkkoseinä calculators with multiple panes, show width + height for each
+    if ((isWindowCalculator || isVerkkoSeinaMulti) && settings.paneCount > 1) {
     container.innerHTML = '';
         container.className = 'col-12';
         
@@ -1479,11 +1549,13 @@ function calculate() {
     
     const paneHeights = [];
     const paneWidths = [];
+    const isVerkkoSeina = currentCalculator === 'verkko-seina';
+    const isVerkkoSeinaMulti = isVerkkoSeina && settings.paneCount > 1;
     
     // Umpiovi mode does not use pane inputs.
     if (!isUmpioviMode) {
-        // For window calculators with multiple panes, collect widths and heights
-        if (isWindowCalculator && settings.paneCount > 1) {
+        // For window / verkkoseinä calculators with multiple panes, collect widths and heights
+        if ((isWindowCalculator || isVerkkoSeinaMulti) && settings.paneCount > 1) {
             for (let i = 1; i <= settings.paneCount; i++) {
                 const widthEl = document.getElementById(`paneWidth${i}`);
                 const heightEl = document.getElementById(`paneHeight${i}`);
@@ -1493,31 +1565,37 @@ function calculate() {
                 paneHeights.push(height);
             }
         } else {
-            // For doors or single pane windows, collect heights only
+            // For doors or single pane windows/verkkoseinä, collect heights only
             for (let i = 1; i <= settings.paneCount; i++) {
                 const heightEl = document.getElementById(`paneHeight${i}`);
                 const height = parseInt(heightEl?.value) || 0;
                 paneHeights.push(height);
             }
-            // For single pane windows, use mainDoorWidth as the only width
-            if (isWindowCalculator) {
+            // For single pane windows / verkkoseinä, use mainDoorWidth as the only width
+            if (isWindowCalculator || isVerkkoSeina) {
                 paneWidths.push(mainDoorWidth);
             }
         }
     }
     
     // Validate inputs
-    if (!isWindowCalculator && mainDoorWidth < 500) {
+    const isVerkkoCalculator = isVerkkoCalculatorType();
+    if (!isWindowCalculator && !isVerkkoSeina && mainDoorWidth < 500) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
         return;
     }
     
-    if (isWindowCalculator && settings.paneCount === 1 && mainDoorWidth < 100) {
+    if ((isWindowCalculator || isVerkkoSeina) && settings.paneCount === 1 && mainDoorWidth < 100) {
+        document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
+        return;
+    }
+
+    if (isVerkkoSeinaMulti && paneWidths.some(w => w < 100)) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
         return;
     }
     
-    if (settings.kickPlateEnabled && kickPlateHeight < 100) {
+    if (!isVerkkoCalculator && settings.kickPlateEnabled && kickPlateHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
             return;
     }
@@ -1525,7 +1603,14 @@ function calculate() {
     let results = {};
     
     // Calculate based on calculator type
-    if (currentCalculator === 'janisol-pariovi') {
+    if (isVerkkoCalculator) {
+        results = calculateVerkko(
+            mainDoorWidth,
+            paneHeights,
+            isVerkkoSeina ? paneWidths : null,
+            currentCalculator
+        );
+    } else if (currentCalculator === 'janisol-pariovi') {
         results = isUmpioviMode
             ? calculateUmpioviResults(mainDoorWidth, sideDoorWidth, kickPlateHeight, 'janisol-pariovi')
             : calculateJanisolPariovi(mainDoorWidth, sideDoorWidth, kickPlateHeight, paneHeights);
@@ -2186,6 +2271,150 @@ function isLasilistaSectionTitle(title) {
     return String(title || '').trim().toLowerCase().startsWith('lasilista');
 }
 
+function isKulmalistatSectionTitle(title) {
+    return String(title || '').trim().toLowerCase().startsWith('kulmalista');
+}
+
+const KULMALISTA_OFFSET_MM = 35;
+const KULMALISTA_END_CLEARANCE_MM = 100;
+const KULMALISTA_SPACING_MIN = 200;
+const KULMALISTA_SPACING_MAX = 300;
+
+function formatKulmalistaNumber(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '';
+    if (Math.abs(n - Math.round(n)) < 1e-9) return String(Math.round(n));
+    return n.toFixed(1).replace('.', ',');
+}
+
+function calcKulmalistaHolePattern(lengthMm) {
+    const L = Number(lengthMm);
+    if (!Number.isFinite(L)) return null;
+    const usable = L - KULMALISTA_END_CLEARANCE_MM;
+    if (usable < KULMALISTA_SPACING_MIN) return null;
+
+    let best = null;
+    const maxN = Math.floor(usable / KULMALISTA_SPACING_MIN);
+    for (let n = 1; n <= maxN; n++) {
+        const spacing = usable / n;
+        if (spacing >= KULMALISTA_SPACING_MIN && spacing <= KULMALISTA_SPACING_MAX) {
+            if (!best || spacing > best.spacing) {
+                best = { n, spacing, holes: n + 1 };
+            }
+        }
+    }
+    return best;
+}
+
+function formatKulmalistaItem(lengthMm, count = 1) {
+    const length = Number(lengthMm);
+    const pattern = calcKulmalistaHolePattern(length);
+    let label = formatKulmalistaNumber(length);
+    if (count > 1) label += ` x ${count}`;
+    if (pattern) {
+        label += ` · väli ${formatKulmalistaNumber(pattern.spacing)} · ${pattern.holes} reikää`;
+    }
+    return label;
+}
+
+function combineKulmalistat(items) {
+    const counts = new Map();
+    const order = [];
+    (items || []).forEach(item => {
+        const length = typeof item === 'object' && item !== null
+            ? Number(item.length)
+            : Number(item);
+        if (!Number.isFinite(length)) return;
+        const key = String(length);
+        if (counts.has(key)) {
+            counts.set(key, counts.get(key) + 1);
+        } else {
+            counts.set(key, 1);
+            order.push(key);
+        }
+    });
+    return order
+        .sort((a, b) => Number(b) - Number(a))
+        .map(key => formatKulmalistaItem(Number(key), counts.get(key)));
+}
+
+function parseKulmalistaRow(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+
+    // New: "835 x 14 · väli …" / "835 · väli …" ; also tolerates optional "mm"
+    // Old: "835 mm · väli … × 14"
+    const headMatch = raw.match(/^(-?\d+(?:[.,]\d+)?)\s*(?:mm)?(?:\s*[×xX]\s*(\d+))?/i);
+    if (!headMatch) return null;
+    const length = Number(headMatch[1].replace(',', '.'));
+    let count = headMatch[2] ? Number(headMatch[2]) : 1;
+    if (!headMatch[2]) {
+        const trailing = raw.match(/[×xX]\s*(\d+)\s*$/);
+        if (trailing) count = Number(trailing[1]);
+    }
+    if (!Number.isFinite(length) || !Number.isFinite(count)) return null;
+    return { length, count };
+}
+
+function mergeKulmalistaItems(existingItems, incomingItems) {
+    const countMap = new Map();
+    const order = [];
+    const nonParseable = [];
+
+    function addItems(items) {
+        (items || []).forEach(item => {
+            const parsed = parseKulmalistaRow(item.label);
+            if (parsed) {
+                const key = String(parsed.length);
+                if (countMap.has(key)) {
+                    countMap.set(key, countMap.get(key) + parsed.count);
+                } else {
+                    countMap.set(key, parsed.count);
+                    order.push(key);
+                }
+            } else {
+                nonParseable.push({ label: item.label, value: item.value || '' });
+            }
+        });
+    }
+
+    addItems(existingItems);
+    addItems(incomingItems);
+
+    const result = order.map(key => ({
+        label: formatKulmalistaItem(Number(key), countMap.get(key)),
+        value: ''
+    }));
+    return result.concat(nonParseable);
+}
+
+function calculateVerkko(mainWidth, paneHeights, paneWidths = null, calcType = currentCalculator) {
+    const results = { kulmalistat: [] };
+    const formulaKey = String(calcType || '').startsWith('verkko-seina') || calcType === 'verkko_seina'
+        ? 'verkko_seina'
+        : 'verkko_ovi';
+    const formulas = getActiveFormulas();
+    const vf = formulas[formulaKey] || {};
+    const offsetPysty = Number.isFinite(vf.kulmalista_pysty) ? vf.kulmalista_pysty : KULMALISTA_OFFSET_MM;
+    const offsetVaaka = Number.isFinite(vf.kulmalista_vaaka) ? vf.kulmalista_vaaka : KULMALISTA_OFFSET_MM;
+
+    const fallbackWidth = Number(mainWidth) || 0;
+    const widths = Array.isArray(paneWidths) && paneWidths.length > 0 ? paneWidths : null;
+    (paneHeights || []).forEach((height, index) => {
+        const h = Number(height) || 0;
+        const width = widths
+            ? (Number(widths[index]) || Number(widths[0]) || 0)
+            : fallbackWidth;
+        const verticalLength = h + offsetPysty;
+        const horizontalLength = width + offsetVaaka;
+        results.kulmalistat.push({ length: verticalLength });
+        results.kulmalistat.push({ length: verticalLength });
+        results.kulmalistat.push({ length: horizontalLength });
+        results.kulmalistat.push({ length: horizontalLength });
+    });
+    return results;
+}
+
 function getLasilistaSectionTitle(sectionTitle, itemData) {
     const originalTitle = String(sectionTitle || '').trim();
     if (!isLasilistaSectionTitle(originalTitle)) {
@@ -2251,8 +2480,31 @@ function sortByFinnishNumberString(a, b) {
 function displayResults(results) {
     const resultsDiv = document.getElementById('results');
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isVerkkoCalculator = isVerkkoCalculatorType();
     const isUmpioviMode = isDoorCalculatorType() && settings.umpioviEnabled === true;
     let html = '<div class="row">';
+
+    if (isVerkkoCalculator) {
+        html += '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Kulmalistat</h5>';
+        const combinedKulmalistat = combineKulmalistat(results.kulmalistat || []);
+        combinedKulmalistat.forEach(item => {
+            html += `<div class="result-item">${item}</div>`;
+        });
+        const hasMissingHoles = (results.kulmalistat || []).some(item => {
+            const length = typeof item === 'object' ? item.length : item;
+            return !calcKulmalistaHolePattern(length);
+        });
+        if (hasMissingHoles) {
+            html += '<div class="text-muted small mt-2">Joillekin pituuksille ei löytynyt reikäväliä välillä 200–300 mm.</div>';
+        }
+        html += '</div></div></div>';
+        resultsDiv.innerHTML = html;
+        if (!mergeMode) {
+            const btnYhdista = document.getElementById('btnYhdistaMerge');
+            if (btnYhdista) btnYhdista.style.display = '';
+        }
+        return;
+    }
     
     if (!isUmpioviMode) {
         // Lasilista
@@ -2333,11 +2585,12 @@ function captureCurrentInputsForMerge() {
         paneWidths: []
     };
     const isWindowCalc = (currentCalculator || '').includes('ikkuna');
+    const isVerkkoSeina = currentCalculator === 'verkko-seina';
     for (let i = 1; i <= settings.paneCount; i++) {
         inputs.paneHeights.push(document.getElementById(`paneHeight${i}`)?.value || '');
         const widthEl = document.getElementById(`paneWidth${i}`);
         const widthVal = widthEl?.value
-            || (isWindowCalc && !widthEl ? (document.getElementById('mainDoorWidth')?.value || '') : '')
+            || ((isWindowCalc || isVerkkoSeina) && !widthEl ? (document.getElementById('mainDoorWidth')?.value || '') : '')
             || '';
         inputs.paneWidths.push(widthVal);
     }
@@ -2438,7 +2691,9 @@ function buildMergeFirstSummary(frozenResult) {
         'economy-kayntiovi': 'Economy käyntiovi',
         'economy-pariovi': 'Economy pariovi',
         'janisol-ikkuna': 'Janisol ikkuna',
-        'economy-ikkuna': 'Economy ikkuna'
+        'economy-ikkuna': 'Economy ikkuna',
+        'verkko-ovi': 'Verkko-ovi',
+        'verkko-seina': 'Verkkoseinä'
     };
     const calcLabel = labels[calc] || calc;
     const inp = frozenResult.inputs || {};
@@ -2507,10 +2762,13 @@ function copyResults(event) {
         'janisol-ikkuna': 'Janisol Ikkuna',
         'economy-pariovi': 'Economy Pariovi',
         'economy-kayntiovi': 'Economy Käyntiovi',
-        'economy-ikkuna': 'Economy Ikkuna'
+        'economy-ikkuna': 'Economy Ikkuna',
+        'verkko-ovi': 'Verkko-ovi',
+        'verkko-seina': 'Verkkoseinä'
     };
     
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isVerkkoCalculator = isVerkkoCalculatorType();
     
     let text = 'Harrin Teräsovi Mittalaskuri\n';
     text += titles[currentCalculator] + '\n';
@@ -2519,7 +2777,21 @@ function copyResults(event) {
     // Add inputs
     text += 'Syötteet:\n';
     
-    if (isWindowCalculator) {
+    if (isVerkkoCalculator) {
+        const isVerkkoSeinaMulti = currentCalculator === 'verkko-seina' && settings.paneCount > 1;
+        if (!isVerkkoSeinaMulti) {
+            text += `Leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
+        }
+        for (let i = 1; i <= settings.paneCount; i++) {
+            const widthEl = document.getElementById(`paneWidth${i}`);
+            const heightEl = document.getElementById(`paneHeight${i}`);
+            if (isVerkkoSeinaMulti && widthEl && heightEl) {
+                text += `Ruutu ${i}: ${widthEl.value} × ${heightEl.value} mm (L × K)\n`;
+            } else if (heightEl) {
+                text += `Ruutu ${i} korkeus: ${heightEl.value} mm\n`;
+            }
+        }
+    } else if (isWindowCalculator) {
         text += `Ruudun leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
     } else {
         text += `Käyntioven leveys: ${document.getElementById('mainDoorWidth').value} mm\n`;
@@ -2531,14 +2803,16 @@ function copyResults(event) {
         text += `Potkupellin korkeus: ${document.getElementById('kickPlateHeight').value} mm\n`;
     }
     
+    if (!isVerkkoCalculator) {
     for (let i = 1; i <= settings.paneCount; i++) {
         const el = document.getElementById(`paneHeight${i}`);
         if (el) {
             text += `Ruutu ${i} korkeus: ${el.value} mm\n`;
         }
     }
+    }
     
-    if (!isWindowCalculator) {
+    if (!isWindowCalculator && !isVerkkoCalculator) {
         const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
         text += `Rako: ${rakoText}\n`;
     }
@@ -3014,6 +3288,14 @@ function getDefaultFormulas() {
             potku_ulko_leveys: 160,
             potku_yhdistetty_sisa_leveys: 150,
             potku_yhdistetty_ulko_leveys: 120
+        },
+        verkko_ovi: {
+            kulmalista_pysty: 35,
+            kulmalista_vaaka: 35
+        },
+        verkko_seina: {
+            kulmalista_pysty: 35,
+            kulmalista_vaaka: 35
         }
     };
 }
@@ -3082,6 +3364,22 @@ function loadFormulasToPanel() {
         Object.keys(formulas.economy_ikkuna).forEach(key => {
             const input = document.getElementById(`economy_ikkuna_${key}`);
             if (input) input.value = formulas.economy_ikkuna[key];
+        });
+    }
+
+    // Verkko-ovi
+    if (formulas.verkko_ovi) {
+        Object.keys(formulas.verkko_ovi).forEach(key => {
+            const input = document.getElementById(`verkko_ovi_${key}`);
+            if (input) input.value = formulas.verkko_ovi[key];
+        });
+    }
+
+    // Verkkoseinä
+    if (formulas.verkko_seina) {
+        Object.keys(formulas.verkko_seina).forEach(key => {
+            const input = document.getElementById(`verkko_seina_${key}`);
+            if (input) input.value = formulas.verkko_seina[key];
         });
     }
     
@@ -3583,6 +3881,14 @@ function collectFormulasFromPanel() {
             potku_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_ulko_leveys').value),
             potku_yhdistetty_sisa_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_yhdistetty_sisa_leveys').value),
             potku_yhdistetty_ulko_leveys: parseFloat(document.getElementById('economy_ikkuna_potku_yhdistetty_ulko_leveys').value)
+        },
+        verkko_ovi: {
+            kulmalista_pysty: parseFloat(document.getElementById('verkko_ovi_kulmalista_pysty').value),
+            kulmalista_vaaka: parseFloat(document.getElementById('verkko_ovi_kulmalista_vaaka').value)
+        },
+        verkko_seina: {
+            kulmalista_pysty: parseFloat(document.getElementById('verkko_seina_kulmalista_pysty').value),
+            kulmalista_vaaka: parseFloat(document.getElementById('verkko_seina_kulmalista_vaaka').value)
         }
     };
 }
@@ -3675,16 +3981,19 @@ function confirmExportToPDF() {
         'janisol-ikkuna': 'Janisol Ikkuna',
         'economy-pariovi': 'Economy Pariovi',
         'economy-kayntiovi': 'Economy Käyntiovi',
-        'economy-ikkuna': 'Economy Ikkuna'
+        'economy-ikkuna': 'Economy Ikkuna',
+        'verkko-ovi': 'Verkko-ovi',
+        'verkko-seina': 'Verkkoseinä'
     };
     
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
+    const isVerkkoCalculator = isVerkkoCalculatorType();
     
     doc.setFontSize(18);
     doc.text('Harrin Teräsovi Mittalaskuri', 105, 20, { align: 'center' });
     
     doc.setFontSize(14);
-    doc.text(titles[currentCalculator], 105, 30, { align: 'center' });
+    doc.text(titles[currentCalculator] || currentCalculator || '', 105, 30, { align: 'center' });
     
     // Add user-provided name
     doc.setFontSize(12);
@@ -3699,7 +4008,24 @@ function confirmExportToPDF() {
     
     doc.setFontSize(10);
     
-    if (isWindowCalculator) {
+    if (isVerkkoCalculator) {
+        const isVerkkoSeinaMulti = currentCalculator === 'verkko-seina' && settings.paneCount > 1;
+        if (!isVerkkoSeinaMulti) {
+            doc.text(`Leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
+            yPos += 7;
+        }
+        for (let i = 1; i <= settings.paneCount; i++) {
+            const widthEl = document.getElementById(`paneWidth${i}`);
+            const heightEl = document.getElementById(`paneHeight${i}`);
+            if (isVerkkoSeinaMulti && widthEl && heightEl) {
+                doc.text(`Ruutu ${i}: ${widthEl.value} × ${heightEl.value} mm (L × K)`, 25, yPos);
+                yPos += 7;
+            } else if (heightEl) {
+                doc.text(`Ruutu ${i} korkeus: ${heightEl.value} mm`, 25, yPos);
+                yPos += 7;
+            }
+        }
+    } else if (isWindowCalculator) {
         doc.text(`Ruudun leveys: ${document.getElementById('mainDoorWidth').value} mm`, 25, yPos);
         yPos += 7;
     } else {
@@ -3715,6 +4041,7 @@ function confirmExportToPDF() {
         yPos += 7;
     }
     
+    if (!isVerkkoCalculator) {
     for (let i = 1; i <= settings.paneCount; i++) {
         const el = document.getElementById(`paneHeight${i}`);
         if (el) {
@@ -3722,8 +4049,9 @@ function confirmExportToPDF() {
             yPos += 7;
         }
     }
+    }
     
-    if (!isWindowCalculator) {
+    if (!isWindowCalculator && !isVerkkoCalculator) {
         const rakoText = settings.gapOption === 'saneeraus' ? 'Saneerauskynnys' : `${settings.gapOption} mm rako`;
         doc.text(`Rako: ${rakoText}`, 25, yPos);
         yPos += 7;
@@ -3865,10 +4193,11 @@ function prefillTransferFields() {
 
     const jobNumber = jobInput.value.trim();
     const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
+    const forceNoLasilista = isUmpiovi || isVerkkoCalculatorType();
 
     if (!jobNumber) {
         [itemNameInput, sizeSelect, colorInput].forEach((field) => {
-            if (field === sizeSelect && isUmpiovi) {
+            if (field === sizeSelect && forceNoLasilista) {
                 field.value = 'ei-lasilistaa';
                 field.dataset.autofilled = '1';
                 return;
@@ -3882,7 +4211,7 @@ function prefillTransferFields() {
     }
 
     const defaults = getJobLatestTransferDefaults(jobNumber);
-    const sizeSuggestion = isUmpiovi ? 'ei-lasilistaa' : defaults.lasilistaSize;
+    const sizeSuggestion = forceNoLasilista ? 'ei-lasilistaa' : defaults.lasilistaSize;
 
     applyTransferFieldAutofill(itemNameInput, defaults.itemName);
     applyTransferFieldAutofill(sizeSelect, sizeSuggestion);
@@ -3940,7 +4269,8 @@ function transferResults() {
     const sizeSelect = document.getElementById('transferLasilistaSize');
     if (sizeSelect) {
         const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
-        if (isUmpiovi) {
+        const isVerkkoCalculator = isVerkkoCalculatorType();
+        if (isUmpiovi || isVerkkoCalculator) {
             sizeSelect.value = 'ei-lasilistaa';
             sizeSelect.dataset.autofilled = '1';
         } else {
@@ -4059,6 +4389,7 @@ function mergeResults(existing, incoming) {
 
     (incoming.data || []).forEach(incomingSection => {
         const isLasilista = isLasilistaSectionTitle(incomingSection.title);
+        const isKulmalistat = isKulmalistatSectionTitle(incomingSection.title);
 
         if (isLasilista) {
             let matchingSection = null;
@@ -4099,6 +4430,13 @@ function mergeResults(existing, incoming) {
                 merged.lasilistaSize = uniqueSizes.size === 1
                     ? [...uniqueSizes][0]
                     : '';
+            }
+        } else if (isKulmalistat) {
+            const existingSection = merged.data.find(s => isKulmalistatSectionTitle(s.title));
+            if (existingSection) {
+                existingSection.items = mergeKulmalistaItems(existingSection.items, incomingSection.items);
+            } else {
+                merged.data.push(JSON.parse(JSON.stringify(incomingSection)));
             }
         } else {
             const existingSection = merged.data.find(s => s.title === incomingSection.title);
@@ -6063,15 +6401,48 @@ function getCalculatorLabel(type) {
         'economy-kayntiovi': 'Economy Käyntiovi',
         'economy-pariovi': 'Economy Pariovi',
         'janisol-ikkuna': 'Janisol Ikkuna',
-        'economy-ikkuna': 'Economy Ikkuna'
+        'economy-ikkuna': 'Economy Ikkuna',
+        'verkko-ovi': 'Verkko-ovi',
+        'verkko-seina': 'Verkkoseinä'
     };
     return labels[type] || type || '—';
 }
 
 function buildInputsRows(inputs, isWindow, isPariovi) {
     if (!inputs) return [];
+    const isVerkko = isVerkkoCalculatorType(inputs.calculator);
     const rows = [];
-    rows.push({ label: 'Kaavasetti', value: inputs.formulaSet === 'default' ? 'Default Kaavat' : (inputs.formulaSet || 'default') });
+    if (!isVerkko) {
+        rows.push({ label: 'Kaavasetti', value: inputs.formulaSet === 'default' ? 'Default Kaavat' : (inputs.formulaSet || 'default') });
+    }
+    if (isVerkko) {
+        const isVerkkoSeina = inputs.calculator === 'verkko-seina';
+        const paneHeights = inputs.paneHeights || [];
+        const paneWidths = inputs.paneWidths || [];
+        const paneCount = Math.max(
+            Number(inputs.paneCount) || 0,
+            paneHeights.length,
+            isVerkkoSeina ? paneWidths.length : 0
+        ) || 1;
+        rows.push({ label: 'Ruutujen määrä', value: String(inputs.paneCount ?? paneCount) });
+        if (isVerkkoSeina && paneCount > 1) {
+            for (let i = 0; i < paneCount; i++) {
+                const w = paneWidths[i] || '—';
+                const h = paneHeights[i] || '—';
+                rows.push({
+                    label: `Ruutu ${i + 1}`,
+                    value: `${w} × ${h} mm (L × K)`
+                });
+            }
+        } else {
+            rows.push({ label: 'Leveys (mm)', value: inputs.mainDoorWidth || paneWidths[0] || '—' });
+            paneHeights.forEach((h, i) => {
+                const lbl = paneHeights.length > 1 ? `Ruutu ${i + 1} korkeus (mm)` : 'Ruudun korkeus (mm)';
+                rows.push({ label: lbl, value: h || '—' });
+            });
+        }
+        return rows;
+    }
     if (!isWindow) {
         const gapText = inputs.gapOption === 'saneeraus'
             ? 'Saneerauskynnys'
@@ -6137,6 +6508,13 @@ function renderInputsRows(rows) {
 
 function formatResultToData(result, calc, settingsSnap) {
     const data = [];
+    if (isVerkkoCalculatorType(calc)) {
+        const combined = combineKulmalistat(result.kulmalistat || []);
+        if (combined.length > 0) {
+            data.push({ title: 'Kulmalistat', items: combined.map(v => ({ label: v, value: '' })) });
+        }
+        return data;
+    }
     const isWindow = calc.includes('ikkuna');
     const isUmpiovi = !isWindow && settingsSnap.umpioviEnabled;
     if (!isUmpiovi) {
@@ -6180,6 +6558,8 @@ function recalculateFromInputs(inputs) {
         else if (c === 'janisol-pariovi')   result = umpi ? calculateUmpioviResults(w, s, k, c) : calculateJanisolPariovi(w, s, k, ph);
         else if (c === 'economy-ikkuna')    result = calculateEconomyIkkuna(pw.length ? pw : [w], ph, k);
         else if (c === 'janisol-ikkuna')    result = calculateJanisolIkkuna(pw.length ? pw : [w], ph, k);
+        else if (c === 'verkko-ovi') result = calculateVerkko(w, ph, null, c);
+        else if (c === 'verkko-seina') result = calculateVerkko(w, ph, pw.length ? pw : [w], c);
         else result = { lasilista: [], uretaani: [], potkupelti: [], harjalista: [] };
         return formatResultToData(result, c, { ...settings });
     } finally {
@@ -6197,9 +6577,16 @@ function mergeDataArrays(dataArrays) {
     for (let i = 1; i < dataArrays.length; i++) {
         (dataArrays[i] || []).forEach(section => {
             const isLasil = isLasilistaSectionTitle(section.title);
-            const existing = merged.find(s => isLasil ? isLasilistaSectionTitle(s.title) : s.title === section.title);
+            const isKulma = isKulmalistatSectionTitle(section.title);
+            const existing = merged.find(s =>
+                isLasil ? isLasilistaSectionTitle(s.title)
+                    : isKulma ? isKulmalistatSectionTitle(s.title)
+                    : s.title === section.title
+            );
             if (existing && isLasil)
                 existing.items = mergeMeasurementItems(existing.items, section.items);
+            else if (existing && isKulma)
+                existing.items = mergeKulmalistaItems(existing.items, section.items);
             else if (existing)
                 existing.items = existing.items.concat(JSON.parse(JSON.stringify(section.items)));
             else
@@ -6213,6 +6600,7 @@ function buildInputsEditForm(inputs, isWindow, isPariovi, entryIdx, jobNumber, i
     if (!inputs) return '<p class="text-muted small">Syötteitä ei saatavilla muokkaukseen.</p>';
     const safeJob = sanitizeForAttribute(jobNumber);
     const safeItem = sanitizeForAttribute(itemName);
+    const isVerkko = isVerkkoCalculatorType(inputs.calculator);
 
     function editRow(label, controlHtml) {
         return `<div class="mitat-inputs-row mitat-inputs-edit-row">
@@ -6221,56 +6609,89 @@ function buildInputsEditForm(inputs, isWindow, isPariovi, entryIdx, jobNumber, i
         </div>`;
     }
 
-    const formulaSets = JSON.parse(localStorage.getItem('formulaSets') || '{}');
-    let formulaOptions = `<option value="default"${!inputs.formulaSet || inputs.formulaSet === 'default' ? ' selected' : ''}>Default Kaavat</option>`;
-    Object.keys(formulaSets).forEach(key => {
-        formulaOptions += `<option value="${key}"${inputs.formulaSet === key ? ' selected' : ''}>${key}</option>`;
-    });
-
     let html = `<div class="mitat-inputs-edit-form" data-entry-idx="${entryIdx}">`;
-    html += editRow('Kaavasetti', `<select name="formulaSet" class="form-select form-select-sm" style="width:auto">${formulaOptions}</select>`);
 
-    if (!isWindow) {
-        const gapVal = String(inputs.gapOption);
-        const gapOpts = [
-            ['8', '8 mm rako'], ['10', '10 mm rako'], ['15', '15 mm rako'], ['saneeraus', 'Saneerauskynnys']
-        ].map(([v, l]) => `<option value="${v}"${gapVal === v ? ' selected' : ''}>${l}</option>`).join('');
-        html += editRow('Rako-asetus', `<select name="gapOption" class="form-select form-select-sm" style="width:auto">${gapOpts}</select>`);
-    }
-
-    html += editRow('Potkupelti', `<input type="checkbox" name="kickPlateEnabled" class="form-check-input"${inputs.kickPlateEnabled ? ' checked' : ''}>`);
-    html += editRow('Potkupellin korkeus (mm)', `<input type="number" name="kickPlateHeight" class="form-control form-control-sm" value="${inputs.kickPlateHeight || ''}" min="100" style="width:90px">`);
-
-    if (!isWindow) {
-        html += editRow('Tiivistekynnys', `<input type="checkbox" name="sealThresholdEnabled" class="form-check-input"${inputs.sealThresholdEnabled ? ' checked' : ''}>`);
-        html += editRow('Umpiovi', `<input type="checkbox" name="umpioviEnabled" class="form-check-input"${inputs.umpioviEnabled ? ' checked' : ''}>`);
-        if (isPariovi) {
-            html += editRow('Umpivasikka', `<input type="checkbox" name="umpivasikkaEnabled" class="form-check-input"${inputs.umpivasikkaEnabled ? ' checked' : ''}>`);
-        }
-        const widthLabel = isPariovi ? 'Käyntioven leveys (mm)' : 'Oven leveys (mm)';
-        html += editRow(widthLabel, `<input type="number" name="mainDoorWidth" class="form-control form-control-sm" value="${inputs.mainDoorWidth || ''}" min="500" style="width:90px">`);
-        if (isPariovi) {
-            html += editRow('Lisäoven leveys (mm)', `<input type="number" name="sideDoorWidth" class="form-control form-control-sm" value="${inputs.sideDoorWidth || ''}" min="100" style="width:90px">`);
-        }
+    if (isVerkko) {
+        const isVerkkoSeina = inputs.calculator === 'verkko-seina';
         const paneHeights = inputs.paneHeights || [];
-        paneHeights.forEach((h, i) => {
-            const lbl = paneHeights.length > 1 ? `Ruutu ${i + 1} korkeus (mm)` : 'Ruudun korkeus (mm)';
-            html += editRow(lbl, `<input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h || ''}" min="100" style="width:90px">`);
-        });
+        const paneWidths = inputs.paneWidths || [];
+        const paneCount = Math.max(
+            Number(inputs.paneCount) || 0,
+            paneHeights.length,
+            isVerkkoSeina ? paneWidths.length : 0
+        ) || 1;
+        html += editRow('Ruutujen määrä', `<span class="mitat-inputs-value">${inputs.paneCount || paneCount}</span>`);
+        if (isVerkkoSeina && paneCount > 1) {
+            for (let i = 0; i < paneCount; i++) {
+                const w = paneWidths[i] || '';
+                const h = paneHeights[i] || '';
+                html += editRow(`Ruutu ${i + 1} (L × K, mm)`,
+                    `<span class="d-flex align-items-center gap-1">
+                        <input type="number" name="paneWidth_${i}" class="form-control form-control-sm" value="${w}" min="100" style="width:78px">
+                        <span class="text-muted">×</span>
+                        <input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h}" min="100" style="width:78px">
+                    </span>`
+                );
+            }
+        } else {
+            const widthMin = isVerkkoSeina ? '100' : '500';
+            html += editRow('Leveys (mm)', `<input type="number" name="mainDoorWidth" class="form-control form-control-sm" value="${inputs.mainDoorWidth || paneWidths[0] || ''}" min="${widthMin}" style="width:90px">`);
+            paneHeights.forEach((h, i) => {
+                const lbl = paneHeights.length > 1 ? `Ruutu ${i + 1} korkeus (mm)` : 'Ruudun korkeus (mm)';
+                html += editRow(lbl, `<input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h || ''}" min="100" style="width:90px">`);
+            });
+        }
     } else {
-        const paneCount = inputs.paneCount || 1;
-        html += editRow('Ruutujen määrä', `<span class="mitat-inputs-value">${paneCount}</span>`);
-        for (let i = 0; i < paneCount; i++) {
-            const w = (inputs.paneWidths || [])[i] || inputs.mainDoorWidth || '';
-            const h = (inputs.paneHeights || [])[i] || '';
-            const lbl = paneCount > 1 ? `Ruutu ${i + 1} (L × K, mm)` : 'Ruutu (L × K, mm)';
-            html += editRow(lbl,
-                `<span class="d-flex align-items-center gap-1">
-                    <input type="number" name="paneWidth_${i}" class="form-control form-control-sm" value="${w}" min="100" style="width:78px">
-                    <span class="text-muted">×</span>
-                    <input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h}" min="100" style="width:78px">
-                </span>`
-            );
+        const formulaSets = JSON.parse(localStorage.getItem('formulaSets') || '{}');
+        let formulaOptions = `<option value="default"${!inputs.formulaSet || inputs.formulaSet === 'default' ? ' selected' : ''}>Default Kaavat</option>`;
+        Object.keys(formulaSets).forEach(key => {
+            formulaOptions += `<option value="${key}"${inputs.formulaSet === key ? ' selected' : ''}>${key}</option>`;
+        });
+
+        html += editRow('Kaavasetti', `<select name="formulaSet" class="form-select form-select-sm" style="width:auto">${formulaOptions}</select>`);
+
+        if (!isWindow) {
+            const gapVal = String(inputs.gapOption);
+            const gapOpts = [
+                ['8', '8 mm rako'], ['10', '10 mm rako'], ['15', '15 mm rako'], ['saneeraus', 'Saneerauskynnys']
+            ].map(([v, l]) => `<option value="${v}"${gapVal === v ? ' selected' : ''}>${l}</option>`).join('');
+            html += editRow('Rako-asetus', `<select name="gapOption" class="form-select form-select-sm" style="width:auto">${gapOpts}</select>`);
+        }
+
+        html += editRow('Potkupelti', `<input type="checkbox" name="kickPlateEnabled" class="form-check-input"${inputs.kickPlateEnabled ? ' checked' : ''}>`);
+        html += editRow('Potkupellin korkeus (mm)', `<input type="number" name="kickPlateHeight" class="form-control form-control-sm" value="${inputs.kickPlateHeight || ''}" min="100" style="width:90px">`);
+
+        if (!isWindow) {
+            html += editRow('Tiivistekynnys', `<input type="checkbox" name="sealThresholdEnabled" class="form-check-input"${inputs.sealThresholdEnabled ? ' checked' : ''}>`);
+            html += editRow('Umpiovi', `<input type="checkbox" name="umpioviEnabled" class="form-check-input"${inputs.umpioviEnabled ? ' checked' : ''}>`);
+            if (isPariovi) {
+                html += editRow('Umpivasikka', `<input type="checkbox" name="umpivasikkaEnabled" class="form-check-input"${inputs.umpivasikkaEnabled ? ' checked' : ''}>`);
+            }
+            const widthLabel = isPariovi ? 'Käyntioven leveys (mm)' : 'Oven leveys (mm)';
+            html += editRow(widthLabel, `<input type="number" name="mainDoorWidth" class="form-control form-control-sm" value="${inputs.mainDoorWidth || ''}" min="500" style="width:90px">`);
+            if (isPariovi) {
+                html += editRow('Lisäoven leveys (mm)', `<input type="number" name="sideDoorWidth" class="form-control form-control-sm" value="${inputs.sideDoorWidth || ''}" min="100" style="width:90px">`);
+            }
+            const paneHeights = inputs.paneHeights || [];
+            paneHeights.forEach((h, i) => {
+                const lbl = paneHeights.length > 1 ? `Ruutu ${i + 1} korkeus (mm)` : 'Ruudun korkeus (mm)';
+                html += editRow(lbl, `<input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h || ''}" min="100" style="width:90px">`);
+            });
+        } else {
+            const paneCount = inputs.paneCount || 1;
+            html += editRow('Ruutujen määrä', `<span class="mitat-inputs-value">${paneCount}</span>`);
+            for (let i = 0; i < paneCount; i++) {
+                const w = (inputs.paneWidths || [])[i] || inputs.mainDoorWidth || '';
+                const h = (inputs.paneHeights || [])[i] || '';
+                const lbl = paneCount > 1 ? `Ruutu ${i + 1} (L × K, mm)` : 'Ruutu (L × K, mm)';
+                html += editRow(lbl,
+                    `<span class="d-flex align-items-center gap-1">
+                        <input type="number" name="paneWidth_${i}" class="form-control form-control-sm" value="${w}" min="100" style="width:78px">
+                        <span class="text-muted">×</span>
+                        <input type="number" name="paneHeight_${i}" class="form-control form-control-sm" value="${h}" min="100" style="width:78px">
+                    </span>`
+                );
+            }
         }
     }
 
@@ -6900,6 +7321,7 @@ function deleteMitta(jobNumber, itemName) {
 
 let scannerEnabled = false;
 let pystypaneliEnabled = false;
+let verkkoEnabled = false;
 let scanBatchFiles = [];
 let scanBatchIndex = 0;
 let scanBatchJobNumber = null;
@@ -6907,6 +7329,20 @@ let scanBatchActive = false;
 let scanTransferQueue = [];
 let scanTransferQueueOpen = false;
 let scanQueueIdSeq = 1;
+
+function disableVerkkoModeUi() {
+    verkkoEnabled = false;
+    localStorage.setItem('verkkoEnabled', 'false');
+    const verkkoToggle = document.getElementById('verkkoToggle');
+    if (verkkoToggle) verkkoToggle.checked = false;
+    updateCalculatorButtonVisibility();
+    if (isVerkkoCalculatorType()) {
+        currentCalculator = 'janisol-pariovi';
+        document.querySelectorAll('.btn-group .btn-outline-primary').forEach(btn => btn.classList.remove('active'));
+        const btn = document.getElementById('btn-janisol-pariovi');
+        if (btn) btn.classList.add('active');
+    }
+}
 
 function toggleScanner(enabled) {
     scannerEnabled = !!enabled;
@@ -6919,6 +7355,10 @@ function toggleScanner(enabled) {
         if (pystypaneliToggle) pystypaneliToggle.checked = false;
         const pystypaneliPanel = document.getElementById('pystypaneliPanel');
         if (pystypaneliPanel) pystypaneliPanel.style.display = 'none';
+    }
+
+    if (scannerEnabled && verkkoEnabled) {
+        disableVerkkoModeUi();
     }
 
     const panel = document.getElementById('scannerPanel');
@@ -6995,6 +7435,10 @@ function togglePystypaneli(enabled) {
         if (scanPdfPreview) scanPdfPreview.style.display = 'none';
     }
 
+    if (pystypaneliEnabled && verkkoEnabled) {
+        disableVerkkoModeUi();
+    }
+
     const panel = document.getElementById('pystypaneliPanel');
     const inputsRow = document.getElementById('calculatorInputsRow');
     const toggle = document.getElementById('pystypaneliToggle');
@@ -7017,6 +7461,68 @@ function togglePystypaneli(enabled) {
         updateCalculatorInputVisibility();
         calculate();
     }
+}
+
+function toggleVerkko(enabled) {
+    verkkoEnabled = !!enabled;
+    localStorage.setItem('verkkoEnabled', verkkoEnabled);
+
+    if (verkkoEnabled && scannerEnabled) {
+        scannerEnabled = false;
+        localStorage.setItem('scannerEnabled', 'false');
+        const scanToggle = document.getElementById('scannerToggle');
+        if (scanToggle) scanToggle.checked = false;
+        const scannerPanel = document.getElementById('scannerPanel');
+        if (scannerPanel) scannerPanel.style.display = 'none';
+        const scanReviewCard = document.getElementById('scanReviewCard');
+        if (scanReviewCard) scanReviewCard.style.display = 'none';
+        const scanPdfPreview = document.getElementById('scanPdfPreview');
+        if (scanPdfPreview) scanPdfPreview.style.display = 'none';
+    }
+
+    if (verkkoEnabled && pystypaneliEnabled) {
+        pystypaneliEnabled = false;
+        localStorage.setItem('pystypaneliEnabled', 'false');
+        const pystypaneliToggle = document.getElementById('pystypaneliToggle');
+        if (pystypaneliToggle) pystypaneliToggle.checked = false;
+        const pystypaneliPanel = document.getElementById('pystypaneliPanel');
+        if (pystypaneliPanel) pystypaneliPanel.style.display = 'none';
+    }
+
+    const inputsRow = document.getElementById('calculatorInputsRow');
+    const toggle = document.getElementById('verkkoToggle');
+    if (inputsRow) inputsRow.style.display = (scannerEnabled || pystypaneliEnabled) ? 'none' : '';
+    if (toggle) toggle.checked = verkkoEnabled;
+    updateCalculatorButtonVisibility();
+
+    if (verkkoEnabled) {
+        hideVerkkoSettings();
+        if (!isVerkkoCalculatorType()) {
+            selectCalculator('verkko-ovi');
+        } else {
+            updateCalculatorInputVisibility();
+            calculate();
+        }
+    } else {
+        VERKKO_HIDDEN_SETTINGS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = '';
+        });
+        if (isVerkkoCalculatorType()) {
+            selectCalculator('janisol-pariovi');
+        } else {
+            updateCalculatorInputVisibility();
+            calculate();
+        }
+    }
+}
+
+function initVerkko() {
+    verkkoEnabled = localStorage.getItem('verkkoEnabled') === 'true';
+    const toggle = document.getElementById('verkkoToggle');
+    if (toggle) toggle.checked = verkkoEnabled;
+    updateCalculatorButtonVisibility();
+    if (verkkoEnabled) toggleVerkko(true);
 }
 
 function initPystypaneli() {
