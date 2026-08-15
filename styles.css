@@ -2109,30 +2109,6 @@ body.dark-mode .gradus-logo-dark {
     font-weight: 500;
 }
 
-/* ===== Pystypanelilaskin ===== */
-.pystypaneli-result {
-    margin-top: 0.5rem;
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--bg-tertiary);
-}
-
-.pystypaneli-result-label {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-secondary);
-    margin-bottom: 0.25rem;
-}
-
-.pystypaneli-result-value {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    line-height: 1.2;
-}
-
 /* Esikatselun epävarmat kentät */
 .scan-uncertain {
     border-color: var(--warning-color) !important;
