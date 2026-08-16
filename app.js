@@ -2582,6 +2582,14 @@ function combineResults(items) {
 
 // --- Merge mode functions ---
 
+function attachPystypaneliInputs(inputs) {
+    inputs.pystypaneliEnabled = !!pystypaneliEnabled;
+    inputs.pystypaneliY = pystypaneliEnabled
+        ? (document.getElementById('pystypaneliY')?.value || '')
+        : '';
+    return inputs;
+}
+
 function captureCurrentInputsForMerge() {
     const inputs = {
         calculator: currentCalculator,
@@ -2608,7 +2616,7 @@ function captureCurrentInputsForMerge() {
             || '';
         inputs.paneWidths.push(widthVal);
     }
-    return inputs;
+    return attachPystypaneliInputs(inputs);
 }
 
 function getIkkunaRawForMerge(inp) {
@@ -4650,6 +4658,12 @@ function updateYhdistettyCheckbox() {
     }
 }
 
+function shouldForceNoLasilista() {
+    return (isDoorCalculatorType() && settings.umpioviEnabled === true)
+        || isVerkkoCalculatorType()
+        || !!pystypaneliEnabled;
+}
+
 function prefillTransferFields() {
     const jobInput = document.getElementById('transferJobNumber');
     const itemNameInput = document.getElementById('transferItemName');
@@ -4658,8 +4672,7 @@ function prefillTransferFields() {
     if (!jobInput || !itemNameInput || !sizeSelect || !colorInput) return;
 
     const jobNumber = jobInput.value.trim();
-    const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
-    const forceNoLasilista = isUmpiovi || isVerkkoCalculatorType();
+    const forceNoLasilista = shouldForceNoLasilista();
 
     if (!jobNumber) {
         [itemNameInput, sizeSelect, colorInput].forEach((field) => {
@@ -4734,9 +4747,7 @@ function transferResults() {
     }
     const sizeSelect = document.getElementById('transferLasilistaSize');
     if (sizeSelect) {
-        const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
-        const isVerkkoCalculator = isVerkkoCalculatorType();
-        if (isUmpiovi || isVerkkoCalculator) {
+        if (shouldForceNoLasilista()) {
             sizeSelect.value = 'ei-lasilistaa';
             sizeSelect.dataset.autofilled = '1';
         } else {
@@ -4974,6 +4985,7 @@ function confirmTransferToMitat() {
             || '';
         results.inputs.paneWidths.push(widthVal);
     }
+    attachPystypaneliInputs(results.inputs);
     
     sections.forEach(section => {
         const title = section.querySelector('h5').textContent;
@@ -6017,7 +6029,12 @@ function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, edi
         }
     }
 
-    const calcLabel = getCalculatorLabel(item.calculator);
+    const fallback = JSON.parse(localStorage.getItem('mitatInputs') || '{}')?.[jobNumber]?.[itemName] || {};
+    const inputsHistory = item.inputsHistory || fallback.inputsHistory || null;
+    const singleInputs = item.inputs || fallback.inputs || null;
+    const calcLabel = itemUsesPystypaneli(item, inputsHistory, singleInputs)
+        ? `${getCalculatorLabel(item.calculator)} (pystypaneli)`
+        : getCalculatorLabel(item.calculator);
     const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
     const safeJob = sanitizeForAttribute(jobNumber);
     const safeItem = sanitizeForAttribute(itemName);
@@ -6041,14 +6058,10 @@ function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, edi
         html += `<div class="mt-2 mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,-1,true)">Muokkaa lasilistaa</button></div>`;
     }
 
-    const fallback = JSON.parse(localStorage.getItem('mitatInputs') || '{}')?.[jobNumber]?.[itemName] || {};
-    const inputsHistory = item.inputsHistory || fallback.inputsHistory || null;
-    const singleInputs = item.inputs || fallback.inputs || null;
-
     if (inputsHistory && inputsHistory.length > 1) {
         inputsHistory.forEach((entry, idx) => {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
-            const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
+            const entryCalcLabel = calculatorLabelWithPanel(entry.calculator || item.calculator, entry);
             const entryCalc = entry.calculator || '';
             const entryIsWindow = entryCalc.includes('ikkuna');
             const entryIsPariovi = entryCalc.includes('pariovi');
@@ -6874,6 +6887,17 @@ function getCalculatorLabel(type) {
     return labels[type] || type || '—';
 }
 
+function calculatorLabelWithPanel(type, inputs) {
+    const label = getCalculatorLabel(type);
+    if (inputs && inputs.pystypaneliEnabled) return `${label} (pystypaneli)`;
+    return label;
+}
+
+function itemUsesPystypaneli(item, history, singleInputs) {
+    if (singleInputs?.pystypaneliEnabled || item?.inputs?.pystypaneliEnabled) return true;
+    return Array.isArray(history) && history.some(entry => entry?.pystypaneliEnabled);
+}
+
 function buildInputsRows(inputs, isWindow, isPariovi) {
     if (!inputs) return [];
     const isVerkko = isVerkkoCalculatorType(inputs.calculator);
@@ -6919,6 +6943,13 @@ function buildInputsRows(inputs, isWindow, isPariovi) {
         rows.push({ label: 'Umpiovi', value: inputs.umpioviEnabled ? 'Päällä' : 'Pois' });
         if (isPariovi) {
             rows.push({ label: 'Umpivasikka', value: inputs.umpivasikkaEnabled ? 'Päällä' : 'Pois' });
+        }
+        if (inputs.pystypaneliEnabled) {
+            rows.push({ label: 'Pystypanelilaskin', value: 'Päällä' });
+            rows.push({
+                label: 'Panelin peittoväli',
+                value: inputs.pystypaneliY ? `${inputs.pystypaneliY} mm` : '—'
+            });
         }
     } else {
         rows.push({ label: 'Potkupelti', value: inputs.kickPlateEnabled ? 'Päällä' : 'Pois' });
@@ -6983,7 +7014,8 @@ function formatResultToData(result, calc, settingsSnap) {
     }
     const isWindow = calc.includes('ikkuna');
     const isUmpiovi = !isWindow && settingsSnap.umpioviEnabled;
-    if (!isUmpiovi) {
+    const panelOn = !!(settingsSnap.pystypaneliEnabled ?? pystypaneliEnabled);
+    if (!isUmpiovi && !panelOn) {
         const combined = combineResults(result.lasilista || []);
         if (combined.length > 0)
             data.push({ title: 'Lasilista', items: combined.map(v => ({ label: v, value: '' })) });
@@ -6994,13 +7026,33 @@ function formatResultToData(result, calc, settingsSnap) {
         data.push({ title: 'Potkupelti', items: result.potkupelti.map(v => ({ label: v, value: '' })) });
     if (!isWindow && (isUmpiovi || !settingsSnap.sealThresholdEnabled) && (result.harjalista || []).length > 0)
         data.push({ title: 'Harjalista', items: result.harjalista.map(v => ({ label: String(v), value: '' })) });
+    if (panelOn) {
+        const panelOpts = {
+            calculator: calc,
+            pystypaneliY: settingsSnap.pystypaneliY,
+            umpioviEnabled: settingsSnap.umpioviEnabled,
+            kickPlateEnabled: settingsSnap.kickPlateEnabled
+        };
+        if (settingsSnap.mainDoorWidth != null) {
+            panelOpts.mainWidth = parseFloat(settingsSnap.mainDoorWidth) || 0;
+            panelOpts.sideWidth = parseFloat(settingsSnap.sideDoorWidth) || 0;
+            panelOpts.kickHeight = parseFloat(settingsSnap.kickPlateHeight) || 0;
+            panelOpts.paneHeights = settingsSnap.paneHeights;
+        }
+        const panelSection = buildPystypaneliDataItems(panelOpts);
+        if (panelSection) data.push(panelSection);
+    }
     return data;
 }
 
 function recalculateFromInputs(inputs) {
     const savedSettings = { ...settings };
     const savedFormula = localStorage.getItem('activeFormulaSet');
+    const savedPanel = pystypaneliEnabled;
+    const savedCalc = currentCalculator;
     try {
+        pystypaneliEnabled = !!inputs.pystypaneliEnabled;
+        if (inputs.calculator) currentCalculator = inputs.calculator;
         Object.assign(settings, {
             gapOption: inputs.gapOption,
             paneCount: inputs.paneCount || 1,
@@ -7027,8 +7079,18 @@ function recalculateFromInputs(inputs) {
         else if (c === 'verkko-ovi') result = calculateVerkko(w, ph, null, c);
         else if (c === 'verkko-seina') result = calculateVerkko(w, ph, pw.length ? pw : [w], c);
         else result = { lasilista: [], uretaani: [], potkupelti: [], harjalista: [] };
-        return formatResultToData(result, c, { ...settings });
+        return formatResultToData(result, c, {
+            ...settings,
+            pystypaneliEnabled: !!inputs.pystypaneliEnabled,
+            pystypaneliY: inputs.pystypaneliY,
+            mainDoorWidth: w,
+            sideDoorWidth: s,
+            kickPlateHeight: k,
+            paneHeights: ph
+        });
     } finally {
+        pystypaneliEnabled = savedPanel;
+        currentCalculator = savedCalc;
         Object.assign(settings, savedSettings);
         savedFormula !== null
             ? localStorage.setItem('activeFormulaSet', savedFormula)
@@ -7133,6 +7195,10 @@ function buildInputsEditForm(inputs, isWindow, isPariovi, entryIdx, jobNumber, i
             if (isPariovi) {
                 html += editRow('Umpivasikka', `<input type="checkbox" name="umpivasikkaEnabled" class="form-check-input"${inputs.umpivasikkaEnabled ? ' checked' : ''}>`);
             }
+            if (inputs.pystypaneliEnabled) {
+                html += editRow('Pystypanelilaskin', `<span class="mitat-inputs-value">Päällä</span>`);
+                html += editRow('Panelin peittoväli (mm)', `<input type="number" name="pystypaneliY" class="form-control form-control-sm" value="${inputs.pystypaneliY || ''}" min="1" step="any" style="width:90px">`);
+            }
             const widthLabel = isPariovi ? 'Käyntioven leveys (mm)' : 'Oven leveys (mm)';
             html += editRow(widthLabel, `<input type="number" name="mainDoorWidth" class="form-control form-control-sm" value="${inputs.mainDoorWidth || ''}" min="500" style="width:90px">`);
             if (isPariovi) {
@@ -7190,6 +7256,7 @@ function collectInputsFromEditForm(formEl, baseInputs) {
     upd(inp, 'umpivasikkaEnabled', chk('umpivasikkaEnabled'));
     upd(inp, 'mainDoorWidth', val('mainDoorWidth'));
     upd(inp, 'sideDoorWidth', val('sideDoorWidth'));
+    upd(inp, 'pystypaneliY', val('pystypaneliY'));
 
     const newHeights = [], newWidths = [];
     for (let i = 0; get(`paneHeight_${i}`) !== null; i++) {
@@ -7321,17 +7388,18 @@ function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1, editMeta = 
         return;
     }
 
-    const calcLabel = getCalculatorLabel(item.calculator);
-    const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
-    const safeJob = sanitizeForAttribute(jobNumber);
-    const safeItem = sanitizeForAttribute(itemName);
-
     const fallbackEntry = (() => {
         const map = JSON.parse(localStorage.getItem('mitatInputs') || '{}');
         return map[jobNumber]?.[itemName] || {};
     })();
     const inputsHistory = item.inputsHistory || fallbackEntry.inputsHistory || null;
     const singleInputs = item.inputs || fallbackEntry.inputs || null;
+    const calcLabel = itemUsesPystypaneli(item, inputsHistory, singleInputs)
+        ? `${getCalculatorLabel(item.calculator)} (pystypaneli)`
+        : getCalculatorLabel(item.calculator);
+    const date = item.timestamp ? new Date(item.timestamp).toLocaleString('fi-FI') : '—';
+    const safeJob = sanitizeForAttribute(jobNumber);
+    const safeItem = sanitizeForAttribute(itemName);
 
     let html = `<div class="mitat-inputs-list">`;
 
@@ -7360,7 +7428,7 @@ function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1, editMeta = 
         // Multi-transfer: show each set of inputs as a separate block
         inputsHistory.forEach((entry, idx) => {
             const entryDate = entry._mergedAt ? new Date(entry._mergedAt).toLocaleString('fi-FI') : '—';
-            const entryCalcLabel = entry.calculator ? getCalculatorLabel(entry.calculator) : calcLabel;
+            const entryCalcLabel = calculatorLabelWithPanel(entry.calculator || item.calculator, entry);
             const entryCalc = entry.calculator || '';
             const entryIsWindow = entryCalc.includes('ikkuna');
             const entryIsPariovi = entryCalc.includes('pariovi');
@@ -7864,18 +7932,25 @@ function calcPystypaneliStartEnd(X, Y, alotus = -5) {
     return W + alotus;
 }
 
-function getPystypaneliOuterWidths() {
-    const mainWidth = parseFloat(document.getElementById('mainDoorWidth')?.value) || 0;
-    const sideWidth = parseFloat(document.getElementById('sideDoorWidth')?.value) || 0;
-    const kickHeight = parseFloat(document.getElementById('kickPlateHeight')?.value) || 0;
+function getPystypaneliOuterWidths(opts) {
+    const calcType = opts?.calculator || currentCalculator;
+    const mainWidth = opts?.mainWidth != null
+        ? Number(opts.mainWidth) || 0
+        : (parseFloat(document.getElementById('mainDoorWidth')?.value) || 0);
+    const sideWidth = opts?.sideWidth != null
+        ? Number(opts.sideWidth) || 0
+        : (parseFloat(document.getElementById('sideDoorWidth')?.value) || 0);
+    const kickHeight = opts?.kickHeight != null
+        ? Number(opts.kickHeight) || 0
+        : (parseFloat(document.getElementById('kickPlateHeight')?.value) || 0);
     const formulas = getPanelAwareFormulas();
-    const isPariovi = currentCalculator && currentCalculator.includes('pariovi');
-    const isUmpiovi = isDoorCalculatorType() && settings.umpioviEnabled === true;
-    const isJanisol = currentCalculator && currentCalculator.startsWith('janisol');
+    const isPariovi = calcType && calcType.includes('pariovi');
+    const isUmpiovi = isDoorCalculatorType(calcType) && settings.umpioviEnabled === true;
+    const isJanisol = calcType && calcType.startsWith('janisol');
     const items = [];
 
     if (isUmpiovi) {
-        const fs = getUmpioviFormulaSet(currentCalculator, formulas);
+        const fs = getUmpioviFormulaSet(calcType, formulas);
         const fallbackOuter = isJanisol ? 165 : 160;
         const mainAdj = fs?.umpiovi_potku_ulko_leveys ?? fallbackOuter;
         items.push({
@@ -7911,8 +7986,12 @@ function getPystypaneliOuterWidths() {
 
 const PYSTYPANELI_LENGTH_OFFSET_MM = 78;
 
-function getPystypaneliPaneHeightSum() {
-    if (settings.umpioviEnabled) return 0;
+function getPystypaneliPaneHeightSum(opts) {
+    const umpiovi = opts?.umpioviEnabled != null ? !!opts.umpioviEnabled : !!settings.umpioviEnabled;
+    if (umpiovi) return 0;
+    if (Array.isArray(opts?.paneHeights)) {
+        return opts.paneHeights.reduce((sum, h) => sum + (parseInt(h, 10) || 0), 0);
+    }
     const count = settings.paneCount || 1;
     let sum = 0;
     for (let i = 1; i <= count; i++) {
@@ -7921,33 +8000,49 @@ function getPystypaneliPaneHeightSum() {
     return sum;
 }
 
-function buildPystypaneliResultsHtml() {
-    let html = '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Pystypaneli</h5>';
-
-    const paneSum = getPystypaneliPaneHeightSum();
-    const panelFormulas = getPystypaneliFormulaSet() || {};
+function buildPystypaneliDataItems(opts = {}) {
+    const items = [];
+    const calcType = opts.calculator || currentCalculator;
+    const panelFormulas = getPystypaneliFormulaSet(calcType) || {};
     const pituusOffset = Number.isFinite(panelFormulas.pituus) ? panelFormulas.pituus : PYSTYPANELI_LENGTH_OFFSET_MM;
     const alotusOffset = Number.isFinite(panelFormulas.alotus) ? panelFormulas.alotus : -5;
-    if (settings.umpioviEnabled) {
-        html += '<div class="result-item text-muted">Umpiovessa ei ruudun korkeutta — panelin pituutta ei lasketa.</div>';
-    } else if (paneSum > 0) {
-        html += `<div class="result-item">Panelin pituus: ${paneSum + pituusOffset} mm</div>`;
-    }
+    const umpiovi = opts.umpioviEnabled != null ? !!opts.umpioviEnabled : !!settings.umpioviEnabled;
+    const kickEnabled = opts.kickPlateEnabled != null ? !!opts.kickPlateEnabled : settings.kickPlateEnabled !== false;
+    const paneSum = getPystypaneliPaneHeightSum(opts);
+    const Y = parseFloat(opts.pystypaneliY != null ? opts.pystypaneliY : document.getElementById('pystypaneliY')?.value);
 
+    if (!umpiovi && paneSum > 0) {
+        items.push({ label: 'Panelin pituus', value: `${paneSum + pituusOffset} mm` });
+    }
+    if (kickEnabled && Y > 0) {
+        getPystypaneliOuterWidths(opts).forEach(item => {
+            if (!(item.width > 0)) return;
+            const result = calcPystypaneliStartEnd(item.width, Y, alotusOffset);
+            const prefix = item.label ? `${item.label}: alotus-/lopetuspaneeli` : 'Alotus-/lopetuspaneeli';
+            items.push({ label: prefix, value: `${result.toFixed(1)} mm` });
+        });
+    }
+    if (items.length === 0) return null;
+    return { title: 'Pystypaneli', items };
+}
+
+function buildPystypaneliResultsHtml() {
+    let html = '<div class="col-md-6 col-lg-3 mb-4"><div class="result-section"><h5>Pystypaneli</h5>';
+    const section = buildPystypaneliDataItems({
+        pystypaneliY: document.getElementById('pystypaneliY')?.value
+    });
+    (section?.items || []).forEach(item => {
+        html += `<div class="result-item">${item.label}: ${item.value}</div>`;
+    });
+    const hasPituus = (section?.items || []).some(item => item.label === 'Panelin pituus');
+    const hasAlotus = (section?.items || []).some(item => String(item.label).includes('alotus-/lopetuspaneeli'));
+    if (settings.umpioviEnabled && !hasPituus) {
+        html += '<div class="result-item text-muted">Umpiovessa ei ruudun korkeutta — panelin pituutta ei lasketa.</div>';
+    }
     if (!settings.kickPlateEnabled) {
         html += '<div class="result-item text-muted">Kytke potkupelti päälle alotus-/lopetuspaneelin laskemiseksi.</div>';
-    } else {
-        const Y = parseFloat(document.getElementById('pystypaneliY')?.value);
-        if (!(Y > 0)) {
-            html += '<div class="result-item text-muted">Syötä panelin peittoväli (> 0).</div>';
-        } else {
-            getPystypaneliOuterWidths().forEach(item => {
-                if (!(item.width > 0)) return;
-                const result = calcPystypaneliStartEnd(item.width, Y, alotusOffset);
-                const prefix = item.label ? `${item.label}: alotus-/lopetuspaneeli` : 'Alotus-/lopetuspaneeli';
-                html += `<div class="result-item">${prefix}: ${result.toFixed(1)} mm</div>`;
-            });
-        }
+    } else if (!hasAlotus) {
+        html += '<div class="result-item text-muted">Syötä panelin peittoväli (> 0).</div>';
     }
     html += '</div></div>';
     return html;
