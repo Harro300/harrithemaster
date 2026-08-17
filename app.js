@@ -2283,6 +2283,11 @@ function isLasilistaSectionTitle(title) {
     return String(title || '').trim().toLowerCase().startsWith('lasilista');
 }
 
+function itemHasLasilistat(item) {
+    return Array.isArray(item?.data) &&
+        item.data.some((section) => isLasilistaSectionTitle(section.title));
+}
+
 function isKulmalistatSectionTitle(title) {
     return String(title || '').trim().toLowerCase().startsWith('kulmalista');
 }
@@ -5271,8 +5276,10 @@ function loadMittatView() {
             const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
             const isChecked = checkedMitat[checkKey] || false;
             const checkboxClass = isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            const hasLasilistat = itemHasLasilistat(item);
+            const lasilistatOk = !hasLasilistat || isChecked;
             const doneChecked = doneMitat[checkKey] || false;
-            const doneCheckboxClass = !isChecked && !doneChecked
+            const doneCheckboxClass = !lasilistatOk && !doneChecked
                 ? 'preset-checkbox disabled'
                 : (doneChecked ? 'preset-checkbox checked' : 'preset-checkbox');
             
@@ -5311,14 +5318,16 @@ function loadMittatView() {
             html += `</ul>`;
             html += `</div>`;
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            html += `<span class="mitat-mini-label">lasilistat</span>`;
-            html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
-            html += `${isChecked ? '✓' : ''}`;
-            html += `</div>`;
-            html += `<span class="mitat-checkpoint-separator">/</span>`;
+            if (hasLasilistat) {
+                html += `<span class="mitat-mini-label">lasilistat</span>`;
+                html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
+                html += `${isChecked ? '✓' : ''}`;
+                html += `</div>`;
+                html += `<span class="mitat-checkpoint-separator">/</span>`;
+            }
             html += `<span class="mitat-mini-label">tehty</span>`;
-            const doneDisabled = !isChecked && !doneChecked;
-            html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${isChecked || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
+            const doneDisabled = !lasilistatOk && !doneChecked;
+            html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${lasilistatOk || doneChecked ? 'Merkitse tehdyksi' : 'Merkitse ensin lasilistat'}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
             html += `${doneChecked ? '✓' : ''}`;
             html += `</div>`;
             if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
@@ -5330,7 +5339,7 @@ function loadMittatView() {
                 const titleAttr = doneChecked ? '' : ' title="Merkitse ensin tehdyksi"';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
-            if (isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
+            if (hasLasilistat && isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
                 const pdfKey = `${jobNumber}||${itemName}`;
                 const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
                 const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -6393,6 +6402,12 @@ function selectLasilistaPdfJob(jobNumber) {
 
 function toggleLasilistaPdfItem(jobNumber, itemName) {
     if (!isLasilistaPdfMode || selectedLasilistaPdfJobNumber !== jobNumber) return;
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!itemHasLasilistat(mittatData[jobNumber]?.[itemName])) {
+        showToast('Tuotteessa ei ole lasilistoja.', 'warning');
+        return;
+    }
 
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     if (checkedMitat[`${jobNumber}-${itemName}`]) {
@@ -7609,7 +7624,10 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
     const isDone = !doneMitat[checkKey];
-    if (isDone && !checkedMitat[checkKey]) {
+    const itemName = checkKey.startsWith(`${jobNumber}-`) ? checkKey.slice(jobNumber.length + 1) : '';
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber]?.[itemName];
+    if (isDone && itemHasLasilistat(item) && !checkedMitat[checkKey]) {
         showToast('Merkitse ensin lasilistat ennen tehty-merkintää.', 'warning');
         return;
     }
