@@ -1415,6 +1415,28 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin: 0;
 }
 
+.mitat-job-number-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.mitat-job-number-btn:hover,
+.mitat-job-number-btn:focus-visible {
+    color: var(--accent-hover);
+}
+
+.mitat-job-title .dropdown-menu {
+    font-size: 0.85rem;
+    z-index: 1050;
+}
+
 .mitat-job-title-blink {
     animation: mitatJobTitleBlink 1s infinite;
 }
@@ -1515,6 +1537,39 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-job-quick-actions {
     margin-bottom: 8px;
+}
+
+.mitat-block-group {
+    margin-bottom: 0.5rem;
+}
+
+.mitat-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.mitat-block-delete-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+}
+
+.mitat-block-delete-btn:hover,
+.mitat-block-delete-btn:focus-visible {
+    color: var(--danger-color);
 }
 
 .mitat-item-section {

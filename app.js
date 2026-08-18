@@ -153,7 +153,9 @@ function getMitatStateFromLocalStorage() {
         packedPackageNumbers: JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}'),
         hiddenMitatItems: JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}'),
         mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}'),
-        packedTimestamps: JSON.parse(localStorage.getItem('packedTimestamps') || '{}')
+        packedTimestamps: JSON.parse(localStorage.getItem('packedTimestamps') || '{}'),
+        jobBlocks: JSON.parse(localStorage.getItem('jobBlocks') || '{}'),
+        itemBlocks: JSON.parse(localStorage.getItem('itemBlocks') || '{}')
     };
 }
 
@@ -166,6 +168,8 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('hiddenMitatItems', JSON.stringify(state.hiddenMitatItems || {}));
     localStorage.setItem('mittatNotes', JSON.stringify(state.mittatNotes || {}));
     localStorage.setItem('packedTimestamps', JSON.stringify(state.packedTimestamps || {}));
+    localStorage.setItem('jobBlocks', JSON.stringify(state.jobBlocks || {}));
+    localStorage.setItem('itemBlocks', JSON.stringify(state.itemBlocks || {}));
 }
 
 async function syncMitatStateToFirestore() {
@@ -554,7 +558,9 @@ function setupRealtimeListeners() {
                     packedPackageNumbers: data.packedPackageNumbers || {},
                     hiddenMitatItems: data.hiddenMitatItems || {},
                     mittatNotes: data.mittatNotes || {},
-                    packedTimestamps: data.packedTimestamps || {}
+                    packedTimestamps: data.packedTimestamps || {},
+                    jobBlocks: data.jobBlocks || {},
+                    itemBlocks: data.itemBlocks || {}
                 });
                 lastKnownJobCount = Object.keys(data.mittatData || {}).length;
                 mitatStateLoaded = true;
@@ -653,6 +659,25 @@ document.addEventListener('keydown', function(e) {
         target.click();
     }
 });
+
+document.addEventListener('keydown', function(e) {
+    if (!isBlockAssignMode) return;
+    if (document.querySelector('.modal.show')) return;
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        clearBlockAssignMode();
+        loadMittatView();
+        return;
+    }
+
+    if (e.key !== 'Enter') return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    e.preventDefault();
+    e.stopPropagation();
+    openJobBlocksPickModal();
+}, true);
 
 // Close admin panel on Escape key.
 document.addEventListener('keydown', function(e) {
@@ -5128,6 +5153,8 @@ function loadMittatView() {
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const jobBlocksAll = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    const itemBlocksAll = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
     let hiddenItemsCount = 0;
     Object.keys(mittatData).forEach((jobNumber) => {
         Object.keys(mittatData[jobNumber]).forEach((itemName) => {
@@ -5229,7 +5256,20 @@ function loadMittatView() {
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         const jobTitleClass = isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title mitat-job-title-blink' : 'mitat-job-title';
-        html += `<h4 class="${jobTitleClass}">Työ ${jobNumber}</h4>`;
+        const safeJobAttr = sanitizeForAttribute(jobNumber);
+        const jobBlockList = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
+        const hasJobBlocks = jobBlockList.length > 0;
+        html += `<h4 class="${jobTitleClass}">`;
+        html += `<span>Työ </span>`;
+        html += `<div class="dropdown d-inline-block">`;
+        html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="true" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
+        html += `<ul class="dropdown-menu" onclick="event.stopPropagation();">`;
+        html += `<li><button class="dropdown-item disabled" type="button" disabled>Tiedot</button></li>`;
+        html += `<li><button class="dropdown-item disabled" type="button" disabled>Muokkaa työnumeroa</button></li>`;
+        html += `<li><button class="dropdown-item" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
+        html += `</ul>`;
+        html += `</div>`;
+        html += `</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         const progressCircumference = 2 * Math.PI * 15.5;
         const progressPercent = totalCount > 0 ? doneCount / totalCount : 0;
@@ -5277,16 +5317,34 @@ function loadMittatView() {
         const jobPackingBtnText = isPackingSelectedForJob ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
         const jobLasilistaBtnClass = isLasilistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
         const jobLasilistaBtnText = isLasilistaSelectedForJob ? '✅ Lasilistat PDF -tila päällä' : '📄 Lasilistat PDF';
-        html += `<div class="mitat-job-quick-actions d-flex gap-2">`;
+        html += `<div class="mitat-job-quick-actions d-flex flex-wrap gap-2">`;
         html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
         html += `<button class="${jobLasilistaBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startLasilistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobLasilistaBtnText}</button>`;
+        if (hasJobBlocks) {
+            const isBlockSelectedForJob = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
+            const jobBlockBtnClass = isBlockSelectedForJob ? 'btn btn-success' : 'btn btn-outline-secondary';
+            const jobBlockBtnText = isBlockSelectedForJob ? '✅ Vie lohkoon -tila päällä' : 'Vie lohkoon';
+            html += `<button class="${jobBlockBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">${jobBlockBtnText}</button>`;
+        }
         html += `</div>`;
 
         if (visibleItemNames.length === 0) {
             html += `<p class="text-muted small mb-0 px-2 py-2">Kaikki tuotteet on piilotettu.</p>`;
         }
 
-        visibleItemNames.forEach(itemName => {
+        const itemGroups = getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, itemBlocksAll);
+        itemGroups.forEach((group) => {
+            const showBlockHeader = hasJobBlocks && group.name;
+            if (showBlockHeader) {
+                html += `<div class="mitat-block-group">`;
+                html += `<div class="mitat-block-header">`;
+                html += `<span>${escapeHtmlText(group.name)}</span>`;
+                if (group.id) {
+                    html += `<button type="button" class="mitat-block-delete-btn" title="Poista lohko" aria-label="Poista lohko ${escapeHtmlText(group.name)}" onclick="event.stopPropagation(); deleteJobBlock('${safeJobAttr}', '${sanitizeForAttribute(group.id)}')">×</button>`;
+                }
+                html += `</div>`;
+            }
+            group.items.forEach((itemName) => {
             const item = mittatData[jobNumber][itemName];
             const date = new Date(item.timestamp).toLocaleString('fi-FI');
             const uniqueId = `mitat-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -5315,7 +5373,6 @@ function loadMittatView() {
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
             html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
-            const safeJobAttr = sanitizeForAttribute(jobNumber);
             const safeItemAttr = sanitizeForAttribute(itemName);
             html += `<div class="dropdown mitat-item-actions">`;
             html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
@@ -5369,6 +5426,13 @@ function loadMittatView() {
                 const titleAttr = isChecked ? ' title="Lasilistat jo merkitty"' : '';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
+            if (isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
+                const blockKey = `${jobNumber}||${itemName}`;
+                const blockChecked = !!selectedBlockItems[blockKey];
+                const btnClass = blockChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
+                const btnText = blockChecked ? 'Valittu' : 'Liitä lohkoon';
+                html += `<button class="${btnClass}" onclick="event.stopPropagation(); toggleBlockAssignItem('${safeJobAttr}', '${safeItemAttr}')">${btnText}</button>`;
+            }
             if (doneChecked && packedMitat[checkKey]) {
                 html += `<span class="mitat-packed-label">(Pakattu!)</span>`;
             }
@@ -5411,6 +5475,10 @@ function loadMittatView() {
             html += `</div>`;
             
             html += `</div>`;
+            });
+            if (showBlockHeader) {
+                html += `</div>`;
+            }
         });
         
         html += `</div>`; // Close mitat-job-items
@@ -6162,6 +6230,10 @@ let selectedPackingItems = {};
 let isLasilistaPdfMode = false;
 let selectedLasilistaPdfJobNumber = null;
 let selectedLasilistaPdfItems = {};
+let isBlockAssignMode = false;
+let selectedBlockJobNumber = null;
+let selectedBlockItems = {};
+let pendingJobBlocksJobNumber = null;
 let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
@@ -6268,6 +6340,14 @@ function sanitizeForAttribute(value) {
     return String(value).replace(/'/g, "\\'");
 }
 
+function escapeHtmlText(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 function toggleShowHiddenItems() {
     isShowingHiddenItems = !isShowingHiddenItems;
     loadMittatView();
@@ -6307,6 +6387,332 @@ function formatFinnishDate(date) {
     return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
 }
 
+function getJobBlocks(jobNumber) {
+    const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    return Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
+}
+
+function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, itemBlocksAll) {
+    if (!Array.isArray(jobBlockList) || jobBlockList.length === 0) {
+        return [{ id: null, name: null, items: visibleItemNames.slice() }];
+    }
+    const groups = jobBlockList.map((block) => ({
+        id: block.id,
+        name: block.name,
+        items: []
+    }));
+    const byId = {};
+    groups.forEach((group) => {
+        byId[group.id] = group;
+    });
+    const unassigned = [];
+    visibleItemNames.forEach((itemName) => {
+        const blockId = itemBlocksAll[`${jobNumber}-${itemName}`];
+        if (blockId && byId[blockId]) {
+            byId[blockId].items.push(itemName);
+        } else {
+            unassigned.push(itemName);
+        }
+    });
+    if (unassigned.length > 0) {
+        groups.push({ id: null, name: 'Ei lohkoa', items: unassigned });
+    }
+    return groups;
+}
+
+function persistMitatBlockState() {
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+}
+
+function deleteJobBlock(jobNumber, blockId) {
+    const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    const blocks = Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
+    const block = blocks.find((entry) => entry.id === blockId);
+    if (!block) {
+        showToast('Lohkoa ei löytynyt.', 'warning');
+        return;
+    }
+    if (!confirm(`Poistetaanko lohko ${block.name}? Tuotteet siirtyvät Ei lohkoa -listalle.`)) {
+        return;
+    }
+
+    const remaining = blocks.filter((entry) => entry.id !== blockId);
+    if (remaining.length === 0) {
+        delete jobBlocks[jobNumber];
+    } else {
+        jobBlocks[jobNumber] = remaining;
+    }
+    localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
+
+    const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
+    const keyPrefix = `${jobNumber}-`;
+    Object.keys(itemBlocks).forEach((key) => {
+        if (itemBlocks[key] === blockId && key.startsWith(keyPrefix)) {
+            delete itemBlocks[key];
+        }
+    });
+    localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
+
+    persistMitatBlockState();
+
+    if (remaining.length === 0 && selectedBlockJobNumber === jobNumber) {
+        clearBlockAssignMode();
+    }
+
+    loadMittatView();
+    showToast(`Lohko "${block.name}" poistettu.`, 'info');
+}
+
+function clearBlockAssignMode() {
+    isBlockAssignMode = false;
+    selectedBlockJobNumber = null;
+    selectedBlockItems = {};
+}
+
+function enterBlockAssignMode(jobNumber) {
+    isPackingListMode = false;
+    selectedPackingJobNumber = null;
+    selectedPackingItems = {};
+    isLasilistaPdfMode = false;
+    selectedLasilistaPdfJobNumber = null;
+    selectedLasilistaPdfItems = {};
+    isBlockAssignMode = true;
+    selectedBlockJobNumber = jobNumber;
+    selectedBlockItems = {};
+    selectedMitatJobNumber = jobNumber;
+}
+
+function startJobBlocksFlow(jobNumber) {
+    openJobBlocksCreateModal(jobNumber);
+}
+
+function startBlockAssignForJob(jobNumber) {
+    if (getJobBlocks(jobNumber).length === 0) {
+        showToast('Luo ensin lohkot työnumerosta.', 'warning');
+        return;
+    }
+    const isAlreadySelected = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
+    if (isAlreadySelected) {
+        clearBlockAssignMode();
+    } else {
+        enterBlockAssignMode(jobNumber);
+    }
+    loadMittatView();
+}
+
+function toggleBlockAssignItem(jobNumber, itemName) {
+    if (!isBlockAssignMode || selectedBlockJobNumber !== jobNumber) return;
+    const itemKey = `${jobNumber}||${itemName}`;
+    if (selectedBlockItems[itemKey]) {
+        delete selectedBlockItems[itemKey];
+    } else {
+        selectedBlockItems[itemKey] = true;
+    }
+    loadMittatView();
+}
+
+function createJobBlockId() {
+    return `blk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getJobBlocksCountMin() {
+    const existing = pendingJobBlocksJobNumber ? getJobBlocks(pendingJobBlocksJobNumber) : [];
+    return existing.length > 0 ? existing.length : 2;
+}
+
+function parseJobBlocksCount(raw) {
+    const count = parseInt(String(raw ?? '').trim(), 10);
+    return Number.isFinite(count) ? count : null;
+}
+
+function openJobBlocksCreateModal(jobNumber) {
+    pendingJobBlocksJobNumber = jobNumber;
+    const existing = getJobBlocks(jobNumber);
+    const minCount = existing.length > 0 ? existing.length : 2;
+    const countInput = document.getElementById('jobBlocksCount');
+    if (countInput) {
+        countInput.min = String(minCount);
+        countInput.max = '20';
+        countInput.value = String(minCount);
+    }
+    const container = document.getElementById('jobBlocksNameFields');
+    if (container) container.innerHTML = '';
+    renderJobBlocksNameFields();
+    const modalEl = document.getElementById('jobBlocksCreateModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function renderJobBlocksNameFields() {
+    const container = document.getElementById('jobBlocksNameFields');
+    const countInput = document.getElementById('jobBlocksCount');
+    if (!container || !countInput) return;
+
+    const existing = pendingJobBlocksJobNumber ? getJobBlocks(pendingJobBlocksJobNumber) : [];
+    const minCount = getJobBlocksCountMin();
+    countInput.min = String(minCount);
+
+    const parsed = parseJobBlocksCount(countInput.value);
+    if (parsed === null) return;
+
+    const count = Math.max(minCount, Math.min(20, parsed));
+
+    const previousInputs = Array.from(container.querySelectorAll('.job-block-name-input'));
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-2';
+        const label = document.createElement('label');
+        label.className = 'form-label';
+        label.setAttribute('for', `jobBlockName_${i}`);
+        label.textContent = `Lohko ${i + 1}`;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'form-control job-block-name-input';
+        input.id = `jobBlockName_${i}`;
+        const previous = previousInputs[i];
+        const previousName = (previous?.value || '').trim();
+        const existingName = (existing[i]?.name || '').trim();
+        input.value = previousName || existingName || `Lohko ${i + 1}`;
+        const blockId = previous?.dataset.blockId || existing[i]?.id || '';
+        if (blockId) input.dataset.blockId = blockId;
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+        container.appendChild(wrapper);
+    }
+}
+
+function commitJobBlocksCount() {
+    const countInput = document.getElementById('jobBlocksCount');
+    if (!countInput) return;
+    const minCount = getJobBlocksCountMin();
+    const parsed = parseJobBlocksCount(countInput.value);
+    const committed = parsed === null ? minCount : Math.max(minCount, Math.min(20, parsed));
+    countInput.value = String(committed);
+    renderJobBlocksNameFields();
+}
+
+function confirmJobBlocksCreate() {
+    const jobNumber = pendingJobBlocksJobNumber;
+    if (!jobNumber) {
+        showToast('Työnumero puuttuu.', 'warning');
+        return;
+    }
+
+    const existing = getJobBlocks(jobNumber);
+    const isFirstCreate = existing.length === 0;
+    const parsedCount = parseJobBlocksCount(document.getElementById('jobBlocksCount')?.value);
+    if (parsedCount === null) {
+        showToast('Anna lohkojen määrä.', 'warning');
+        return;
+    }
+    commitJobBlocksCount();
+    const existingIds = new Set(existing.map((block) => block.id));
+    const nameInputs = Array.from(document.querySelectorAll('#jobBlocksNameFields .job-block-name-input'));
+    const entries = nameInputs.map((input) => ({
+        name: input.value.trim(),
+        id: input.dataset.blockId || ''
+    }));
+
+    if (entries.some((entry) => !entry.name)) {
+        showToast('Anna kaikille lohkoille nimi.', 'warning');
+        return;
+    }
+    if (isFirstCreate && entries.length < 2) {
+        showToast('Anna vähintään kahdelle lohkolle nimi.', 'warning');
+        return;
+    }
+    const uniqueNames = new Set(entries.map((entry) => entry.name.toLowerCase()));
+    if (uniqueNames.size !== entries.length) {
+        showToast('Lohkojen nimien pitää olla yksilöllisiä.', 'warning');
+        return;
+    }
+
+    const blocks = entries.map((entry) => ({
+        id: existingIds.has(entry.id) ? entry.id : createJobBlockId(),
+        name: entry.name
+    }));
+    const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    jobBlocks[jobNumber] = blocks;
+    localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
+    persistMitatBlockState();
+
+    const modalEl = document.getElementById('jobBlocksCreateModal');
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+    pendingJobBlocksJobNumber = null;
+
+    if (isFirstCreate) {
+        enterBlockAssignMode(jobNumber);
+    }
+    loadMittatView();
+    showToast(
+        isFirstCreate
+            ? 'Lohkot luotu. Valitse tuotteet ja paina Enter.'
+            : 'Lohkot päivitetty.',
+        'success'
+    );
+}
+
+function openJobBlocksPickModal() {
+    if (!isBlockAssignMode || !selectedBlockJobNumber) return;
+    const selectedKeys = Object.keys(selectedBlockItems).filter((key) => selectedBlockItems[key]);
+    if (selectedKeys.length === 0) {
+        showToast('Valitse ensin vähintään yksi tuote.', 'warning');
+        return;
+    }
+
+    const blocks = getJobBlocks(selectedBlockJobNumber);
+    if (blocks.length === 0) {
+        showToast('Työlle ei ole lohkoja.', 'warning');
+        return;
+    }
+
+    const list = document.getElementById('jobBlocksPickList');
+    if (!list) return;
+    list.innerHTML = '';
+    blocks.forEach((block) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-primary w-100 mb-2';
+        btn.textContent = block.name;
+        btn.addEventListener('click', () => confirmJobBlocksPick(block.id));
+        list.appendChild(btn);
+    });
+
+    const modalEl = document.getElementById('jobBlocksPickModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function confirmJobBlocksPick(blockId) {
+    if (!isBlockAssignMode || !selectedBlockJobNumber) return;
+    const blocks = getJobBlocks(selectedBlockJobNumber);
+    if (!blocks.some((block) => block.id === blockId)) {
+        showToast('Lohkoa ei löytynyt.', 'warning');
+        return;
+    }
+
+    const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
+    Object.keys(selectedBlockItems).forEach((key) => {
+        if (!selectedBlockItems[key]) return;
+        const separator = key.indexOf('||');
+        if (separator === -1) return;
+        const jobNumber = key.slice(0, separator);
+        const itemName = key.slice(separator + 2);
+        itemBlocks[`${jobNumber}-${itemName}`] = blockId;
+    });
+    localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
+    persistMitatBlockState();
+
+    selectedBlockItems = {};
+    bootstrap.Modal.getInstance(document.getElementById('jobBlocksPickModal'))?.hide();
+    loadMittatView();
+    showToast('Tuotteet liitetty lohkoon.', 'success');
+}
+
 function startPackingListForJob(jobNumber) {
     const isAlreadySelected = isPackingListMode && selectedPackingJobNumber === jobNumber;
     if (isAlreadySelected) {
@@ -6318,6 +6724,7 @@ function startPackingListForJob(jobNumber) {
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
+        clearBlockAssignMode();
         selectedPackingJobNumber = jobNumber;
         selectedPackingItems = {};
     }
@@ -6335,6 +6742,7 @@ function startLasilistaPdfForJob(jobNumber) {
         isPackingListMode = false;
         selectedPackingJobNumber = null;
         selectedPackingItems = {};
+        clearBlockAssignMode();
         selectedLasilistaPdfJobNumber = jobNumber;
         selectedLasilistaPdfItems = {};
     }
@@ -6348,6 +6756,7 @@ function togglePackingListMode() {
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
+        clearBlockAssignMode();
     }
 
     if (!isPackingListMode) {
@@ -6399,6 +6808,7 @@ function toggleLasilistaPdfMode() {
         isPackingListMode = false;
         selectedPackingJobNumber = null;
         selectedPackingItems = {};
+        clearBlockAssignMode();
     } else {
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
@@ -6878,7 +7288,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
 
     const oldKey = `${jobNumber}-${itemName}`;
     const newKey = `${jobNumber}-${trimmedName}`;
-    ['checkedMitat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach(storeKey => {
+    ['checkedMitat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach(storeKey => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         if (oldKey in obj) {
             obj[newKey] = obj[oldKey];
@@ -6897,6 +7307,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
     }
 
     syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
 
     const menu = btn.closest('.dropdown-menu');
     const dropdownToggle = menu?.previousElementSibling;
@@ -7723,6 +8134,8 @@ function deleteJobMitat(jobNumber) {
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
+    const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
     const itemNames = Object.keys(mittatData[jobNumber]);
     
@@ -7733,12 +8146,14 @@ function deleteJobMitat(jobNumber) {
         delete packedMitat[checkKey];
         delete packedPackageNumbers[checkKey];
         delete hiddenMitatItems[checkKey];
+        delete itemBlocks[checkKey];
         delete mittatNotes[`item-${jobNumber}-${itemName}`];
     });
     
     // Remove job note and job data
     delete mittatNotes[`job-${jobNumber}`];
     delete mittatData[jobNumber];
+    delete jobBlocks[jobNumber];
 
     // Remove packedTimestamps for this job (keys: jobNumber-packageNumber)
     const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
@@ -7753,8 +8168,11 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
     localStorage.setItem('hiddenMitatItems', JSON.stringify(hiddenMitatItems));
+    localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
+    localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
 
     if (selectedPackingJobNumber === jobNumber) {
         selectedPackingJobNumber = null;
@@ -7773,6 +8191,15 @@ function deleteJobMitat(jobNumber) {
         Object.keys(selectedLasilistaPdfItems).forEach((key) => {
             if (key.startsWith(`${jobNumber}||`)) {
                 delete selectedLasilistaPdfItems[key];
+            }
+        });
+    }
+    if (selectedBlockJobNumber === jobNumber) {
+        clearBlockAssignMode();
+    } else {
+        Object.keys(selectedBlockItems).forEach((key) => {
+            if (key.startsWith(`${jobNumber}||`)) {
+                delete selectedBlockItems[key];
             }
         });
     }
@@ -7842,6 +8269,12 @@ function deleteMitta(jobNumber, itemName) {
             localStorage.setItem('hiddenMitatItems', JSON.stringify(hiddenMitatItems));
         }
 
+        const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
+        if (Object.prototype.hasOwnProperty.call(itemBlocks, checkKey)) {
+            delete itemBlocks[checkKey];
+            localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
+        }
+
         const packingKey = `${jobNumber}||${itemName}`;
         if (selectedPackingItems[packingKey]) {
             delete selectedPackingItems[packingKey];
@@ -7849,6 +8282,9 @@ function deleteMitta(jobNumber, itemName) {
         const lasilistaPdfKey = `${jobNumber}||${itemName}`;
         if (selectedLasilistaPdfItems[lasilistaPdfKey]) {
             delete selectedLasilistaPdfItems[lasilistaPdfKey];
+        }
+        if (selectedBlockItems[packingKey]) {
+            delete selectedBlockItems[packingKey];
         }
         
         // Also remove notes
@@ -7874,9 +8310,18 @@ function deleteMitta(jobNumber, itemName) {
                 selectedLasilistaPdfJobNumber = null;
                 selectedLasilistaPdfItems = {};
             }
+            if (selectedBlockJobNumber === jobNumber) {
+                clearBlockAssignMode();
+            }
+            const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+            if (jobBlocks[jobNumber]) {
+                delete jobBlocks[jobNumber];
+                localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
+            }
         }
 
         syncMitatStateToFirestore();
+        syncMitatInputsToFirestore();
         
         loadMittatView();
         showToast('Mitat poistettu', 'info');
