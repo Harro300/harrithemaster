@@ -1653,13 +1653,14 @@ function calculate() {
                 ? calculateJanisolIkkuna(paneWidths, paneHeights, kickPlateHeight, true)
                 : calculateEconomyIkkuna(paneWidths, paneHeights, kickPlateHeight, true);
         }
-        const secondData = formatResultToData(mergeRaw, currentCalculator, {...settings});
+        const inp = captureCurrentInputsForMerge();
+        const secondData = formatResultToData(mergeRaw, currentCalculator, formatSnapFromInputs(inp));
         const incoming = {
             data: secondData,
             calculator: currentCalculator,
             lasilistaSize: '',
             lasilistaColor: '',
-            inputs: captureCurrentInputsForMerge(),
+            inputs: inp,
             timestamp: new Date().toISOString()
         };
         const merged = mergeResults(frozenFirstResult, incoming);
@@ -2595,6 +2596,24 @@ function attachPystypaneliInputs(inputs) {
     return inputs;
 }
 
+function formatSnapFromInputs(inp) {
+    return {
+        ...settings,
+        gapOption: inp.gapOption ?? settings.gapOption,
+        paneCount: inp.paneCount ?? settings.paneCount,
+        kickPlateEnabled: !!inp.kickPlateEnabled,
+        sealThresholdEnabled: !!inp.sealThresholdEnabled,
+        umpioviEnabled: !!inp.umpioviEnabled,
+        umpivasikkaEnabled: !!inp.umpivasikkaEnabled,
+        pystypaneliEnabled: !!inp.pystypaneliEnabled,
+        pystypaneliY: inp.pystypaneliY,
+        mainDoorWidth: inp.mainDoorWidth,
+        sideDoorWidth: inp.sideDoorWidth,
+        kickPlateHeight: inp.kickPlateHeight,
+        paneHeights: inp.paneHeights
+    };
+}
+
 function captureCurrentInputsForMerge() {
     const inputs = {
         calculator: currentCalculator,
@@ -2644,7 +2663,7 @@ function activateMergeMode() {
     if (mergeMode && frozenFirstResult) {
         // Lisätään uusi tulos kertymään
         const inp = captureCurrentInputsForMerge();
-        const secondData = formatResultToData(getIkkunaRawForMerge(inp), currentCalculator, {...settings});
+        const secondData = formatResultToData(getIkkunaRawForMerge(inp), currentCalculator, formatSnapFromInputs(inp));
         if (!secondData || secondData.length === 0) {
             showToast('Ei yhdistettäviä tuloksia.', 'warning');
             return;
@@ -2667,7 +2686,7 @@ function activateMergeMode() {
 
     // Ensimmäinen aktivointi
     const firstInp = captureCurrentInputsForMerge();
-    const firstData = formatResultToData(getIkkunaRawForMerge(firstInp), currentCalculator, {...settings});
+    const firstData = formatResultToData(getIkkunaRawForMerge(firstInp), currentCalculator, formatSnapFromInputs(firstInp));
     if (!firstData || firstData.length === 0) {
         showToast('Ei yhdistettäviä tuloksia.', 'warning');
         return;
@@ -2734,7 +2753,9 @@ function buildMergeFirstSummary(frozenResult) {
 function buildMergeFirstItems(frozenResult) {
     const sections = frozenResult.data || [];
     return sections.map(s => {
-        const itemsText = (s.items || []).map(it => it.label).join(', ');
+        const itemsText = (s.items || []).map(it =>
+            it.value ? `${it.label}: ${it.value}` : it.label
+        ).join(', ');
         return `<span class="text-muted me-3"><strong>${s.title}:</strong> ${itemsText}</span>`;
     }).join('');
 }
