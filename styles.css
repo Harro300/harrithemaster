@@ -1541,6 +1541,13 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-block-group {
     margin-bottom: 0.5rem;
+    padding: 6px;
+    border: 1px dashed var(--accent-color);
+    border-radius: 4px;
+}
+
+.mitat-block-group > .mitat-item-section:last-child {
+    margin-bottom: 0;
 }
 
 .mitat-block-header {
@@ -1548,9 +1555,9 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    font-weight: 600;
+    font-weight: 700;
     font-size: 0.85rem;
-    color: var(--text-secondary);
+    color: var(--accent-color);
     padding: 4px 12px;
     background: var(--bg-tertiary);
     border-radius: 4px;
