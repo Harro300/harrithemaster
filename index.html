@@ -549,7 +549,17 @@
                     <h2 style="color: var(--accent-color); margin: 0; font-size: 1.3rem;">Tuotanto</h2>
                     <div class="d-flex gap-2 align-items-center">
                         <button class="btn btn-primary" id="togglePackingListBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="togglePackingListMode()">📦 Tee pakkausluettelo</button>
-                        <button class="btn btn-info" id="toggleLasilistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleLasilistaPdfMode()">📄 Lasilistat PDF</button>
+                        <div class="dropdown">
+                            <button class="btn btn-info" id="toggleSahauslistaBtn" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.75rem; padding: 5px 10px;">Tee Sahauslista</button>
+                            <ul class="dropdown-menu p-2">
+                                <li>
+                                    <button type="button" class="btn btn-info w-100" id="toggleLasilistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleLasilistaPdfMode()">📄 Lasilistat PDF</button>
+                                </li>
+                                <li class="mt-1">
+                                    <button type="button" class="btn btn-info w-100" id="toggleKulmalistaPdfBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleKulmalistaPdfMode()">📄 Kulmalistat PDF</button>
+                                </li>
+                            </ul>
+                        </div>
                         <button class="btn btn-outline-secondary" id="toggleShowHiddenItemsBtn" style="font-size: 0.75rem; padding: 5px 10px;" onclick="toggleShowHiddenItems()">Näytä piilotetut</button>
                         <button class="btn btn-outline-warning" id="tuotantoBackupBtn" style="font-size: 0.75rem; padding: 5px 10px; display:none;" onclick="downloadBackup('tuotanto')">💾 Varmuuskopio</button>
                     </div>
@@ -4180,7 +4190,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260818R5"></script>
+    <script src="app.js?v=20260819R2"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>
