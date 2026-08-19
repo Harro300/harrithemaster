@@ -28,6 +28,7 @@ let lastKnownJobCount = -1;
 let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
 let deepLinkHighlightTimer = null;
+let tuotantoDisplayMode = 'katselu';
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -5153,8 +5154,88 @@ function confirmTransferToMitat() {
     console.log('✅ Mitat tallennettu:', { jobNumber, itemName, itemCount, results });
 }
 
+function isKatseluMode() {
+    return tuotantoDisplayMode !== 'tuotanto';
+}
+
+function initTuotantoDisplayOptionsMenu() {
+    const btn = document.getElementById('tuotantoDisplayOptionsBtn');
+    if (!btn || btn.dataset.displayMenuInit === '1') return;
+    btn.dataset.displayMenuInit = '1';
+    btn.addEventListener('hidden.bs.dropdown', () => {
+        const submenu = document.getElementById('nayttoModeSubmenu');
+        if (submenu) submenu.classList.add('d-none');
+    });
+}
+
+function applyTuotantoDisplayModeUi() {
+    initTuotantoDisplayOptionsMenu();
+    const katselu = isKatseluMode();
+    const view = document.getElementById('mittatView');
+    if (view) {
+        view.classList.toggle('mittat-mode-katselu', katselu);
+        view.classList.toggle('mittat-mode-tuotanto', !katselu);
+    }
+    const toolbar = document.getElementById('tuotantoToolbarActions');
+    if (toolbar) {
+        toolbar.style.display = katselu ? 'none' : '';
+    }
+    const katseluBtn = document.getElementById('btnDisplayModeKatselu');
+    const tuotantoBtn = document.getElementById('btnDisplayModeTuotanto');
+    if (katseluBtn) {
+        katseluBtn.classList.toggle('naytto-mode-current', katselu);
+        katseluBtn.classList.toggle('btn-secondary', katselu);
+        katseluBtn.classList.toggle('btn-outline-secondary', !katselu);
+        katseluBtn.textContent = katselu ? '✓ Katselu mode' : 'Katselu mode';
+    }
+    if (tuotantoBtn) {
+        tuotantoBtn.classList.toggle('naytto-mode-current', !katselu);
+        tuotantoBtn.classList.toggle('btn-secondary', !katselu);
+        tuotantoBtn.classList.toggle('btn-outline-secondary', katselu);
+        tuotantoBtn.textContent = !katselu ? '✓ Tuotanto mode' : 'Tuotanto mode';
+    }
+}
+
+function toggleNayttoModeSubmenu(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    const submenu = document.getElementById('nayttoModeSubmenu');
+    if (submenu) submenu.classList.toggle('d-none');
+}
+
+function setTuotantoDisplayMode(mode) {
+    tuotantoDisplayMode = mode === 'tuotanto' ? 'tuotanto' : 'katselu';
+    if (isKatseluMode()) {
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+        isKulmalistaPdfMode = false;
+        selectedKulmalistaPdfJobNumber = null;
+        selectedKulmalistaPdfItems = {};
+        isBlockAssignMode = false;
+        selectedBlockJobNumber = null;
+        selectedBlockItems = {};
+        isShowingHiddenItems = false;
+    }
+    const submenu = document.getElementById('nayttoModeSubmenu');
+    if (submenu) submenu.classList.add('d-none');
+    const menuBtn = document.getElementById('tuotantoDisplayOptionsBtn');
+    if (menuBtn && window.bootstrap && bootstrap.Dropdown) {
+        const dropdown = bootstrap.Dropdown.getInstance(menuBtn);
+        if (dropdown) dropdown.hide();
+    }
+    loadMittatView();
+}
+
 // Load and display Mitat view
 function loadMittatView() {
+    const katselu = isKatseluMode();
+    applyTuotantoDisplayModeUi();
     const container = document.getElementById('mittatContainer');
     const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
@@ -5262,7 +5343,7 @@ function loadMittatView() {
             const checkKey = `${jobNumber}-${itemName}`;
             const passesHidden = isShowingHiddenItems || !hiddenMitatItems[checkKey];
             if (!passesHidden) return false;
-            return matchesMitatSearch(jobNumber, itemName, mittatData[jobNumber][itemName], mitatSearchQuery);
+            return matchesMitatSearch(jobNumber, itemName, mittatData[jobNumber][itemName], mitatSearchQuery, jobBlocksAll, itemBlocksAll);
         });
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
@@ -5282,14 +5363,18 @@ function loadMittatView() {
         const hasJobBlocks = jobBlockList.length > 0;
         html += `<h4 class="${jobTitleClass}">`;
         html += `<span>Työ </span>`;
-        html += `<div class="dropdown d-inline-block">`;
-        html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="true" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
-        html += `<ul class="dropdown-menu" onclick="event.stopPropagation();">`;
-        html += `<li><button class="dropdown-item disabled" type="button" disabled>Tiedot</button></li>`;
-        html += `<li><button class="dropdown-item disabled" type="button" disabled>Muokkaa työnumeroa</button></li>`;
-        html += `<li><button class="dropdown-item" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
-        html += `</ul>`;
-        html += `</div>`;
+        if (katselu) {
+            html += `<span class="mitat-job-number-text">${escapeHtmlText(jobNumber)}</span>`;
+        } else {
+            html += `<div class="dropdown d-inline-block mitat-item-actions">`;
+            html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="true" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
+            html += `<ul class="dropdown-menu p-2 mitat-job-actions-menu" onclick="event.stopPropagation();">`;
+            html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" disabled>Tiedot</button></li>`;
+            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" disabled>Muokkaa työnumeroa</button></li>`;
+            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
+            html += `</ul>`;
+            html += `</div>`;
+        }
         html += `</h4>`;
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         const progressCircumference = 2 * Math.PI * 15.5;
@@ -5302,7 +5387,7 @@ function loadMittatView() {
         html += `</svg>`;
         html += `<span class="mitat-job-progress-text" id="${jobId}-progress-text">${doneCount}/${totalCount}</span>`;
         html += `</div>`;
-        if (isPackingListMode) {
+        if (!katselu && isPackingListMode) {
             const isSelectedJob = selectedPackingJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
             const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
@@ -5310,7 +5395,7 @@ function loadMittatView() {
             if (isSelectedJob) {
                 html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadPackingList('${sanitizeForAttribute(jobNumber)}')">Lataa pakkausluettelo</button>`;
             }
-        } else if (isLasilistaPdfMode) {
+        } else if (!katselu && isLasilistaPdfMode) {
             const isSelectedJob = selectedLasilistaPdfJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
             const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
@@ -5318,7 +5403,7 @@ function loadMittatView() {
             if (isSelectedJob) {
                 html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadLasilistaSummaryPdf('${sanitizeForAttribute(jobNumber)}')">Lataa Lasilistat PDF</button>`;
             }
-        } else if (isKulmalistaPdfMode) {
+        } else if (!katselu && isKulmalistaPdfMode) {
             const isSelectedJob = selectedKulmalistaPdfJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
             const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
@@ -5329,7 +5414,7 @@ function loadMittatView() {
         }
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
-        if (isAdmin) {
+        if (isAdmin && !katselu) {
             html += `<button class="mitat-job-delete-btn" onclick="event.stopPropagation(); deleteJobMitat('${jobNumber}')" title="Poista työ">🗑️</button>`;
         }
         const isSearchExpanded = mitatSearchQuery.length > 0;
@@ -5352,22 +5437,24 @@ function loadMittatView() {
         const isSahauslistaSelectedForJob = isLasilistaSelectedForJob || isKulmalistaSelectedForJob;
         const jobSahauslistaBtnClass = isSahauslistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
         const jobSahauslistaBtnText = isSahauslistaSelectedForJob ? '✅ Sahauslista-tila päällä' : 'Tee Sahauslista';
-        html += `<div class="mitat-job-quick-actions d-flex flex-wrap gap-2">`;
-        html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
-        html += `<div class="dropdown">`;
-        html += `<button class="${jobSahauslistaBtnClass}" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation();">${jobSahauslistaBtnText}</button>`;
-        html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
-        html += `<li><button type="button" class="${jobLasilistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startLasilistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobLasilistaBtnText}</button></li>`;
-        html += `<li class="mt-1"><button type="button" class="${jobKulmalistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startKulmalistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobKulmalistaBtnText}</button></li>`;
-        html += `</ul>`;
-        html += `</div>`;
-        if (hasJobBlocks) {
-            const isBlockSelectedForJob = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
-            const jobBlockBtnClass = isBlockSelectedForJob ? 'btn btn-success' : 'btn btn-outline-secondary';
-            const jobBlockBtnText = isBlockSelectedForJob ? '✅ Vie lohkoon -tila päällä' : 'Vie lohkoon';
-            html += `<button class="${jobBlockBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">${jobBlockBtnText}</button>`;
+        if (!katselu) {
+            html += `<div class="mitat-job-quick-actions d-flex flex-wrap gap-2">`;
+            html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
+            html += `<div class="dropdown">`;
+            html += `<button class="${jobSahauslistaBtnClass}" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation();">${jobSahauslistaBtnText}</button>`;
+            html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+            html += `<li><button type="button" class="${jobLasilistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startLasilistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobLasilistaBtnText}</button></li>`;
+            html += `<li class="mt-1"><button type="button" class="${jobKulmalistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startKulmalistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobKulmalistaBtnText}</button></li>`;
+            html += `</ul>`;
+            html += `</div>`;
+            if (hasJobBlocks) {
+                const isBlockSelectedForJob = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
+                const jobBlockBtnClass = isBlockSelectedForJob ? 'btn btn-success' : 'btn btn-outline-secondary';
+                const jobBlockBtnText = isBlockSelectedForJob ? '✅ Vie lohkoon -tila päällä' : 'Vie lohkoon';
+                html += `<button class="${jobBlockBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">${jobBlockBtnText}</button>`;
+            }
+            html += `</div>`;
         }
-        html += `</div>`;
 
         if (visibleItemNames.length === 0) {
             html += `<p class="text-muted small mb-0 px-2 py-2">Kaikki tuotteet on piilotettu.</p>`;
@@ -5380,7 +5467,7 @@ function loadMittatView() {
                 html += `<div class="mitat-block-group">`;
                 html += `<div class="mitat-block-header">`;
                 html += `<span>${escapeHtmlText(group.name)}</span>`;
-                if (group.id) {
+                if (group.id && !katselu) {
                     html += `<button type="button" class="mitat-block-delete-btn" title="Poista lohko" aria-label="Poista lohko ${escapeHtmlText(group.name)}" onclick="event.stopPropagation(); deleteJobBlock('${safeJobAttr}', '${sanitizeForAttribute(group.id)}')">×</button>`;
                 }
                 html += `</div>`;
@@ -5421,51 +5508,73 @@ function loadMittatView() {
             const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
             html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
             const safeItemAttr = sanitizeForAttribute(itemName);
-            html += `<div class="dropdown mitat-item-actions">`;
-            html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
-            html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
-            const hideLabel = isHidden && isShowingHiddenItems ? 'Palauta näkyviin' : 'Piilota';
-            const hideCls = isHidden && isShowingHiddenItems ? 'btn btn-sm btn-outline-success w-100' : 'btn btn-sm btn-outline-danger w-100';
-            html += `<li class="d-flex align-items-center gap-2">`;
-            html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
-            html += `<input type="number" class="form-control form-control-sm clone-count-input" value="1" min="1" max="99">`;
-            html += `<span class="small">x</span>`;
-            html += `</li>`;
-            html += `<li class="mt-1">`;
-            html += `<button class="btn btn-sm btn-outline-secondary w-100" onclick="showMitatItemInputs('${safeJobAttr}', '${safeItemAttr}')">Syötteet</button>`;
-            html += `</li>`;
-            html += `<li class="mt-1">`;
-            html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renameMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Muokkaa nimeä</button>`;
-            html += `</li>`;
-            html += `<li class="mt-1">`;
-            html += `<button class="${hideCls}" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">${hideLabel}</button>`;
-            html += `</li>`;
-            html += `</ul>`;
-            html += `</div>`;
+            if (!katselu) {
+                html += `<div class="dropdown mitat-item-actions">`;
+                html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
+                html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+                const hideLabel = isHidden && isShowingHiddenItems ? 'Palauta näkyviin' : 'Piilota';
+                const hideCls = isHidden && isShowingHiddenItems ? 'btn btn-sm btn-outline-success w-100' : 'btn btn-sm btn-outline-danger w-100';
+                html += `<li class="d-flex align-items-center gap-2">`;
+                html += `<button class="btn btn-sm btn-primary" onclick="cloneMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Clone</button>`;
+                html += `<input type="number" class="form-control form-control-sm clone-count-input" value="1" min="1" max="99">`;
+                html += `<span class="small">x</span>`;
+                html += `</li>`;
+                html += `<li class="mt-1">`;
+                html += `<button class="btn btn-sm btn-outline-secondary w-100" onclick="showMitatItemInputs('${safeJobAttr}', '${safeItemAttr}')">Syötteet</button>`;
+                html += `</li>`;
+                html += `<li class="mt-1">`;
+                html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renameMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Muokkaa nimeä</button>`;
+                html += `</li>`;
+                html += `<li class="mt-1">`;
+                html += `<button class="${hideCls}" type="button" onclick="hideMitatItem('${safeJobAttr}', '${safeItemAttr}')">${hideLabel}</button>`;
+                html += `</li>`;
+                html += `</ul>`;
+                html += `</div>`;
+            }
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            if (hasLasilistat) {
-                html += `<span class="mitat-mini-label">lasilistat</span>`;
-                html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
-                html += `${isChecked ? '✓' : ''}`;
+            if (katselu) {
+                const visibleCheckpoints = [];
+                if (hasLasilistat && isChecked) {
+                    visibleCheckpoints.push({ label: 'lasilistat', aria: `Lasilistat tehty ${itemName}` });
+                }
+                if (hasKulmalistat && isKulmalistatChecked) {
+                    visibleCheckpoints.push({ label: 'kulmalistat', aria: `Kulmalistat tehty ${itemName}` });
+                }
+                if (doneChecked) {
+                    visibleCheckpoints.push({ label: 'tehty', aria: `Tehty ${itemName}` });
+                }
+                visibleCheckpoints.forEach((checkpoint, index) => {
+                    html += `<span class="mitat-mini-label">${checkpoint.label}</span>`;
+                    html += `<div class="preset-checkbox checked mitat-checkpoint-readonly" role="img" aria-label="${checkpoint.aria}">✓</div>`;
+                    if (index < visibleCheckpoints.length - 1) {
+                        html += `<span class="mitat-checkpoint-separator">/</span>`;
+                    }
+                });
+            } else {
+                if (hasLasilistat) {
+                    html += `<span class="mitat-mini-label">lasilistat</span>`;
+                    html += `<div class="${checkboxClass}" role="checkbox" tabindex="0" aria-checked="${isChecked}" aria-label="Lasilistat tehty ${itemName}" onclick="event.stopPropagation(); toggleMittatCheck('${checkKey}', this)">`;
+                    html += `${isChecked ? '✓' : ''}`;
+                    html += `</div>`;
+                    html += `<span class="mitat-checkpoint-separator">/</span>`;
+                }
+                if (hasKulmalistat) {
+                    html += `<span class="mitat-mini-label">kulmalistat</span>`;
+                    html += `<div class="${kulmalistatCheckboxClass}" role="checkbox" tabindex="0" aria-checked="${isKulmalistatChecked}" aria-label="Kulmalistat tehty ${itemName}" onclick="event.stopPropagation(); toggleKulmalistatCheck('${checkKey}', this)">`;
+                    html += `${isKulmalistatChecked ? '✓' : ''}`;
+                    html += `</div>`;
+                    html += `<span class="mitat-checkpoint-separator">/</span>`;
+                }
+                html += `<span class="mitat-mini-label">tehty</span>`;
+                const doneDisabled = !checkpointsOk && !doneChecked;
+                const doneTitle = checkpointsOk || doneChecked
+                    ? 'Merkitse tehdyksi'
+                    : (!lasilistatOk ? 'Merkitse ensin lasilistat' : 'Merkitse ensin kulmalistat');
+                html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${doneTitle}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
+                html += `${doneChecked ? '✓' : ''}`;
                 html += `</div>`;
-                html += `<span class="mitat-checkpoint-separator">/</span>`;
             }
-            if (hasKulmalistat) {
-                html += `<span class="mitat-mini-label">kulmalistat</span>`;
-                html += `<div class="${kulmalistatCheckboxClass}" role="checkbox" tabindex="0" aria-checked="${isKulmalistatChecked}" aria-label="Kulmalistat tehty ${itemName}" onclick="event.stopPropagation(); toggleKulmalistatCheck('${checkKey}', this)">`;
-                html += `${isKulmalistatChecked ? '✓' : ''}`;
-                html += `</div>`;
-                html += `<span class="mitat-checkpoint-separator">/</span>`;
-            }
-            html += `<span class="mitat-mini-label">tehty</span>`;
-            const doneDisabled = !checkpointsOk && !doneChecked;
-            const doneTitle = checkpointsOk || doneChecked
-                ? 'Merkitse tehdyksi'
-                : (!lasilistatOk ? 'Merkitse ensin lasilistat' : 'Merkitse ensin kulmalistat');
-            html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${doneTitle}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
-            html += `${doneChecked ? '✓' : ''}`;
-            html += `</div>`;
-            if (isPackingListMode && selectedPackingJobNumber === jobNumber) {
+            if (!katselu && isPackingListMode && selectedPackingJobNumber === jobNumber) {
                 const packingKey = `${jobNumber}||${itemName}`;
                 const packingChecked = !!selectedPackingItems[packingKey];
                 const btnClass = packingChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -5474,7 +5583,7 @@ function loadMittatView() {
                 const titleAttr = doneChecked ? '' : ' title="Merkitse ensin tehdyksi"';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); togglePackingItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
-            if (hasLasilistat && isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
+            if (hasLasilistat && !katselu && isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber) {
                 const pdfKey = `${jobNumber}||${itemName}`;
                 const pdfChecked = !!selectedLasilistaPdfItems[pdfKey];
                 const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -5483,7 +5592,7 @@ function loadMittatView() {
                 const titleAttr = isChecked ? ' title="Lasilistat jo merkitty"' : '';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); toggleLasilistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
-            if (hasKulmalistat && isKulmalistaPdfMode && selectedKulmalistaPdfJobNumber === jobNumber) {
+            if (hasKulmalistat && !katselu && isKulmalistaPdfMode && selectedKulmalistaPdfJobNumber === jobNumber) {
                 const pdfKey = `${jobNumber}||${itemName}`;
                 const pdfChecked = !!selectedKulmalistaPdfItems[pdfKey];
                 const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -5492,7 +5601,7 @@ function loadMittatView() {
                 const titleAttr = isKulmalistatChecked ? ' title="Kulmalistat jo merkitty"' : '';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); toggleKulmalistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
-            if (isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
+            if (!katselu && isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
                 const blockKey = `${jobNumber}||${itemName}`;
                 const blockChecked = !!selectedBlockItems[blockKey];
                 const btnClass = blockChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -5504,7 +5613,7 @@ function loadMittatView() {
             }
             html += `</div>`;
             html += `<div class="d-flex align-items-center gap-2">`;
-            if (isAdmin) {
+            if (isAdmin && !katselu) {
                 html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteMitta('${jobNumber}', '${itemName}')">🗑️</button>`;
             }
             html += `<span class="mitat-toggle-icon" id="${uniqueId}-icon">▼</span>`;
@@ -5534,10 +5643,12 @@ function loadMittatView() {
                 html += `</div>`;
                 html += `</div>`;
             });
-            html += `<div class="d-flex justify-content-end align-items-center gap-2 mt-2">`;
-            html += `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); copyMittaResults('${jobNumber}', '${itemName}', event)">📋 Kopioi</button>`;
-            html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); exportMittaToPDF('${jobNumber}', '${itemName}')">📄 PDF</button>`;
-            html += `</div>`;
+            if (!katselu) {
+                html += `<div class="d-flex justify-content-end align-items-center gap-2 mt-2">`;
+                html += `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); copyMittaResults('${jobNumber}', '${itemName}', event)">📋 Kopioi</button>`;
+                html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); exportMittaToPDF('${jobNumber}', '${itemName}')">📄 PDF</button>`;
+                html += `</div>`;
+            }
             html += `</div>`;
             
             html += `</div>`;
@@ -6367,7 +6478,7 @@ function handleMitatSearchInput(value) {
     loadMittatView();
 }
 
-function matchesMitatSearch(jobNumber, itemName, item, query) {
+function matchesMitatSearch(jobNumber, itemName, item, query, jobBlocksAll = {}, itemBlocksAll = {}) {
     if (!query) return true;
     const q = query.toLowerCase().trim();
 
@@ -6387,6 +6498,11 @@ function matchesMitatSearch(jobNumber, itemName, item, query) {
 
     if (String(jobNumber).toLowerCase().includes(q)) return true;
     if (String(itemName).toLowerCase().includes(q)) return true;
+
+    const blockId = itemBlocksAll[`${jobNumber}-${itemName}`];
+    const blocks = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
+    const blockName = blocks.find((block) => block.id === blockId)?.name || (blockId ? '' : 'Ei lohkoa');
+    if (blockName && blockName.toLowerCase().includes(q)) return true;
 
     const calc = String(item.calculator || '').toLowerCase();
     if (calc.includes(q)) return true;

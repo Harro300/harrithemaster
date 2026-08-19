@@ -135,6 +135,83 @@ body {
     opacity: 0.85;
 }
 
+.app-display-options-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: 1.5px solid var(--accent-color);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--accent-color);
+    cursor: pointer;
+    transition: opacity 0.2s ease, background-color 0.2s ease;
+}
+
+.app-display-options-btn:hover,
+.app-display-options-btn[aria-expanded="true"] {
+    opacity: 0.85;
+    background: var(--bg-tertiary);
+}
+
+.tuotanto-display-options-menu {
+    min-width: 200px;
+    z-index: 1080;
+}
+
+.tuotanto-display-options-menu .btn.w-100 {
+    transform: none;
+}
+
+.tuotanto-display-options-menu .btn.w-100:hover {
+    transform: none;
+}
+
+.tuotanto-display-options-menu .btn:not(:disabled),
+.tuotanto-display-options-menu .btn:not(:disabled):hover,
+.tuotanto-display-options-menu .btn:not(:disabled):focus {
+    color: #1a1a1a;
+}
+
+.tuotanto-display-options-menu .btn:disabled {
+    color: #6c757d;
+}
+
+#mittatView > .card:first-child {
+    position: relative;
+    z-index: 20;
+    overflow: visible;
+}
+
+#mittatView > .card:first-child:hover {
+    transform: none;
+}
+
+.naytto-mode-submenu {
+    padding: 0;
+}
+
+.tuotanto-display-options-menu .dropdown-item.naytto-mode-current,
+.tuotanto-display-options-menu .naytto-mode-current {
+    font-weight: 700;
+}
+
+.mittat-mode-katselu #tuotantoToolbarActions {
+    display: none !important;
+}
+
+.mitat-job-number-text {
+    font-weight: 700;
+}
+
+.mitat-checkpoint-readonly {
+    pointer-events: none;
+    cursor: default;
+}
+
 /* Cards - Modern & Clean */
 .card {
     border-radius: 20px;
@@ -1433,8 +1510,25 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .mitat-job-title .dropdown-menu {
-    font-size: 0.85rem;
+    min-width: 200px;
     z-index: 1050;
+    padding: 0.25rem !important;
+    font-size: 0.75rem;
+}
+
+.mitat-job-actions-menu .btn.w-100,
+.mitat-job-actions-menu .btn.w-100:hover {
+    transform: none;
+}
+
+.mitat-job-actions-menu .btn:not(:disabled),
+.mitat-job-actions-menu .btn:not(:disabled):hover,
+.mitat-job-actions-menu .btn:not(:disabled):focus {
+    color: #1a1a1a;
+}
+
+.mitat-job-actions-menu .btn:disabled {
+    color: #6c757d;
 }
 
 .mitat-job-title-blink {
