@@ -29,6 +29,7 @@ let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
 let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
+let isTuotantoContentView = false;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -5205,6 +5206,211 @@ function toggleNayttoModeSubmenu(event) {
     if (submenu) submenu.classList.toggle('d-none');
 }
 
+function closeTuotantoDisplayOptionsMenu() {
+    const submenu = document.getElementById('nayttoModeSubmenu');
+    if (submenu) submenu.classList.add('d-none');
+    const menuBtn = document.getElementById('tuotantoDisplayOptionsBtn');
+    if (menuBtn && window.bootstrap && bootstrap.Dropdown) {
+        const dropdown = bootstrap.Dropdown.getInstance(menuBtn);
+        if (dropdown) dropdown.hide();
+    }
+}
+
+function toggleTuotantoContentView(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    isTuotantoContentView = !isTuotantoContentView;
+    closeTuotantoDisplayOptionsMenu();
+    loadMittatView();
+}
+
+function collectVisibleProductionItems() {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const items = [];
+    Object.keys(mittatData).forEach((jobNumber) => {
+        if (isJobFullyPacked(jobNumber)) return;
+        const jobData = mittatData[jobNumber] || {};
+        Object.keys(jobData).forEach((itemName) => {
+            const key = `${jobNumber}-${itemName}`;
+            if (hiddenMitatItems[key] || packedMitat[key]) return;
+            items.push({ key, item: jobData[itemName] });
+        });
+    });
+    return items;
+}
+
+function classifyProductionItem(item) {
+    const calc = String(item?.calculator || '');
+    if (calc === 'verkko-ovi' || calc.startsWith('verkko-ovi')) return 'verkko-ovi';
+    if (calc === 'verkko-seina' || calc.startsWith('verkko-seina')) return 'verkkoseina';
+    if (calc.includes('ikkuna')) return 'ikkuna';
+    if (itemUsesPystypaneli(item, item?.inputsHistory, item?.inputs)) return 'paneliovi';
+    return 'ovi';
+}
+
+function formatLasilistaMeters(mm) {
+    const meters = Number(mm) / 1000;
+    if (!Number.isFinite(meters) || meters <= 0) return '0';
+    const rounded = Math.round(meters * 10) / 10;
+    return rounded.toLocaleString('fi-FI', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
+
+function buildTuotantoContentSummary() {
+    const visibleItems = collectVisibleProductionItems();
+    const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
+    const typeOrder = [
+        { key: 'ovi', label: 'Ovia' },
+        { key: 'ikkuna', label: 'Ikkunoita' },
+        { key: 'verkko-ovi', label: 'Verkko-ovia' },
+        { key: 'verkkoseina', label: 'Verkkoseiniä' },
+        { key: 'paneliovi', label: 'Paneliovia' }
+    ];
+    const stageOrder = [
+        { key: 'tehty', label: 'Tehty' },
+        { key: 'lasilistat', label: 'Lasilistat' },
+        { key: 'kulmalistat', label: 'Kulmalistat' }
+    ];
+    const counts = {
+        ovi: 0,
+        ikkuna: 0,
+        'verkko-ovi': 0,
+        verkkoseina: 0,
+        paneliovi: 0
+    };
+    const stagesByType = {
+        ovi: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
+        ikkuna: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
+        'verkko-ovi': { tehty: 0, lasilistat: 0, kulmalistat: 0 },
+        verkkoseina: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
+        paneliovi: { tehty: 0, lasilistat: 0, kulmalistat: 0 }
+    };
+    const colors = new Set();
+    const metersBySize = {};
+
+    visibleItems.forEach(({ key, item }) => {
+        const type = classifyProductionItem(item);
+        if (counts[type] !== undefined) counts[type] += 1;
+        const typeStages = stagesByType[type];
+        const isDone = !!doneMitat[key];
+        if (typeStages) {
+            if (isDone) {
+                typeStages.tehty += 1;
+            } else {
+                if (itemHasLasilistat(item) && checkedMitat[key]) typeStages.lasilistat += 1;
+                if (itemHasKulmalistat(item) && checkedKulmalistat[key]) typeStages.kulmalistat += 1;
+            }
+        }
+        const color = String(item?.lasilistaColor || '').trim();
+        if (color) colors.add(color);
+        (item?.data || []).forEach((section) => {
+            if (!isLasilistaSectionTitle(section.title)) return;
+            const displayTitle = getLasilistaSectionTitle(section.title, item);
+            const size = parseSizeFromSectionTitle(displayTitle) || String(item?.lasilistaSize || '').trim();
+            if (!size) return;
+            (section.items || []).forEach((row) => {
+                const parsed = parseLasilistaRow(row?.label || '');
+                if (!parsed) return;
+                metersBySize[size] = (metersBySize[size] || 0) + (parsed.length * parsed.count);
+            });
+        });
+    });
+
+    let html = '<div class="tuotanto-content-summary-inner">';
+    html += '<h3 class="tuotanto-content-heading">Tuotantosivun sisältö</h3>';
+    html += '<div class="tuotanto-content-block">';
+    html += '<div class="tuotanto-content-row tuotanto-content-row--total">Tuotteita</div>';
+    html += '<table class="tuotanto-content-grid">';
+    html += '<thead><tr>';
+    html += '<th scope="col"></th>';
+    html += '<th scope="col">kpl</th>';
+    html += '<th scope="col">Tehty</th>';
+    html += '<th scope="col">Lasilistat</th>';
+    html += '<th scope="col">Kulmalistat</th>';
+    html += '</tr></thead><tbody>';
+    const stageTotals = { tehty: 0, lasilistat: 0, kulmalistat: 0 };
+    typeOrder.forEach(({ key, label }) => {
+        if (counts[key] <= 0) return;
+        const typeStages = stagesByType[key];
+        stageOrder.forEach(({ key: stageKey }) => {
+            stageTotals[stageKey] += typeStages[stageKey];
+        });
+        html += '<tr>';
+        html += `<th scope="row">${label}</th>`;
+        html += `<td>${counts[key]}</td>`;
+        stageOrder.forEach(({ key: stageKey }) => {
+            const stageCount = typeStages[stageKey];
+            html += stageCount > 0
+                ? `<td>${stageCount}</td>`
+                : '<td class="is-empty">–</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody><tfoot><tr>';
+    html += '<th scope="row">Yhteensä</th>';
+    html += `<td>${visibleItems.length}</td>`;
+    stageOrder.forEach(({ key: stageKey }) => {
+        const stageCount = stageTotals[stageKey];
+        html += stageCount > 0
+            ? `<td>${stageCount}</td>`
+            : '<td class="is-empty">–</td>';
+    });
+    html += '</tr></tfoot></table></div>';
+
+    const colorList = Array.from(colors).sort((a, b) => a.localeCompare(b, 'fi'));
+    html += '<div class="tuotanto-content-block">';
+    html += '<div class="tuotanto-content-row">Värit</div>';
+    if (colorList.length === 0) {
+        html += '<p class="text-muted small mb-0">Ei merkittyjä lasilistavärejä.</p>';
+    } else {
+        html += '<ul class="tuotanto-content-sublist">';
+        colorList.forEach((color) => {
+            html += `<li>${escapeHtmlText(color)}</li>`;
+        });
+        html += '</ul>';
+    }
+    html += '</div>';
+
+    const sizes = Object.keys(metersBySize).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }));
+    html += '<div class="tuotanto-content-block">';
+    html += '<div class="tuotanto-content-row">Lasilista</div>';
+    if (sizes.length === 0) {
+        html += '<p class="text-muted small mb-0">Ei lasilistoja.</p>';
+    } else {
+        html += '<ul class="tuotanto-content-sublist">';
+        sizes.forEach((size) => {
+            html += `<li>${escapeHtmlText(size)} ${formatLasilistaMeters(metersBySize[size])} m</li>`;
+        });
+        html += '</ul>';
+    }
+    html += '</div></div>';
+    return html;
+}
+
+function applyTuotantoContentViewUi() {
+    const contentBtn = document.getElementById('btnTuotantoContentView');
+    if (contentBtn) {
+        contentBtn.classList.toggle('naytto-mode-current', isTuotantoContentView);
+        contentBtn.classList.toggle('btn-secondary', isTuotantoContentView);
+        contentBtn.classList.toggle('btn-outline-secondary', !isTuotantoContentView);
+        contentBtn.textContent = isTuotantoContentView ? '✓ Tuotanto sivun sisältö' : 'Tuotanto sivun sisältö';
+    }
+    const searchRow = document.getElementById('mitatSearchRow');
+    const splitHost = document.getElementById('mitatSplitLayoutHost');
+    const summary = document.getElementById('tuotantoContentSummary');
+    if (searchRow) searchRow.style.display = isTuotantoContentView ? 'none' : '';
+    if (splitHost) splitHost.style.display = isTuotantoContentView ? 'none' : '';
+    if (summary) {
+        summary.hidden = !isTuotantoContentView;
+        summary.innerHTML = isTuotantoContentView ? buildTuotantoContentSummary() : '';
+    }
+}
+
 function setTuotantoDisplayMode(mode) {
     tuotantoDisplayMode = mode === 'tuotanto' ? 'tuotanto' : 'katselu';
     if (isKatseluMode()) {
@@ -5222,13 +5428,7 @@ function setTuotantoDisplayMode(mode) {
         selectedBlockItems = {};
         isShowingHiddenItems = false;
     }
-    const submenu = document.getElementById('nayttoModeSubmenu');
-    if (submenu) submenu.classList.add('d-none');
-    const menuBtn = document.getElementById('tuotantoDisplayOptionsBtn');
-    if (menuBtn && window.bootstrap && bootstrap.Dropdown) {
-        const dropdown = bootstrap.Dropdown.getInstance(menuBtn);
-        if (dropdown) dropdown.hide();
-    }
+    closeTuotantoDisplayOptionsMenu();
     loadMittatView();
 }
 
@@ -5287,6 +5487,9 @@ function loadMittatView() {
         toggleShowHiddenItemsBtn.classList.toggle('btn-secondary', isShowingHiddenItems);
         toggleShowHiddenItemsBtn.textContent = isShowingHiddenItems ? `Piilota piilotetut (${hiddenItemsCount})` : `Näytä piilotetut (${hiddenItemsCount})`;
     }
+
+    applyTuotantoContentViewUi();
+    if (isTuotantoContentView) return;
     
     // Check if empty
     if (Object.keys(mittatData).length === 0) {

@@ -212,6 +212,98 @@ body {
     cursor: default;
 }
 
+.tuotanto-content-summary {
+    padding: 8px 4px 16px;
+}
+
+.tuotanto-content-heading {
+    color: var(--accent-color);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0 0 16px;
+}
+
+.tuotanto-content-block {
+    margin-bottom: 18px;
+}
+
+.tuotanto-content-row {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.tuotanto-content-row--total {
+    font-size: 1.05rem;
+}
+
+.tuotanto-content-sublist {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 16px;
+}
+
+.tuotanto-content-sublist li {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    padding: 2px 0;
+}
+
+.tuotanto-content-grid {
+    width: auto;
+    max-width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    letter-spacing: -0.01em;
+}
+
+.tuotanto-content-grid th,
+.tuotanto-content-grid td {
+    padding: 6px 14px 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 500;
+    vertical-align: baseline;
+}
+
+.tuotanto-content-grid thead th {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: none;
+    padding-bottom: 8px;
+}
+
+.tuotanto-content-grid tbody th,
+.tuotanto-content-grid tfoot th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--text-primary);
+    padding-right: 28px;
+}
+
+.tuotanto-content-grid td {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    min-width: 4.5em;
+}
+
+.tuotanto-content-grid thead th:not(:first-child) {
+    text-align: right;
+}
+
+.tuotanto-content-grid td.is-empty {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+.tuotanto-content-grid tfoot th,
+.tuotanto-content-grid tfoot td {
+    border-bottom: none;
+    border-top: 1px solid var(--text-primary);
+    font-weight: 700;
+    padding-top: 8px;
+}
+
 /* Cards - Modern & Clean */
 .card {
     border-radius: 20px;
