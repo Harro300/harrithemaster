@@ -5226,12 +5226,13 @@ function toggleTuotantoContentView(event) {
     loadMittatView();
 }
 
-function collectVisibleProductionItems() {
+function collectVisibleProductionItems(filterJobNumber) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
     const items = [];
     Object.keys(mittatData).forEach((jobNumber) => {
+        if (filterJobNumber && jobNumber !== filterJobNumber) return;
         if (isJobFullyPacked(jobNumber)) return;
         const jobData = mittatData[jobNumber] || {};
         Object.keys(jobData).forEach((itemName) => {
@@ -5259,8 +5260,8 @@ function formatLasilistaMeters(mm) {
     return rounded.toLocaleString('fi-FI', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
-function buildTuotantoContentSummary() {
-    const visibleItems = collectVisibleProductionItems();
+function buildTuotantoContentSummary(jobNumber) {
+    const visibleItems = collectVisibleProductionItems(jobNumber);
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
@@ -5322,7 +5323,9 @@ function buildTuotantoContentSummary() {
     });
 
     let html = '<div class="tuotanto-content-summary-inner">';
-    html += '<h3 class="tuotanto-content-heading">Tuotantosivun sisältö</h3>';
+    if (!jobNumber) {
+        html += '<h3 class="tuotanto-content-heading">Tuotantosivun sisältö</h3>';
+    }
     html += '<div class="tuotanto-content-block">';
     html += '<div class="tuotanto-content-row tuotanto-content-row--total">Tuotteita</div>';
     html += '<table class="tuotanto-content-grid">';
@@ -5572,8 +5575,8 @@ function loadMittatView() {
             html += `<div class="dropdown d-inline-block mitat-item-actions">`;
             html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="true" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
             html += `<ul class="dropdown-menu p-2 mitat-job-actions-menu" onclick="event.stopPropagation();">`;
-            html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" disabled>Tiedot</button></li>`;
-            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" disabled>Muokkaa työnumeroa</button></li>`;
+            html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showJobDetails('${safeJobAttr}', this)">Tiedot</button></li>`;
+            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="renameMitatJob('${safeJobAttr}', this)">Muokkaa työnumeroa</button></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
             html += `</ul>`;
             html += `</div>`;
@@ -7926,6 +7929,133 @@ function renameMitatItem(jobNumber, itemName, btn) {
 
     loadMittatView();
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
+}
+
+function remapSelectedJobItemKeys(map, oldJobNumber, newJobNumber) {
+    const oldPrefix = `${oldJobNumber}||`;
+    Object.keys(map).forEach((key) => {
+        if (!key.startsWith(oldPrefix)) return;
+        const itemName = key.slice(oldPrefix.length);
+        map[`${newJobNumber}||${itemName}`] = map[key];
+        delete map[key];
+    });
+}
+
+function renameMitatJob(jobNumber, btn) {
+    const newJobNumber = prompt('Anna uusi työnumero:', jobNumber);
+    if (!newJobNumber || newJobNumber.trim() === jobNumber) return;
+    const trimmed = newJobNumber.trim();
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!mittatData[jobNumber]) {
+        showToast('Työtä ei löydetty.', 'warning');
+        return;
+    }
+    if (mittatData[trimmed]) {
+        showToast(`Työnumero "${trimmed}" on jo käytössä.`, 'warning');
+        return;
+    }
+
+    const itemNames = Object.keys(mittatData[jobNumber]);
+    mittatData[trimmed] = mittatData[jobNumber];
+    delete mittatData[jobNumber];
+    localStorage.setItem('mittatData', JSON.stringify(mittatData));
+
+    ['checkedMitat', 'checkedKulmalistat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach((storeKey) => {
+        const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
+        let changed = false;
+        itemNames.forEach((itemName) => {
+            const oldKey = `${jobNumber}-${itemName}`;
+            if (!(oldKey in obj)) return;
+            obj[`${trimmed}-${itemName}`] = obj[oldKey];
+            delete obj[oldKey];
+            changed = true;
+        });
+        if (changed) localStorage.setItem(storeKey, JSON.stringify(obj));
+    });
+
+    const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+    let notesChanged = false;
+    const oldJobNoteKey = `job-${jobNumber}`;
+    if (oldJobNoteKey in notes) {
+        notes[`job-${trimmed}`] = notes[oldJobNoteKey];
+        delete notes[oldJobNoteKey];
+        notesChanged = true;
+    }
+    itemNames.forEach((itemName) => {
+        const oldNoteKey = `item-${jobNumber}-${itemName}`;
+        if (!(oldNoteKey in notes)) return;
+        notes[`item-${trimmed}-${itemName}`] = notes[oldNoteKey];
+        delete notes[oldNoteKey];
+        notesChanged = true;
+    });
+    if (notesChanged) localStorage.setItem('mittatNotes', JSON.stringify(notes));
+
+    const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    if (jobNumber in jobBlocks) {
+        jobBlocks[trimmed] = jobBlocks[jobNumber];
+        delete jobBlocks[jobNumber];
+        localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
+    }
+
+    const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+    const oldTsPrefix = `${jobNumber}-`;
+    let timestampsChanged = false;
+    Object.keys(packedTimestamps).forEach((key) => {
+        if (!key.startsWith(oldTsPrefix)) return;
+        const suffix = key.slice(oldTsPrefix.length);
+        if (!/^\d+$/.test(suffix)) return;
+        packedTimestamps[`${trimmed}-${suffix}`] = packedTimestamps[key];
+        delete packedTimestamps[key];
+        timestampsChanged = true;
+    });
+    if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
+
+    syncMitatStateToFirestore();
+    syncMitatInputsToFirestore();
+
+    const menu = btn?.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
+        if (instance) instance.hide();
+    }
+
+    if (selectedMitatJobNumber === jobNumber) selectedMitatJobNumber = trimmed;
+    if (selectedPackingJobNumber === jobNumber) selectedPackingJobNumber = trimmed;
+    if (selectedLasilistaPdfJobNumber === jobNumber) selectedLasilistaPdfJobNumber = trimmed;
+    if (selectedKulmalistaPdfJobNumber === jobNumber) selectedKulmalistaPdfJobNumber = trimmed;
+    if (selectedBlockJobNumber === jobNumber) selectedBlockJobNumber = trimmed;
+    if (pendingJobBlocksJobNumber === jobNumber) pendingJobBlocksJobNumber = trimmed;
+    remapSelectedJobItemKeys(selectedPackingItems, jobNumber, trimmed);
+    remapSelectedJobItemKeys(selectedLasilistaPdfItems, jobNumber, trimmed);
+    remapSelectedJobItemKeys(selectedKulmalistaPdfItems, jobNumber, trimmed);
+    remapSelectedJobItemKeys(selectedBlockItems, jobNumber, trimmed);
+
+    loadMittatView();
+    const paketitView = document.getElementById('paketitView');
+    if (paketitView && !paketitView.classList.contains('d-none')) {
+        loadPaketitView();
+    }
+    showToast(`Työnumero muutettu: "${trimmed}"`, 'success');
+}
+
+function showJobDetails(jobNumber, btn) {
+    const menu = btn?.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        bootstrap.Dropdown.getInstance(dropdownToggle)?.hide();
+    }
+
+    const titleEl = document.getElementById('jobDetailsTitle');
+    if (titleEl) titleEl.textContent = `Työ ${jobNumber}`;
+    const bodyEl = document.getElementById('jobDetailsBody');
+    if (bodyEl) bodyEl.innerHTML = buildTuotantoContentSummary(jobNumber);
+
+    const modalEl = document.getElementById('jobDetailsModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
 }
 
 function getCalculatorLabel(type) {
