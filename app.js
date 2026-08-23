@@ -26,6 +26,14 @@ let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
 let lastKnownJobCount = -1;
 let tuotantoJobCopyDone = false;
+let paketitIndexUnsubscribe = null;
+let paketitIndexJobs = [];
+let paketitIndexLoaded = false;
+let paketitIndexCopyDone = false;
+const paketitJobCache = new Map();
+const PAKETIT_HEADER_LIMIT = 300;
+const PAKETIT_JOB_CACHE_LIMIT = 50;
+const PAKETIT_PREFETCH_COUNT = 10;
 let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
 let deepLinkHighlightTimer = null;
@@ -391,19 +399,32 @@ async function syncTuotantoJobToFirestore(jobNumber) {
         const jobItems = mittatData[jobNumber];
         const hasItems = jobItems && typeof jobItems === 'object' && Object.keys(jobItems).length > 0;
 
-        if (!hasItems || isJobFullyPacked(jobNumber)) {
+        if (!hasItems) {
             await deleteDoc(ref);
+            paketitJobCache.delete(String(jobNumber));
+            await removePaketitIndexRow(jobNumber);
             return;
         }
 
         const payload = buildTuotantoJobPayload(jobNumber);
         if (!payload) {
             await deleteDoc(ref);
+            paketitJobCache.delete(String(jobNumber));
+            await removePaketitIndexRow(jobNumber);
             return;
         }
+        payload.status = isJobFullyPacked(jobNumber) ? 'packed' : 'active';
         payload.updatedBy = currentUser.email;
         payload.updatedAt = serverTimestamp();
         await setDoc(ref, payload);
+        putPaketitJobCache(jobNumber, payload);
+
+        const indexRow = buildPaketitIndexRow(jobNumber);
+        if (indexRow) {
+            await upsertPaketitIndexRow(indexRow);
+        } else {
+            await removePaketitIndexRow(jobNumber);
+        }
     } catch (error) {
         console.error('❌ Työdokumentti-synkka epäonnistui:', jobNumber, error);
     }
@@ -420,6 +441,21 @@ function dualWriteMitatState(jobNumberOrNumbers) {
     const jobs = Array.isArray(jobNumberOrNumbers)
         ? jobNumberOrNumbers
         : (jobNumberOrNumbers ? [jobNumberOrNumbers] : []);
+    if (!isMitatDataClearedAgainstKnownJobs()) {
+        jobs.forEach((jobNumber) => {
+            const row = buildPaketitIndexRow(jobNumber);
+            if (row) {
+                const idx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber));
+                if (idx >= 0) {
+                    paketitIndexJobs[idx] = row;
+                } else {
+                    paketitIndexJobs.push(row);
+                }
+            } else {
+                paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
+            }
+        });
+    }
     void syncTuotantoJobsToFirestore(jobs);
     syncMitatStateToFirestore();
 }
@@ -458,6 +494,262 @@ async function copyMissingActiveJobsToFirestore() {
     }
 }
 
+function getPackedItemsForJob(jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems) {
+    const itemNames = Object.keys((mittatData && mittatData[jobNumber]) || {});
+    const packedItems = itemNames
+        .filter((itemName) => {
+            const checkKey = `${jobNumber}-${itemName}`;
+            return packedMitat[checkKey] && !hiddenMitatItems[checkKey];
+        })
+        .map((itemName) => {
+            const checkKey = `${jobNumber}-${itemName}`;
+            const packageNumber = Number(packedPackageNumbers[checkKey]);
+            return {
+                itemName,
+                packageNumber: Number.isFinite(packageNumber) && packageNumber > 0 ? packageNumber : null
+            };
+        });
+    packedItems.sort((a, b) => {
+        const aPkg = a.packageNumber ?? Number.MAX_SAFE_INTEGER;
+        const bPkg = b.packageNumber ?? Number.MAX_SAFE_INTEGER;
+        if (aPkg !== bPkg) return aPkg - bPkg;
+        return a.itemName.localeCompare(b.itemName, 'fi', { numeric: true, sensitivity: 'base' });
+    });
+    return packedItems;
+}
+
+function getPackedItemsFromJobPayload(payload) {
+    if (!payload || typeof payload !== 'object') return [];
+    const items = payload.items || {};
+    const packed = (payload.checks && payload.checks.packed) || {};
+    const hidden = (payload.checks && payload.checks.hidden) || {};
+    const packageNumbers = (payload.checks && payload.checks.packageNumbers) || {};
+    const packedItems = Object.keys(items)
+        .filter((itemName) => packed[itemName] && !hidden[itemName])
+        .map((itemName) => {
+            const packageNumber = Number(packageNumbers[itemName]);
+            return {
+                itemName,
+                packageNumber: Number.isFinite(packageNumber) && packageNumber > 0 ? packageNumber : null
+            };
+        });
+    packedItems.sort((a, b) => {
+        const aPkg = a.packageNumber ?? Number.MAX_SAFE_INTEGER;
+        const bPkg = b.packageNumber ?? Number.MAX_SAFE_INTEGER;
+        if (aPkg !== bPkg) return aPkg - bPkg;
+        return a.itemName.localeCompare(b.itemName, 'fi', { numeric: true, sensitivity: 'base' });
+    });
+    return packedItems;
+}
+
+function packageCountFromPackedItems(packedItems) {
+    const numberedPackageCount = new Set(
+        (packedItems || [])
+            .map((item) => item.packageNumber)
+            .filter((value) => Number.isFinite(value) && value > 0)
+    ).size;
+    const hasUnnumberedItems = (packedItems || []).some((item) => !item.packageNumber);
+    return numberedPackageCount + (hasUnnumberedItems ? 1 : 0);
+}
+
+function latestPackedTimestampForJob(jobNumber, packedTimestamps) {
+    const prefix = `${jobNumber}-`;
+    let latest = null;
+    let latestMs = Number.NEGATIVE_INFINITY;
+    Object.entries(packedTimestamps || {}).forEach(([key, ts]) => {
+        if (!key.startsWith(prefix)) return;
+        const parsed = Date.parse(String(ts || ''));
+        if (Number.isFinite(parsed) && parsed > latestMs) {
+            latestMs = parsed;
+            latest = ts;
+        }
+    });
+    return latest;
+}
+
+function buildPaketitIndexRow(jobNumber) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+    const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+    const packedItems = getPackedItemsForJob(
+        jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems
+    );
+    if (packedItems.length === 0) return null;
+    return {
+        jobNumber: String(jobNumber),
+        lastPackedAt: latestPackedTimestampForJob(jobNumber, packedTimestamps),
+        itemCount: packedItems.length,
+        packageCount: packageCountFromPackedItems(packedItems),
+        itemNames: packedItems.map((item) => item.itemName)
+    };
+}
+
+function putPaketitJobCache(jobNumber, payload) {
+    const key = String(jobNumber);
+    if (paketitJobCache.has(key)) {
+        paketitJobCache.delete(key);
+    }
+    paketitJobCache.set(key, payload);
+    while (paketitJobCache.size > PAKETIT_JOB_CACHE_LIMIT) {
+        const oldest = paketitJobCache.keys().next().value;
+        paketitJobCache.delete(oldest);
+    }
+}
+
+async function readPaketitIndexJobsFromFirestore() {
+    const { db, doc, getDoc } = window.firebase;
+    const snap = await getDoc(doc(db, 'mitatState', 'paketitIndex'));
+    if (!snap.exists()) return [];
+    const jobs = snap.data().jobs;
+    return Array.isArray(jobs) ? jobs.slice() : [];
+}
+
+async function writePaketitIndexJobs(jobs) {
+    const { db, doc, setDoc, serverTimestamp } = window.firebase;
+    await setDoc(doc(db, 'mitatState', 'paketitIndex'), {
+        jobs,
+        updatedBy: currentUser.email,
+        updatedAt: serverTimestamp()
+    });
+}
+
+async function upsertPaketitIndexRow(row) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (!row || !row.jobNumber) return;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Paketit-indeksin päivitys estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+    try {
+        const jobs = await readPaketitIndexJobsFromFirestore();
+        const idx = jobs.findIndex((job) => String(job.jobNumber) === String(row.jobNumber));
+        if (idx >= 0) {
+            jobs[idx] = row;
+        } else {
+            jobs.push(row);
+        }
+        await writePaketitIndexJobs(jobs);
+    } catch (error) {
+        console.error('❌ Paketit-indeksin päivitys epäonnistui:', row.jobNumber, error);
+    }
+}
+
+async function removePaketitIndexRow(jobNumber) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (!jobNumber) return;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Paketit-indeksin poisto estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+    try {
+        const jobs = await readPaketitIndexJobsFromFirestore();
+        const next = jobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
+        if (next.length === jobs.length) return;
+        await writePaketitIndexJobs(next);
+    } catch (error) {
+        console.error('❌ Paketit-indeksin poisto epäonnistui:', jobNumber, error);
+    }
+}
+
+async function ensurePaketitIndexFromLocalStorage() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Paketit-indeksin kopio estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+    try {
+        const { db, doc, getDoc } = window.firebase;
+        const snap = await getDoc(doc(db, 'mitatState', 'paketitIndex'));
+        if (snap.exists()) return;
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const jobs = [];
+        Object.keys(mittatData).forEach((jobNumber) => {
+            const row = buildPaketitIndexRow(jobNumber);
+            if (row) jobs.push(row);
+        });
+        await writePaketitIndexJobs(jobs);
+    } catch (error) {
+        console.error('❌ Paketit-indeksin kertakopio epäonnistui:', error);
+    }
+}
+
+async function copyMissingPackedJobsToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (paketitIndexCopyDone) return;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Pakattujen työdokumenttien kopio estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+    const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+    const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+
+    try {
+        for (const jobNumber of Object.keys(mittatData)) {
+            const packedItems = getPackedItemsForJob(
+                jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems
+            );
+            if (packedItems.length === 0) continue;
+            try {
+                const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+                const snap = await getDoc(ref);
+                if (!snap.exists()) {
+                    const payload = buildTuotantoJobPayload(jobNumber);
+                    if (payload) {
+                        payload.status = isJobFullyPacked(jobNumber) ? 'packed' : 'active';
+                        payload.updatedBy = currentUser.email;
+                        payload.updatedAt = serverTimestamp();
+                        await setDoc(ref, payload);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Pakatun työdokumentin kopio epäonnistui:', jobNumber, error);
+            }
+        }
+        await ensurePaketitIndexFromLocalStorage();
+    } finally {
+        paketitIndexCopyDone = true;
+    }
+}
+
+async function fetchPaketitJobPayload(jobNumber) {
+    const cached = paketitJobCache.get(String(jobNumber));
+    if (cached) return cached;
+
+    if (window.firebase && window.firebase.db && currentUser) {
+        try {
+            const { db, doc, getDoc } = window.firebase;
+            const snap = await getDoc(doc(db, 'mitatState', getTuotantoJobDocId(jobNumber)));
+            if (snap.exists()) {
+                const payload = snap.data();
+                putPaketitJobCache(jobNumber, payload);
+                return payload;
+            }
+        } catch (error) {
+            console.error('❌ Paketit-työdokumentin haku epäonnistui:', jobNumber, error);
+        }
+    }
+
+    const fallback = buildTuotantoJobPayload(jobNumber);
+    if (fallback) {
+        putPaketitJobCache(jobNumber, fallback);
+    }
+    return fallback;
+}
+
 function clearJobDeepLinkFromUrl() {
     try {
         const url = new URL(window.location.href);
@@ -476,7 +768,11 @@ function focusJobSection(jobId) {
     if (!itemsEl) return false;
 
     if (itemsEl.style.display === 'none') {
-        toggleJobDetails(jobId);
+        if (jobId.startsWith('paketit-job-')) {
+            void togglePaketitJobDetails(jobId);
+        } else {
+            toggleJobDetails(jobId);
+        }
     }
 
     const section = itemsEl.closest('.mitat-job-section') || itemsEl;
@@ -508,22 +804,24 @@ function applyPendingJobDeepLink() {
 
     const jobNumber = pendingJobDeepLink;
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const inLocal = Object.prototype.hasOwnProperty.call(mittatData, jobNumber);
+    const inIndex = paketitIndexJobs.some((row) => String(row.jobNumber) === String(jobNumber));
 
-    if (!Object.prototype.hasOwnProperty.call(mittatData, jobNumber)) {
+    if (!inLocal && !inIndex) {
+        if (!paketitIndexLoaded) return;
         showToast(`Työnumeroa ${jobNumber} ei löytynyt.`, 'warning');
         pendingJobDeepLink = null;
         clearJobDeepLinkFromUrl();
         return;
     }
 
-    if (isJobFullyPacked(jobNumber)) {
+    const fullyPacked = inLocal && isJobFullyPacked(jobNumber);
+    if (fullyPacked || (!inLocal && inIndex)) {
+        if (!paketitIndexLoaded) return;
         const paketitView = document.getElementById('paketitView');
         const paketitVisible = paketitView && !paketitView.classList.contains('d-none');
         if (!paketitVisible) {
-            // switchView → loadPaketitView → applyPendingJobDeepLink again (single focus)
             switchView('paketit');
-            // Prevent mitatState listener from re-rendering Paketit in the same snapshot turn
-            // (would collapse the accordion opened by focusJobSection).
             skipNextPaketitViewReload = true;
             return;
         }
@@ -746,7 +1044,10 @@ function setupRealtimeListeners() {
                 mitatStateLoaded = true;
 
                 if (isFirstLoadMitat) {
-                    void copyMissingActiveJobsToFirestore();
+                    void (async () => {
+                        await copyMissingActiveJobsToFirestore();
+                        await copyMissingPackedJobsToFirestore();
+                    })();
                 }
 
                 const isOwnUpdate = data.updatedBy === currentUser?.email;
@@ -759,15 +1060,6 @@ function setupRealtimeListeners() {
                 if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
                     loadMittatView();
                 }
-                const paketitView = document.getElementById('paketitView');
-                if (paketitView && !paketitView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
-                    if (skipNextPaketitViewReload) {
-                        skipNextPaketitViewReload = false;
-                    } else {
-                        loadPaketitView();
-                    }
-                }
-
                 if (isFirstLoadMitat || pendingJobDeepLink) {
                     applyPendingJobDeepLink();
                 }
@@ -801,6 +1093,41 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe mitatInputs-kuuntelijan luonnissa:', error);
     }
+
+    try {
+        paketitIndexUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'paketitIndex'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    paketitIndexJobs = [];
+                    if (paketitIndexCopyDone) {
+                        paketitIndexLoaded = true;
+                    }
+                    return;
+                }
+                const data = docSnapshot.data() || {};
+                paketitIndexJobs = Array.isArray(data.jobs) ? data.jobs.slice() : [];
+                paketitIndexLoaded = true;
+
+                const paketitView = document.getElementById('paketitView');
+                if (paketitView && !paketitView.classList.contains('d-none')) {
+                    if (skipNextPaketitViewReload) {
+                        skipNextPaketitViewReload = false;
+                    } else {
+                        loadPaketitView();
+                    }
+                }
+                if (pendingJobDeepLink) {
+                    applyPendingJobDeepLink();
+                }
+            },
+            (error) => {
+                console.error('❌ PaketitIndex-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe paketitIndex-kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -822,6 +1149,11 @@ function stopRealtimeListeners() {
     if (mitatInputsUnsubscribe) {
         mitatInputsUnsubscribe();
         mitatInputsUnsubscribe = null;
+    }
+
+    if (paketitIndexUnsubscribe) {
+        paketitIndexUnsubscribe();
+        paketitIndexUnsubscribe = null;
     }
     
     console.log('✅ Kuuntelijat lopetettu');
@@ -1248,6 +1580,10 @@ async function logout() {
     mitatStateLoaded = false;
     lastKnownJobCount = -1;
     tuotantoJobCopyDone = false;
+    paketitIndexCopyDone = false;
+    paketitIndexLoaded = false;
+    paketitIndexJobs = [];
+    paketitJobCache.clear();
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -6393,6 +6729,210 @@ function restoreMitatOpenState(state) {
     });
 }
 
+function parsePaketitTimeMs(ts) {
+    if (ts == null || ts === '') return NaN;
+    if (typeof ts === 'number' && Number.isFinite(ts)) return ts;
+    if (typeof ts.toDate === 'function') {
+        const date = ts.toDate();
+        return date instanceof Date ? date.getTime() : NaN;
+    }
+    if (typeof ts === 'object' && ts.seconds != null) {
+        return Number(ts.seconds) * 1000;
+    }
+    return Date.parse(String(ts));
+}
+
+function matchesPaketitIndexSearch(row, query) {
+    if (!query) return true;
+    const q = String(query).toLowerCase().trim();
+    const rangeMatch = q.match(PAKETIT_DATE_RANGE_REGEX);
+    if (rangeMatch) {
+        const [, d1, m1, y1, d2, m2, y2] = rangeMatch;
+        let start = new Date(Number(y1), Number(m1) - 1, Number(d1), 0, 0, 0, 0).getTime();
+        let end = new Date(Number(y2), Number(m2) - 1, Number(d2), 23, 59, 59, 999).getTime();
+        if (start > end) [start, end] = [end, start];
+        const parsed = parsePaketitTimeMs(row && row.lastPackedAt);
+        return Number.isFinite(parsed) && parsed >= start && parsed <= end;
+    }
+    if (String(row.jobNumber || '').toLowerCase().includes(q)) return true;
+    return (row.itemNames || []).some((name) => String(name).toLowerCase().includes(q));
+}
+
+function paketitTimestampLookup(jobNumber, payload) {
+    const payloadTs = (payload && payload.packedTimestamps) || {};
+    return (pkgKey) => {
+        if (payloadTs[pkgKey] != null) return payloadTs[pkgKey];
+        if (payloadTs[String(pkgKey)] != null) return payloadTs[String(pkgKey)];
+        const local = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
+        return local[`${jobNumber}-${pkgKey}`];
+    };
+}
+
+function renderPaketitJobBodyHtml(jobNumber, packedItems, timestampForPkg, isRangeQuery) {
+    let html = '';
+    const packageGroups = new Map();
+    packedItems.forEach((packedItem) => {
+        const key = packedItem.packageNumber ?? 0;
+        if (!packageGroups.has(key)) packageGroups.set(key, []);
+        packageGroups.get(key).push(packedItem);
+    });
+    const sortedPackageKeys = Array.from(packageGroups.keys()).sort((a, b) => {
+        if (isRangeQuery) {
+            const tsA = a === 0 ? Number.POSITIVE_INFINITY : (parsePaketitTimeMs(timestampForPkg(a)) || Number.POSITIVE_INFINITY);
+            const tsB = b === 0 ? Number.POSITIVE_INFINITY : (parsePaketitTimeMs(timestampForPkg(b)) || Number.POSITIVE_INFINITY);
+            if (tsA !== tsB) return tsA - tsB;
+            return a - b;
+        }
+        if (a === 0) return 1;
+        if (b === 0) return -1;
+        return b - a;
+    });
+    sortedPackageKeys.forEach((pkgKey) => {
+        const groupItems = packageGroups.get(pkgKey);
+        const groupLabel = pkgKey === 0 ? 'Pakattu' : `Paketti ${pkgKey}`;
+        let groupTimestamp = '';
+        if (pkgKey !== 0) {
+            const ts = timestampForPkg(pkgKey);
+            const parsed = parsePaketitTimeMs(ts);
+            if (Number.isFinite(parsed)) {
+                const d = new Date(parsed);
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                const hours = String(d.getHours()).padStart(2, '0');
+                const minutes = String(d.getMinutes()).padStart(2, '0');
+                groupTimestamp = ` (${day}.${month}.${year} klo ${hours}.${minutes})`;
+            }
+        }
+        const dropZoneAttrs = isAdmin
+            ? ` paketit-drop-zone" data-job-number="${sanitizeForAttribute(jobNumber)}" data-pkg-key="${pkgKey}`
+            : '';
+        html += `<div class="paketit-package-group${dropZoneAttrs}">`;
+        html += `<div class="paketit-package-header">${groupLabel}${groupTimestamp}</div>`;
+        groupItems.forEach((packedItem) => {
+            const draggableAttrs = isAdmin
+                ? ` draggable="true" data-job-number="${sanitizeForAttribute(jobNumber)}" data-item-name="${sanitizeForAttribute(packedItem.itemName)}" data-pkg-key="${pkgKey}"`
+                : '';
+            html += `<div class="mitat-item-section${isAdmin ? ' paketit-item-draggable' : ''}"${draggableAttrs}>`;
+            html += `<div class="mitat-item-header-main">`;
+            html += `<div class="d-flex align-items-center gap-2">`;
+            html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
+            if (isAdmin) {
+                const safeJob = sanitizeForAttribute(jobNumber);
+                const safeItem = sanitizeForAttribute(packedItem.itemName);
+                html += `<div class="dropdown mitat-item-actions">`;
+                html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
+                html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+                html += `<li>`;
+                html += `<button class="btn btn-sm btn-outline-info w-100" onclick="showPaketitItemDetails('${safeJob}', '${safeItem}', this)">Tiedot</button>`;
+                html += `</li>`;
+                html += `<li class="mt-1">`;
+                html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renamePaketitItem('${safeJob}', '${safeItem}', this)">Muokkaa nimeä</button>`;
+                html += `</li>`;
+                html += `</ul>`;
+                html += `</div>`;
+            }
+            html += `</div>`;
+            html += `</div>`;
+            html += `</div>`;
+        });
+        html += `</div>`;
+    });
+    return html;
+}
+
+function captureOpenPaketitJobNumbers() {
+    const open = [];
+    document.querySelectorAll('#paketitContainer .mitat-job-items').forEach((el) => {
+        if (el.style.display === 'none') return;
+        const encoded = el.dataset.jobNumber;
+        if (!encoded) return;
+        try {
+            open.push(decodeURIComponent(encoded));
+        } catch (error) {
+            open.push(encoded);
+        }
+    });
+    return open;
+}
+
+function setPaketitJobOpenState(jobId, isOpen) {
+    const jobItemsElement = document.getElementById(jobId);
+    const iconElement = document.getElementById(`${jobId}-icon`);
+    const headerElement = jobItemsElement ? jobItemsElement.previousElementSibling : null;
+    if (jobItemsElement) {
+        jobItemsElement.style.display = isOpen ? 'block' : 'none';
+    }
+    if (iconElement) {
+        iconElement.textContent = isOpen ? '▲' : '▼';
+        iconElement.classList.toggle('rotated', isOpen);
+    }
+    if (headerElement && headerElement.classList.contains('mitat-job-header')) {
+        headerElement.setAttribute('aria-expanded', String(isOpen));
+    }
+}
+
+async function fillPaketitJobBody(jobId, jobNumber) {
+    const el = document.getElementById(jobId);
+    if (!el) return false;
+    el.innerHTML = '<p class="text-muted text-center mb-0 py-2">Ladataan…</p>';
+    const payload = await fetchPaketitJobPayload(jobNumber);
+    const still = document.getElementById(jobId);
+    if (!still) return false;
+    if (!payload) {
+        still.innerHTML = '<p class="text-muted text-center mb-0 py-2">Työtä ei löytynyt.</p>';
+        return false;
+    }
+    let packedItems = getPackedItemsFromJobPayload(payload);
+    const isRangeQuery = PAKETIT_DATE_RANGE_REGEX.test((paketitSearchQuery || '').toLowerCase().trim());
+    const timestampForPkg = paketitTimestampLookup(jobNumber, payload);
+    if (paketitSearchQuery) {
+        const packedTimestamps = {};
+        packedItems.forEach((item) => {
+            if (item.packageNumber == null) return;
+            packedTimestamps[`${jobNumber}-${item.packageNumber}`] = timestampForPkg(item.packageNumber);
+        });
+        packedItems = packedItems.filter((item) =>
+            matchesPaketitSearch(jobNumber, item, paketitSearchQuery, packedTimestamps)
+        );
+    }
+    still.innerHTML = renderPaketitJobBodyHtml(jobNumber, packedItems, timestampForPkg, isRangeQuery);
+    still.dataset.loaded = '1';
+    if (isAdmin) {
+        initPaketitDragAndDrop(still);
+    }
+    return true;
+}
+
+async function togglePaketitJobDetails(jobId) {
+    const el = document.getElementById(jobId);
+    if (!el) return;
+    const encoded = el.dataset.jobNumber || '';
+    let jobNumber = encoded;
+    try {
+        jobNumber = decodeURIComponent(encoded);
+    } catch (error) {
+        jobNumber = encoded;
+    }
+    const isOpening = el.style.display === 'none';
+    if (!isOpening) {
+        setPaketitJobOpenState(jobId, false);
+        return;
+    }
+    if (el.dataset.loaded !== '1') {
+        await fillPaketitJobBody(jobId, jobNumber);
+    }
+    setPaketitJobOpenState(jobId, true);
+}
+
+function prefetchNewestPaketitJobs(rows) {
+    (rows || []).slice(0, PAKETIT_PREFETCH_COUNT).forEach((row) => {
+        if (!row || !row.jobNumber) return;
+        if (paketitJobCache.has(String(row.jobNumber))) return;
+        void fetchPaketitJobPayload(row.jobNumber);
+    });
+}
+
 function loadPaketitView() {
     const container = document.getElementById('paketitContainer');
     if (!container) return;
@@ -6401,84 +6941,54 @@ function loadPaketitView() {
     if (paketitBackupBtn) {
         paketitBackupBtn.style.display = isAdmin ? '' : 'none';
     }
-    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
-    const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
-    const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
-    const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
 
-    const packedByJob = {};
-    Object.keys(mittatData).forEach((jobNumber) => {
-        const itemNames = Object.keys(mittatData[jobNumber] || {});
-        const packedItems = itemNames
-            .filter((itemName) => {
-                const checkKey = `${jobNumber}-${itemName}`;
-                return packedMitat[checkKey] && !hiddenMitatItems[checkKey];
-            })
-            .map((itemName) => {
-                const checkKey = `${jobNumber}-${itemName}`;
-                const packageNumber = Number(packedPackageNumbers[checkKey]);
-                return {
-                    itemName,
-                    packageNumber: Number.isFinite(packageNumber) && packageNumber > 0 ? packageNumber : null
-                };
-            });
-        if (packedItems.length > 0) {
-            packedByJob[jobNumber] = packedItems.sort((a, b) => {
-                const aPkg = a.packageNumber ?? Number.MAX_SAFE_INTEGER;
-                const bPkg = b.packageNumber ?? Number.MAX_SAFE_INTEGER;
-                if (aPkg !== bPkg) return aPkg - bPkg;
-                return a.itemName.localeCompare(b.itemName, 'fi', { numeric: true, sensitivity: 'base' });
-            });
-        }
-    });
-
-    if (paketitSearchQuery) {
-        Object.keys(packedByJob).forEach((jobNumber) => {
-            packedByJob[jobNumber] = packedByJob[jobNumber].filter(
-                (item) => matchesPaketitSearch(jobNumber, item, paketitSearchQuery, packedTimestamps)
-            );
-            if (packedByJob[jobNumber].length === 0) delete packedByJob[jobNumber];
-        });
+    if (!paketitIndexLoaded) {
+        container.innerHTML = '<p class="text-muted text-center">Ladataan paketteja…</p>';
+        return;
     }
 
-    const getLatestPackedTimestamp = (jobNumber) => {
-        const prefix = `${jobNumber}-`;
-        let latest = Number.NEGATIVE_INFINITY;
-        Object.entries(packedTimestamps).forEach(([key, ts]) => {
-            if (!key.startsWith(prefix)) return;
-            const parsed = Date.parse(String(ts || ''));
-            if (Number.isFinite(parsed) && parsed > latest) latest = parsed;
-        });
-        return latest;
-    };
+    const previouslyOpen = captureOpenPaketitJobNumbers();
+    let rows = paketitIndexJobs.slice();
 
-    // Päivämääräväli-haussa näytetään tulokset kronologisesti (pienin pakkausaika ylimpänä)
-    const isRangeQuery = PAKETIT_DATE_RANGE_REGEX.test((paketitSearchQuery || '').toLowerCase().trim());
-
-    const getEarliestMatchedTimestamp = (jobNumber) => {
-        let earliest = Number.POSITIVE_INFINITY;
-        (packedByJob[jobNumber] || []).forEach((item) => {
-            if (item.packageNumber == null) return;
-            const ts = packedTimestamps[`${jobNumber}-${item.packageNumber}`];
-            const parsed = ts ? new Date(ts).getTime() : NaN;
-            if (Number.isFinite(parsed) && parsed < earliest) earliest = parsed;
-        });
-        return earliest;
-    };
-
-    const jobNumbers = Object.keys(packedByJob).sort((a, b) => {
-        if (isRangeQuery) {
-            const diff = getEarliestMatchedTimestamp(a) - getEarliestMatchedTimestamp(b);
-            if (diff !== 0) return diff;
-            return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+    if (pendingJobDeepLink) {
+        const deepRow = rows.find((row) => String(row.jobNumber) === String(pendingJobDeepLink));
+        if (!deepRow) {
+            const fallback = buildPaketitIndexRow(pendingJobDeepLink);
+            if (fallback) rows.push(fallback);
         }
-        const diff = getLatestPackedTimestamp(b) - getLatestPackedTimestamp(a);
-        if (diff !== 0) return diff;
-        return b.localeCompare(a, 'fi', { numeric: true, sensitivity: 'base' });
+    }
+
+    if (paketitSearchQuery) {
+        rows = rows.filter((row) => matchesPaketitIndexSearch(row, paketitSearchQuery));
+    }
+
+    const isRangeQuery = PAKETIT_DATE_RANGE_REGEX.test((paketitSearchQuery || '').toLowerCase().trim());
+    rows.sort((a, b) => {
+        const aMs = parsePaketitTimeMs(a.lastPackedAt);
+        const bMs = parsePaketitTimeMs(b.lastPackedAt);
+        const aVal = Number.isFinite(aMs) ? aMs : (isRangeQuery ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+        const bVal = Number.isFinite(bMs) ? bMs : (isRangeQuery ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+        if (isRangeQuery) {
+            const diff = aVal - bVal;
+            if (diff !== 0) return diff;
+        } else {
+            const diff = bVal - aVal;
+            if (diff !== 0) return diff;
+        }
+        return String(b.jobNumber).localeCompare(String(a.jobNumber), 'fi', { numeric: true, sensitivity: 'base' });
     });
 
-    if (jobNumbers.length === 0) {
+    if (pendingJobDeepLink) {
+        const deepIdx = rows.findIndex((row) => String(row.jobNumber) === String(pendingJobDeepLink));
+        if (deepIdx >= PAKETIT_HEADER_LIMIT) {
+            const [deepRow] = rows.splice(deepIdx, 1);
+            rows.unshift(deepRow);
+        }
+    }
+
+    rows = rows.slice(0, PAKETIT_HEADER_LIMIT);
+
+    if (rows.length === 0) {
         if (paketitSearchQuery) {
             container.innerHTML = `<p class="text-muted text-center">Ei hakutuloksia haulle "<strong>${paketitSearchQuery}</strong>".</p>`;
         } else {
@@ -6488,113 +6998,41 @@ function loadPaketitView() {
         return;
     }
 
-    const isSearchExpanded = !!paketitSearchQuery;
-
     let html = '';
-    jobNumbers.forEach((jobNumber) => {
-        const jobId = `paketit-job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
-        const packedItems = packedByJob[jobNumber];
-        const numberedPackageCount = new Set(
-            packedItems
-                .map((item) => item.packageNumber)
-                .filter((value) => Number.isFinite(value) && value > 0)
-        ).size;
-        const hasUnnumberedItems = packedItems.some((item) => !item.packageNumber);
-        const packageCount = numberedPackageCount + (hasUnnumberedItems ? 1 : 0);
+    rows.forEach((row) => {
+        const jobNumber = row.jobNumber;
+        const jobId = jobDomId('paketit-job', jobNumber);
+        const encodedJob = encodeURIComponent(jobNumber);
+        const itemCount = Number(row.itemCount) || 0;
+        const packageCount = Number(row.packageCount) || 0;
 
         html += `<div class="mitat-job-section">`;
-        html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="${isSearchExpanded}" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
+        html += `<div class="mitat-job-header" onclick="togglePaketitJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2">`;
         html += `<h4 class="mitat-job-title">Työ ${jobNumber}</h4>`;
-        html += `<span class="mitat-mini-label">(${packedItems.length} PAKATTU / ${packageCount} PAKETTIA)</span>`;
+        html += `<span class="mitat-mini-label">(${itemCount} PAKATTU / ${packageCount} PAKETTIA)</span>`;
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
         if (isAdmin) {
             html += `<button class="btn btn-danger" style="font-size: 0.7rem; padding: 3px 6px;" onclick="event.stopPropagation(); deleteJobMitat('${sanitizeForAttribute(jobNumber)}')">🗑️</button>`;
         }
-        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">${isSearchExpanded ? '▲' : '▼'}</span>`;
+        html += `<span class="mitat-toggle-icon" id="${jobId}-icon">▼</span>`;
         html += `</div>`;
         html += `</div>`;
-
-        html += `<div class="mitat-job-items" id="${jobId}" style="display: ${isSearchExpanded ? 'block' : 'none'};">`;
-
-        // Group items by package number
-        const packageGroups = new Map();
-        packedItems.forEach((packedItem) => {
-            const key = packedItem.packageNumber ?? 0;
-            if (!packageGroups.has(key)) packageGroups.set(key, []);
-            packageGroups.get(key).push(packedItem);
-        });
-        const sortedPackageKeys = Array.from(packageGroups.keys()).sort((a, b) => {
-            if (isRangeQuery) {
-                const tsA = a === 0 ? Number.POSITIVE_INFINITY : (new Date(packedTimestamps[`${jobNumber}-${a}`] || 0).getTime() || Number.POSITIVE_INFINITY);
-                const tsB = b === 0 ? Number.POSITIVE_INFINITY : (new Date(packedTimestamps[`${jobNumber}-${b}`] || 0).getTime() || Number.POSITIVE_INFINITY);
-                if (tsA !== tsB) return tsA - tsB;
-                return a - b;
-            }
-            if (a === 0) return 1;
-            if (b === 0) return -1;
-            return b - a;
-        });
-        sortedPackageKeys.forEach((pkgKey) => {
-            const groupItems = packageGroups.get(pkgKey);
-            const groupLabel = pkgKey === 0 ? 'Pakattu' : `Paketti ${pkgKey}`;
-            let groupTimestamp = '';
-            if (pkgKey !== 0) {
-                const ts = packedTimestamps[`${jobNumber}-${pkgKey}`];
-                if (ts) {
-                    const d = new Date(ts);
-                    const day = String(d.getDate()).padStart(2, '0');
-                    const month = String(d.getMonth() + 1).padStart(2, '0');
-                    const year = d.getFullYear();
-                    const hours = String(d.getHours()).padStart(2, '0');
-                    const minutes = String(d.getMinutes()).padStart(2, '0');
-                    groupTimestamp = ` (${day}.${month}.${year} klo ${hours}.${minutes})`;
-                }
-            }
-            const dropZoneAttrs = isAdmin
-                ? ` paketit-drop-zone" data-job-number="${sanitizeForAttribute(jobNumber)}" data-pkg-key="${pkgKey}`
-                : '';
-            html += `<div class="paketit-package-group${dropZoneAttrs}">`;
-            html += `<div class="paketit-package-header">${groupLabel}${groupTimestamp}</div>`;
-            groupItems.forEach((packedItem) => {
-                const draggableAttrs = isAdmin
-                    ? ` draggable="true" data-job-number="${sanitizeForAttribute(jobNumber)}" data-item-name="${sanitizeForAttribute(packedItem.itemName)}" data-pkg-key="${pkgKey}"`
-                    : '';
-                html += `<div class="mitat-item-section${isAdmin ? ' paketit-item-draggable' : ''}"${draggableAttrs}>`;
-                html += `<div class="mitat-item-header-main">`;
-                html += `<div class="d-flex align-items-center gap-2">`;
-                html += `<h5 class="mitat-item-title">- ${packedItem.itemName}</h5>`;
-                if (isAdmin) {
-                    const safeJob = sanitizeForAttribute(jobNumber);
-                    const safeItem = sanitizeForAttribute(packedItem.itemName);
-                    html += `<div class="dropdown mitat-item-actions">`;
-                    html += `<button class="btn-item-actions" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" title="Toiminnot">⚙️</button>`;
-                    html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
-                    html += `<li>`;
-                    html += `<button class="btn btn-sm btn-outline-info w-100" onclick="showPaketitItemDetails('${safeJob}', '${safeItem}', this)">Tiedot</button>`;
-                    html += `</li>`;
-                    html += `<li class="mt-1">`;
-                    html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renamePaketitItem('${safeJob}', '${safeItem}', this)">Muokkaa nimeä</button>`;
-                    html += `</li>`;
-                    html += `</ul>`;
-                    html += `</div>`;
-                }
-                html += `</div>`;
-                html += `</div>`;
-                html += `</div>`;
-            });
-            html += `</div>`;
-        });
-
-        html += `</div>`;
+        html += `<div class="mitat-job-items" id="${jobId}" data-job-number="${encodedJob}" style="display: none;"></div>`;
         html += `</div>`;
     });
 
     container.innerHTML = html;
 
-    if (isAdmin) {
-        initPaketitDragAndDrop(container);
+    previouslyOpen.forEach((jobNumber) => {
+        const jobId = jobDomId('paketit-job', jobNumber);
+        if (!document.getElementById(jobId)) return;
+        void togglePaketitJobDetails(jobId);
+    });
+
+    if (!paketitSearchQuery) {
+        prefetchNewestPaketitJobs(rows);
     }
     applyPendingJobDeepLink();
 }
@@ -6662,20 +7100,7 @@ function initPaketitDragAndDrop(container) {
             }
             localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
             dualWriteMitatState(paketitDraggedJobNumber);
-
-            const openJobIds = Array.from(
-                container.querySelectorAll('.mitat-job-items')
-            ).filter((el) => el.style.display !== 'none')
-             .map((el) => el.id);
-
             loadPaketitView();
-
-            openJobIds.forEach((jobId) => {
-                const el = document.getElementById(jobId);
-                if (el && el.style.display === 'none') {
-                    toggleJobDetails(jobId);
-                }
-            });
         });
     });
 }
@@ -6728,17 +7153,7 @@ function renamePaketitItem(jobNumber, itemName, btn) {
         if (instance) instance.hide();
     }
 
-    const container = document.getElementById('paketitContainer');
-    const openJobIds = Array.from(
-        container?.querySelectorAll('.mitat-job-items') || []
-    ).filter((el) => el.style.display !== 'none').map((el) => el.id);
-
     loadPaketitView();
-
-    openJobIds.forEach((jobId) => {
-        const el = document.getElementById(jobId);
-        if (el && el.style.display === 'none') toggleJobDetails(jobId);
-    });
 
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
@@ -9460,6 +9875,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
+    paketitJobCache.delete(String(jobNumber));
 
     if (selectedPackingJobNumber === jobNumber) {
         selectedPackingJobNumber = null;
@@ -9512,6 +9928,7 @@ function deleteJobMitat(jobNumber) {
     }
     
     loadMittatView();
+    loadPaketitView();
     showToast(`Työ ${jobNumber} poistettu`, 'info');
 }
 
