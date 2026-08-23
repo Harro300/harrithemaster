@@ -25,6 +25,7 @@ let mitatStateUnsubscribe = null;
 let mitatInputsUnsubscribe = null;
 let mitatStateLoaded = false;
 let lastKnownJobCount = -1;
+let tuotantoJobCopyDone = false;
 let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
 let deepLinkHighlightTimer = null;
@@ -284,6 +285,177 @@ function isJobFullyPacked(jobNumber) {
     const itemNames = Object.keys(mittatData[jobNumber] || {});
     return itemNames.length > 0 &&
         itemNames.every((itemName) => packedMitat[`${jobNumber}-${itemName}`]);
+}
+
+const MITAT_JOB_DOC_PREFIX = 'job_';
+
+function getTuotantoJobDocId(jobNumber) {
+    return MITAT_JOB_DOC_PREFIX + encodeURIComponent(String(jobNumber));
+}
+
+function jobNumberFromCheckKey(checkKey) {
+    const key = String(checkKey || '');
+    if (!key) return '';
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    for (const jobNumber of Object.keys(mittatData)) {
+        const prefix = `${jobNumber}-`;
+        if (!key.startsWith(prefix)) continue;
+        const itemName = key.slice(prefix.length);
+        if (Object.prototype.hasOwnProperty.call(mittatData[jobNumber] || {}, itemName)) {
+            return jobNumber;
+        }
+    }
+    return '';
+}
+
+function mapJobItemValues(storeMap, jobNumber, itemNames) {
+    const out = {};
+    const prefix = `${jobNumber}-`;
+    (itemNames || []).forEach((itemName) => {
+        const storeKey = prefix + itemName;
+        if (!Object.prototype.hasOwnProperty.call(storeMap || {}, storeKey)) return;
+        const val = storeMap[storeKey];
+        if (val == null || val === false) return;
+        out[itemName] = val;
+    });
+    return out;
+}
+
+function buildTuotantoJobPayload(jobNumber) {
+    const state = getMitatStateFromLocalStorage();
+    const items = state.mittatData && state.mittatData[jobNumber];
+    if (!items || typeof items !== 'object') return null;
+    const itemNames = Object.keys(items);
+    if (itemNames.length === 0) return null;
+
+    const notes = { items: {} };
+    const jobNote = state.mittatNotes[`job-${jobNumber}`];
+    if (jobNote) notes.job = jobNote;
+    itemNames.forEach((itemName) => {
+        const note = state.mittatNotes[`item-${jobNumber}-${itemName}`];
+        if (note) notes.items[itemName] = note;
+    });
+
+    const packedTimestamps = {};
+    const tsPrefix = `${jobNumber}-`;
+    Object.entries(state.packedTimestamps || {}).forEach(([key, ts]) => {
+        if (!key.startsWith(tsPrefix)) return;
+        const suffix = key.slice(tsPrefix.length);
+        if (!/^\d+$/.test(suffix)) return;
+        packedTimestamps[suffix] = ts;
+    });
+
+    const itemBlocks = mapJobItemValues(state.itemBlocks, jobNumber, itemNames);
+
+    return {
+        jobNumber: String(jobNumber),
+        status: 'active',
+        items: JSON.parse(JSON.stringify(items)),
+        checks: {
+            lasilistat: mapJobItemValues(state.checkedMitat, jobNumber, itemNames),
+            kulmalistat: mapJobItemValues(state.checkedKulmalistat, jobNumber, itemNames),
+            paneelit: mapJobItemValues(state.checkedPaneelit, jobNumber, itemNames),
+            done: mapJobItemValues(state.doneMitat, jobNumber, itemNames),
+            packed: mapJobItemValues(state.packedMitat, jobNumber, itemNames),
+            hidden: mapJobItemValues(state.hiddenMitatItems, jobNumber, itemNames),
+            packageNumbers: mapJobItemValues(state.packedPackageNumbers, jobNumber, itemNames)
+        },
+        notes,
+        jobBlocks: Array.isArray(state.jobBlocks[jobNumber]) ? state.jobBlocks[jobNumber] : [],
+        itemBlocks,
+        packedTimestamps
+    };
+}
+
+function isMitatDataClearedAgainstKnownJobs() {
+    const currentJobCount = Object.keys(
+        JSON.parse(localStorage.getItem('mittatData') || '{}')
+    ).length;
+    return currentJobCount === 0 && lastKnownJobCount > 0;
+}
+
+async function syncTuotantoJobToFirestore(jobNumber) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (!jobNumber) return;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Työdokumentti-synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+
+    try {
+        const { db, doc, setDoc, deleteDoc, serverTimestamp } = window.firebase;
+        const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const jobItems = mittatData[jobNumber];
+        const hasItems = jobItems && typeof jobItems === 'object' && Object.keys(jobItems).length > 0;
+
+        if (!hasItems || isJobFullyPacked(jobNumber)) {
+            await deleteDoc(ref);
+            return;
+        }
+
+        const payload = buildTuotantoJobPayload(jobNumber);
+        if (!payload) {
+            await deleteDoc(ref);
+            return;
+        }
+        payload.updatedBy = currentUser.email;
+        payload.updatedAt = serverTimestamp();
+        await setDoc(ref, payload);
+    } catch (error) {
+        console.error('❌ Työdokumentti-synkka epäonnistui:', jobNumber, error);
+    }
+}
+
+async function syncTuotantoJobsToFirestore(jobNumbers) {
+    const unique = [...new Set((jobNumbers || []).filter(Boolean).map(String))];
+    for (const jobNumber of unique) {
+        await syncTuotantoJobToFirestore(jobNumber);
+    }
+}
+
+function dualWriteMitatState(jobNumberOrNumbers) {
+    const jobs = Array.isArray(jobNumberOrNumbers)
+        ? jobNumberOrNumbers
+        : (jobNumberOrNumbers ? [jobNumberOrNumbers] : []);
+    void syncTuotantoJobsToFirestore(jobs);
+    syncMitatStateToFirestore();
+}
+
+async function copyMissingActiveJobsToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (tuotantoJobCopyDone) return;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Työdokumentti-kopio estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return;
+    }
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const { db, doc, getDoc, setDoc, serverTimestamp } = window.firebase;
+
+    try {
+        for (const jobNumber of Object.keys(mittatData)) {
+            if (isJobFullyPacked(jobNumber)) continue;
+            try {
+                const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+                const snap = await getDoc(ref);
+                if (snap.exists()) continue;
+                const payload = buildTuotantoJobPayload(jobNumber);
+                if (!payload) continue;
+                payload.updatedBy = currentUser.email;
+                payload.updatedAt = serverTimestamp();
+                await setDoc(ref, payload);
+            } catch (error) {
+                console.error('❌ Työdokumentti-kopio epäonnistui:', jobNumber, error);
+            }
+        }
+    } finally {
+        tuotantoJobCopyDone = true;
+    }
 }
 
 function clearJobDeepLinkFromUrl() {
@@ -572,6 +744,10 @@ function setupRealtimeListeners() {
                 });
                 lastKnownJobCount = Object.keys(data.mittatData || {}).length;
                 mitatStateLoaded = true;
+
+                if (isFirstLoadMitat) {
+                    void copyMissingActiveJobsToFirestore();
+                }
 
                 const isOwnUpdate = data.updatedBy === currentUser?.email;
 
@@ -1071,6 +1247,7 @@ async function logout() {
     stopRealtimeListeners();
     mitatStateLoaded = false;
     lastKnownJobCount = -1;
+    tuotantoJobCopyDone = false;
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -5165,7 +5342,7 @@ function confirmTransferToMitat() {
     
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
     
     // Close modal
@@ -6484,7 +6661,7 @@ function initPaketitDragAndDrop(container) {
                 packedPackageNumbers[checkKey] = newPkgKey;
             }
             localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
-            syncMitatStateToFirestore();
+            dualWriteMitatState(paketitDraggedJobNumber);
 
             const openJobIds = Array.from(
                 container.querySelectorAll('.mitat-job-items')
@@ -6542,7 +6719,7 @@ function renamePaketitItem(jobNumber, itemName, btn) {
         localStorage.setItem('mittatNotes', JSON.stringify(notes));
     }
 
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
 
     const menu = btn.closest('.dropdown-menu');
     const dropdownToggle = menu?.previousElementSibling;
@@ -6836,7 +7013,7 @@ function hideMitatItem(jobNumber, itemName) {
         hiddenMitatItems[checkKey] = true;
     }
     localStorage.setItem('hiddenMitatItems', JSON.stringify(hiddenMitatItems));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
 
     const mittatView = document.getElementById('mittatView');
     if (mittatView && !mittatView.classList.contains('d-none')) {
@@ -6886,8 +7063,8 @@ function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, item
     return groups;
 }
 
-function persistMitatBlockState() {
-    syncMitatStateToFirestore();
+function persistMitatBlockState(jobNumber) {
+    dualWriteMitatState(jobNumber || pendingJobBlocksJobNumber || selectedBlockJobNumber);
     syncMitatInputsToFirestore();
 }
 
@@ -6920,7 +7097,7 @@ function deleteJobBlock(jobNumber, blockId) {
     });
     localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
 
-    persistMitatBlockState();
+    persistMitatBlockState(jobNumber);
 
     if (remaining.length === 0 && selectedBlockJobNumber === jobNumber) {
         clearBlockAssignMode();
@@ -7109,7 +7286,7 @@ function confirmJobBlocksCreate() {
     const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     jobBlocks[jobNumber] = blocks;
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
-    persistMitatBlockState();
+    persistMitatBlockState(jobNumber);
 
     const modalEl = document.getElementById('jobBlocksCreateModal');
     bootstrap.Modal.getInstance(modalEl)?.hide();
@@ -7177,7 +7354,7 @@ function confirmJobBlocksPick(blockId) {
         itemBlocks[`${jobNumber}-${itemName}`] = blockId;
     });
     localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
-    persistMitatBlockState();
+    persistMitatBlockState(selectedBlockJobNumber);
 
     selectedBlockItems = {};
     bootstrap.Modal.getInstance(document.getElementById('jobBlocksPickModal'))?.hide();
@@ -7510,7 +7687,7 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
             checkedMitat[`${jobNumber}-${itemName}`] = true;
         });
         localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
-        syncMitatStateToFirestore();
+        dualWriteMitatState(jobNumber);
 
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
@@ -7721,7 +7898,7 @@ async function downloadKulmalistaSummaryPdf(jobNumber) {
             checkedKulmalistat[`${jobNumber}-${itemName}`] = true;
         });
         localStorage.setItem('checkedKulmalistat', JSON.stringify(checkedKulmalistat));
-        syncMitatStateToFirestore();
+        dualWriteMitatState(jobNumber);
 
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
@@ -7932,7 +8109,7 @@ async function downloadPaneeliSummaryPdf(jobNumber) {
             checkedPaneelit[`${jobNumber}-${itemName}`] = true;
         });
         localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
-        syncMitatStateToFirestore();
+        dualWriteMitatState(jobNumber);
 
         isPaneeliPdfMode = false;
         selectedPaneeliPdfJobNumber = null;
@@ -8119,7 +8296,7 @@ async function downloadPackingList(jobNumber) {
         const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
         packedTimestamps[`${jobNumber}-${nextPackageNumber}`] = new Date().toISOString();
         localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
-        syncMitatStateToFirestore();
+        dualWriteMitatState(jobNumber);
         isPackingListMode = false;
         selectedPackingJobNumber = null;
         selectedPackingItems = {};
@@ -8173,7 +8350,7 @@ function cloneMitatItem(jobNumber, itemName, btn) {
     }
 
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
 
     const dropdownToggle = menu?.previousElementSibling;
     if (dropdownToggle && window.bootstrap?.Dropdown) {
@@ -8224,7 +8401,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
         localStorage.setItem('mittatNotes', JSON.stringify(notes));
     }
 
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
 
     const menu = btn.closest('.dropdown-menu');
@@ -8318,7 +8495,7 @@ function renameMitatJob(jobNumber, btn) {
     });
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
-    syncMitatStateToFirestore();
+    dualWriteMitatState([jobNumber, trimmed]);
     syncMitatInputsToFirestore();
 
     const menu = btn?.closest('.dropdown-menu');
@@ -8805,7 +8982,7 @@ function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 
     if (calcOk) item.data = mergeDataArrays(allData);
 
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
 
     if (calcOk) {
@@ -8869,7 +9046,7 @@ function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mi
     item.lasilistaColor = normalizeLasilistaColor(rawColor);
 
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
 
     if (context === 'paketit') {
@@ -9028,7 +9205,7 @@ function saveMittatNote() {
     }
     
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(currentNoteJobNumber);
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('mittatNotesModal'));
@@ -9068,7 +9245,7 @@ function toggleMittatCheck(checkKey, checkboxElement) {
     const isChecked = !checkedMitat[checkKey];
     checkedMitat[checkKey] = isChecked;
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumberFromCheckKey(checkKey));
     
     // Update checkbox UI in-place so open panels don't collapse
     if (checkboxElement) {
@@ -9088,7 +9265,7 @@ function toggleKulmalistatCheck(checkKey, checkboxElement) {
     const isChecked = !checkedKulmalistat[checkKey];
     checkedKulmalistat[checkKey] = isChecked;
     localStorage.setItem('checkedKulmalistat', JSON.stringify(checkedKulmalistat));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumberFromCheckKey(checkKey));
 
     if (checkboxElement) {
         if (isChecked) {
@@ -9107,7 +9284,7 @@ function togglePaneelitCheck(checkKey, checkboxElement) {
     const isChecked = !checkedPaneelit[checkKey];
     checkedPaneelit[checkKey] = isChecked;
     localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumberFromCheckKey(checkKey));
 
     if (checkboxElement) {
         if (isChecked) {
@@ -9180,7 +9357,7 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
     localStorage.setItem('hiddenMitatItems', JSON.stringify(hiddenMitatItems));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
 
     // Update checkbox UI in-place so open panels don't collapse
     if (checkboxElement) {
@@ -9281,7 +9458,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
 
     if (selectedPackingJobNumber === jobNumber) {
@@ -9476,7 +9653,7 @@ function deleteMitta(jobNumber, itemName) {
             }
         }
 
-        syncMitatStateToFirestore();
+        dualWriteMitatState(jobNumber);
         syncMitatInputsToFirestore();
         
         loadMittatView();
@@ -10309,7 +10486,7 @@ function bulkTransferScanQueue() {
         return;
     }
 
-    syncMitatStateToFirestore();
+    dualWriteMitatState([...jobs]);
     syncMitatInputsToFirestore();
     scanTransferQueue = [];
     scanBatchJobNumber = null;
@@ -11294,7 +11471,7 @@ function applyScanResult() {
     }
 
     const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
-    syncMitatStateToFirestore();
+    dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore();
     closeScanReview();
     const countLabel = quantity > 1 ? ` (${quantity} kpl)` : '';

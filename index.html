@@ -4154,7 +4154,8 @@
         query,
         orderBy,
         serverTimestamp,
-        setDoc
+        setDoc,
+        deleteField
       } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 
       // Firebase configuration
@@ -4196,6 +4197,7 @@
         deleteDoc: deleteDoc,
         updateDoc: updateDoc,
         setDoc: setDoc,
+        deleteField: deleteField,
         doc: doc,
         onSnapshot: onSnapshot,
         query: query,
@@ -4221,7 +4223,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260823R1"></script>
+    <script src="app.js?v=20260823R2"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>
