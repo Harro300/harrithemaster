@@ -151,6 +151,7 @@ function getMitatStateFromLocalStorage() {
         mittatData: JSON.parse(localStorage.getItem('mittatData') || '{}'),
         checkedMitat: JSON.parse(localStorage.getItem('checkedMitat') || '{}'),
         checkedKulmalistat: JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}'),
+        checkedPaneelit: JSON.parse(localStorage.getItem('checkedPaneelit') || '{}'),
         doneMitat: JSON.parse(localStorage.getItem('doneMitat') || '{}'),
         packedMitat: JSON.parse(localStorage.getItem('packedMitat') || '{}'),
         packedPackageNumbers: JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}'),
@@ -166,6 +167,7 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('mittatData', JSON.stringify(state.mittatData || {}));
     localStorage.setItem('checkedMitat', JSON.stringify(state.checkedMitat || {}));
     localStorage.setItem('checkedKulmalistat', JSON.stringify(state.checkedKulmalistat || {}));
+    localStorage.setItem('checkedPaneelit', JSON.stringify(state.checkedPaneelit || {}));
     localStorage.setItem('doneMitat', JSON.stringify(state.doneMitat || {}));
     localStorage.setItem('packedMitat', JSON.stringify(state.packedMitat || {}));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(state.packedPackageNumbers || {}));
@@ -558,6 +560,7 @@ function setupRealtimeListeners() {
                     mittatData: data.mittatData || {},
                     checkedMitat: data.checkedMitat || {},
                     checkedKulmalistat: data.checkedKulmalistat || {},
+                    checkedPaneelit: data.checkedPaneelit || {},
                     doneMitat: data.doneMitat || {},
                     packedMitat: data.packedMitat || {},
                     packedPackageNumbers: data.packedPackageNumbers || {},
@@ -2328,6 +2331,15 @@ function itemHasKulmalistat(item) {
         item.data.some((section) => isKulmalistatSectionTitle(section.title));
 }
 
+function isPaneelitSectionTitle(title) {
+    return String(title || '').trim().toLowerCase().startsWith('pystypaneli');
+}
+
+function itemHasPaneelit(item) {
+    return Array.isArray(item?.data) &&
+        item.data.some((section) => isPaneelitSectionTitle(section.title));
+}
+
 const KULMALISTA_OFFSET_MM = 35;
 const KULMALISTA_END_CLEARANCE_MM = 100;
 const KULMALISTA_SPACING_MIN = 200;
@@ -2407,6 +2419,16 @@ function parseKulmalistaRow(text) {
     }
     if (!Number.isFinite(length) || !Number.isFinite(count)) return null;
     return { length, count };
+}
+
+function parsePaneeliRow(item) {
+    const text = String(item?.value || item?.label || '').trim();
+    if (!text) return null;
+    const match = text.match(/(-?\d+(?:[.,]\d+)?)\s*(?:mm)?/i);
+    if (!match) return null;
+    const length = Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(length)) return null;
+    return { length, count: 1 };
 }
 
 function mergeKulmalistaItems(existingItems, incomingItems) {
@@ -2675,6 +2697,7 @@ function captureCurrentInputsForMerge() {
             || '';
         inputs.paneWidths.push(widthVal);
     }
+    if (isWindowCalc && settings.kickPlateEnabled) inputs.yhdistettyLeveys = true;
     return attachPystypaneliInputs(inputs);
 }
 
@@ -5265,6 +5288,7 @@ function buildTuotantoContentSummary(jobNumber) {
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
     const typeOrder = [
         { key: 'ovi', label: 'Ovia' },
         { key: 'ikkuna', label: 'Ikkunoita' },
@@ -5275,7 +5299,8 @@ function buildTuotantoContentSummary(jobNumber) {
     const stageOrder = [
         { key: 'tehty', label: 'Tehty' },
         { key: 'lasilistat', label: 'Lasilistat' },
-        { key: 'kulmalistat', label: 'Kulmalistat' }
+        { key: 'kulmalistat', label: 'Kulmalistat' },
+        { key: 'paneelit', label: 'Paneelit' }
     ];
     const counts = {
         ovi: 0,
@@ -5285,11 +5310,11 @@ function buildTuotantoContentSummary(jobNumber) {
         paneliovi: 0
     };
     const stagesByType = {
-        ovi: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
-        ikkuna: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
-        'verkko-ovi': { tehty: 0, lasilistat: 0, kulmalistat: 0 },
-        verkkoseina: { tehty: 0, lasilistat: 0, kulmalistat: 0 },
-        paneliovi: { tehty: 0, lasilistat: 0, kulmalistat: 0 }
+        ovi: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 },
+        ikkuna: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 },
+        'verkko-ovi': { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 },
+        verkkoseina: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 },
+        paneliovi: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 }
     };
     const colors = new Set();
     const metersBySize = {};
@@ -5305,6 +5330,7 @@ function buildTuotantoContentSummary(jobNumber) {
             } else {
                 if (itemHasLasilistat(item) && checkedMitat[key]) typeStages.lasilistat += 1;
                 if (itemHasKulmalistat(item) && checkedKulmalistat[key]) typeStages.kulmalistat += 1;
+                if (itemHasPaneelit(item) && checkedPaneelit[key]) typeStages.paneelit += 1;
             }
         }
         const color = String(item?.lasilistaColor || '').trim();
@@ -5335,8 +5361,9 @@ function buildTuotantoContentSummary(jobNumber) {
     html += '<th scope="col">Tehty</th>';
     html += '<th scope="col">Lasilistat</th>';
     html += '<th scope="col">Kulmalistat</th>';
+    html += '<th scope="col">Paneelit</th>';
     html += '</tr></thead><tbody>';
-    const stageTotals = { tehty: 0, lasilistat: 0, kulmalistat: 0 };
+    const stageTotals = { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 };
     typeOrder.forEach(({ key, label }) => {
         if (counts[key] <= 0) return;
         const typeStages = stagesByType[key];
@@ -5426,6 +5453,9 @@ function setTuotantoDisplayMode(mode) {
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
         selectedKulmalistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         isBlockAssignMode = false;
         selectedBlockJobNumber = null;
         selectedBlockItems = {};
@@ -5459,6 +5489,7 @@ function loadMittatView() {
     const toggleSahauslistaBtn = document.getElementById('toggleSahauslistaBtn');
     const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
     const toggleKulmalistaPdfBtn = document.getElementById('toggleKulmalistaPdfBtn');
+    const togglePaneeliPdfBtn = document.getElementById('togglePaneeliPdfBtn');
     const toggleShowHiddenItemsBtn = document.getElementById('toggleShowHiddenItemsBtn');
     const tuotantoBackupBtn = document.getElementById('tuotantoBackupBtn');
     if (tuotantoBackupBtn) {
@@ -5469,7 +5500,7 @@ function loadMittatView() {
         togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
         togglePackingBtn.textContent = isPackingListMode ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
     }
-    const isSahauslistaMode = isLasilistaPdfMode || isKulmalistaPdfMode;
+    const isSahauslistaMode = isLasilistaPdfMode || isKulmalistaPdfMode || isPaneeliPdfMode;
     if (toggleSahauslistaBtn) {
         toggleSahauslistaBtn.classList.toggle('btn-info', !isSahauslistaMode);
         toggleSahauslistaBtn.classList.toggle('btn-success', isSahauslistaMode);
@@ -5484,6 +5515,11 @@ function loadMittatView() {
         toggleKulmalistaPdfBtn.classList.toggle('btn-info', !isKulmalistaPdfMode);
         toggleKulmalistaPdfBtn.classList.toggle('btn-success', isKulmalistaPdfMode);
         toggleKulmalistaPdfBtn.textContent = isKulmalistaPdfMode ? '✅ Kulmalistat PDF -tila päällä' : '📄 Kulmalistat PDF';
+    }
+    if (togglePaneeliPdfBtn) {
+        togglePaneeliPdfBtn.classList.toggle('btn-info', !isPaneeliPdfMode);
+        togglePaneeliPdfBtn.classList.toggle('btn-success', isPaneeliPdfMode);
+        togglePaneeliPdfBtn.textContent = isPaneeliPdfMode ? '✅ Paneelit PDF -tila päällä' : '📄 Paneelit PDF';
     }
     if (toggleShowHiddenItemsBtn) {
         toggleShowHiddenItemsBtn.classList.toggle('btn-outline-secondary', !isShowingHiddenItems);
@@ -5617,6 +5653,14 @@ function loadMittatView() {
             if (isSelectedJob) {
                 html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadKulmalistaSummaryPdf('${sanitizeForAttribute(jobNumber)}')">Lataa Kulmalistat PDF</button>`;
             }
+        } else if (!katselu && isPaneeliPdfMode) {
+            const isSelectedJob = selectedPaneeliPdfJobNumber === jobNumber;
+            const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
+            const selectText = isSelectedJob ? 'Valittu' : 'Valitse';
+            html += `<button class="btn btn-sm ${selectClass}" onclick="event.stopPropagation(); selectPaneeliPdfJob('${sanitizeForAttribute(jobNumber)}')">${selectText}</button>`;
+            if (isSelectedJob) {
+                html += `<button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); downloadPaneeliSummaryPdf('${sanitizeForAttribute(jobNumber)}')">Lataa Paneelit PDF</button>`;
+            }
         }
         html += `</div>`;
         html += `<div class="d-flex align-items-center gap-2">`;
@@ -5634,13 +5678,16 @@ function loadMittatView() {
         const isPackingSelectedForJob = isPackingListMode && selectedPackingJobNumber === jobNumber;
         const isLasilistaSelectedForJob = isLasilistaPdfMode && selectedLasilistaPdfJobNumber === jobNumber;
         const isKulmalistaSelectedForJob = isKulmalistaPdfMode && selectedKulmalistaPdfJobNumber === jobNumber;
+        const isPaneeliSelectedForJob = isPaneeliPdfMode && selectedPaneeliPdfJobNumber === jobNumber;
         const jobPackingBtnClass = isPackingSelectedForJob ? 'btn btn-success' : 'btn btn-primary';
         const jobPackingBtnText = isPackingSelectedForJob ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
         const jobLasilistaBtnClass = isLasilistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
         const jobLasilistaBtnText = isLasilistaSelectedForJob ? '✅ Lasilistat PDF -tila päällä' : '📄 Lasilistat PDF';
         const jobKulmalistaBtnClass = isKulmalistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
         const jobKulmalistaBtnText = isKulmalistaSelectedForJob ? '✅ Kulmalistat PDF -tila päällä' : '📄 Kulmalistat PDF';
-        const isSahauslistaSelectedForJob = isLasilistaSelectedForJob || isKulmalistaSelectedForJob;
+        const jobPaneeliBtnClass = isPaneeliSelectedForJob ? 'btn btn-success' : 'btn btn-info';
+        const jobPaneeliBtnText = isPaneeliSelectedForJob ? '✅ Paneelit PDF -tila päällä' : '📄 Paneelit PDF';
+        const isSahauslistaSelectedForJob = isLasilistaSelectedForJob || isKulmalistaSelectedForJob || isPaneeliSelectedForJob;
         const jobSahauslistaBtnClass = isSahauslistaSelectedForJob ? 'btn btn-success' : 'btn btn-info';
         const jobSahauslistaBtnText = isSahauslistaSelectedForJob ? '✅ Sahauslista-tila päällä' : 'Tee Sahauslista';
         if (!katselu) {
@@ -5651,6 +5698,7 @@ function loadMittatView() {
             html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
             html += `<li><button type="button" class="${jobLasilistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startLasilistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobLasilistaBtnText}</button></li>`;
             html += `<li class="mt-1"><button type="button" class="${jobKulmalistaBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startKulmalistaPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobKulmalistaBtnText}</button></li>`;
+            html += `<li class="mt-1"><button type="button" class="${jobPaneeliBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPaneeliPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobPaneeliBtnText}</button></li>`;
             html += `</ul>`;
             html += `</div>`;
             if (hasJobBlocks) {
@@ -5692,11 +5740,16 @@ function loadMittatView() {
             const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
             const isKulmalistatChecked = checkedKulmalistat[checkKey] || false;
             const kulmalistatCheckboxClass = isKulmalistatChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+            const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+            const isPaneelitChecked = checkedPaneelit[checkKey] || false;
+            const paneelitCheckboxClass = isPaneelitChecked ? 'preset-checkbox checked' : 'preset-checkbox';
             const hasLasilistat = itemHasLasilistat(item);
             const hasKulmalistat = itemHasKulmalistat(item);
+            const hasPaneelit = itemHasPaneelit(item);
             const lasilistatOk = !hasLasilistat || isChecked;
             const kulmalistatOk = !hasKulmalistat || isKulmalistatChecked;
-            const checkpointsOk = lasilistatOk && kulmalistatOk;
+            const paneelitOk = !hasPaneelit || isPaneelitChecked;
+            const checkpointsOk = lasilistatOk && kulmalistatOk && paneelitOk;
             const doneChecked = doneMitat[checkKey] || false;
             const doneCheckboxClass = !checkpointsOk && !doneChecked
                 ? 'preset-checkbox disabled'
@@ -5746,6 +5799,9 @@ function loadMittatView() {
                 if (hasKulmalistat && isKulmalistatChecked) {
                     visibleCheckpoints.push({ label: 'kulmalistat', aria: `Kulmalistat tehty ${itemName}` });
                 }
+                if (hasPaneelit && isPaneelitChecked) {
+                    visibleCheckpoints.push({ label: 'paneelit', aria: `Paneelit tehty ${itemName}` });
+                }
                 if (doneChecked) {
                     visibleCheckpoints.push({ label: 'tehty', aria: `Tehty ${itemName}` });
                 }
@@ -5771,11 +5827,18 @@ function loadMittatView() {
                     html += `</div>`;
                     html += `<span class="mitat-checkpoint-separator">/</span>`;
                 }
+                if (hasPaneelit) {
+                    html += `<span class="mitat-mini-label">paneelit</span>`;
+                    html += `<div class="${paneelitCheckboxClass}" role="checkbox" tabindex="0" aria-checked="${isPaneelitChecked}" aria-label="Paneelit tehty ${itemName}" onclick="event.stopPropagation(); togglePaneelitCheck('${checkKey}', this)">`;
+                    html += `${isPaneelitChecked ? '✓' : ''}`;
+                    html += `</div>`;
+                    html += `<span class="mitat-checkpoint-separator">/</span>`;
+                }
                 html += `<span class="mitat-mini-label">tehty</span>`;
                 const doneDisabled = !checkpointsOk && !doneChecked;
                 const doneTitle = checkpointsOk || doneChecked
                     ? 'Merkitse tehdyksi'
-                    : (!lasilistatOk ? 'Merkitse ensin lasilistat' : 'Merkitse ensin kulmalistat');
+                    : (!lasilistatOk ? 'Merkitse ensin lasilistat' : (!kulmalistatOk ? 'Merkitse ensin kulmalistat' : 'Merkitse ensin paneelit'));
                 html += `<div class="${doneCheckboxClass}" role="checkbox" tabindex="${doneDisabled ? '-1' : '0'}" aria-checked="${doneChecked}" aria-disabled="${doneDisabled}" aria-label="Tehty ${itemName}" title="${doneTitle}" onclick="event.stopPropagation(); toggleMittatDone('${checkKey}', '${sanitizeForAttribute(jobNumber)}', this)">`;
                 html += `${doneChecked ? '✓' : ''}`;
                 html += `</div>`;
@@ -5806,6 +5869,15 @@ function loadMittatView() {
                 const disabledAttr = isKulmalistatChecked ? ' disabled' : '';
                 const titleAttr = isKulmalistatChecked ? ' title="Kulmalistat jo merkitty"' : '';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); toggleKulmalistaPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
+            }
+            if (hasPaneelit && !katselu && isPaneeliPdfMode && selectedPaneeliPdfJobNumber === jobNumber) {
+                const pdfKey = `${jobNumber}||${itemName}`;
+                const pdfChecked = !!selectedPaneeliPdfItems[pdfKey];
+                const btnClass = pdfChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
+                const btnText = pdfChecked ? 'Valittu' : 'Valitse';
+                const disabledAttr = isPaneelitChecked ? ' disabled' : '';
+                const titleAttr = isPaneelitChecked ? ' title="Paneelit jo merkitty"' : '';
+                html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); togglePaneeliPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
             if (!katselu && isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
                 const blockKey = `${jobNumber}||${itemName}`;
@@ -6452,7 +6524,7 @@ function renamePaketitItem(jobNumber, itemName, btn) {
 
     const oldKey = `${jobNumber}-${itemName}`;
     const newKey = `${jobNumber}-${trimmedName}`;
-    ['checkedMitat', 'checkedKulmalistat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
+    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         if (oldKey in obj) {
             obj[newKey] = obj[oldKey];
@@ -6616,6 +6688,9 @@ let selectedLasilistaPdfItems = {};
 let isKulmalistaPdfMode = false;
 let selectedKulmalistaPdfJobNumber = null;
 let selectedKulmalistaPdfItems = {};
+let isPaneeliPdfMode = false;
+let selectedPaneeliPdfJobNumber = null;
+let selectedPaneeliPdfItems = {};
 let isBlockAssignMode = false;
 let selectedBlockJobNumber = null;
 let selectedBlockItems = {};
@@ -6871,6 +6946,9 @@ function enterBlockAssignMode(jobNumber) {
     isKulmalistaPdfMode = false;
     selectedKulmalistaPdfJobNumber = null;
     selectedKulmalistaPdfItems = {};
+    isPaneeliPdfMode = false;
+    selectedPaneeliPdfJobNumber = null;
+    selectedPaneeliPdfItems = {};
     isBlockAssignMode = true;
     selectedBlockJobNumber = jobNumber;
     selectedBlockItems = {};
@@ -7121,6 +7199,9 @@ function startPackingListForJob(jobNumber) {
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
         selectedKulmalistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
         selectedPackingJobNumber = jobNumber;
         selectedPackingItems = {};
@@ -7142,6 +7223,9 @@ function startLasilistaPdfForJob(jobNumber) {
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
         selectedKulmalistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
         selectedLasilistaPdfJobNumber = jobNumber;
         selectedLasilistaPdfItems = {};
@@ -7159,6 +7243,9 @@ function togglePackingListMode() {
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
         selectedKulmalistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
     }
 
@@ -7214,6 +7301,9 @@ function toggleLasilistaPdfMode() {
         isKulmalistaPdfMode = false;
         selectedKulmalistaPdfJobNumber = null;
         selectedKulmalistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
     } else {
         selectedLasilistaPdfJobNumber = null;
@@ -7450,6 +7540,9 @@ function startKulmalistaPdfForJob(jobNumber) {
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
         selectedKulmalistaPdfJobNumber = jobNumber;
         selectedKulmalistaPdfItems = {};
@@ -7467,6 +7560,9 @@ function toggleKulmalistaPdfMode() {
         isLasilistaPdfMode = false;
         selectedLasilistaPdfJobNumber = null;
         selectedLasilistaPdfItems = {};
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
         clearBlockAssignMode();
     } else {
         selectedKulmalistaPdfJobNumber = null;
@@ -7638,6 +7734,217 @@ async function downloadKulmalistaSummaryPdf(jobNumber) {
     } catch (error) {
         console.error('❌ Kulmalistat PDF -luonti epäonnistui:', error);
         showToast('Kulmalistat PDF -luonti epäonnistui.', 'error');
+    }
+}
+
+function startPaneeliPdfForJob(jobNumber) {
+    const isAlreadySelected = isPaneeliPdfMode && selectedPaneeliPdfJobNumber === jobNumber;
+    if (isAlreadySelected) {
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
+    } else {
+        isPaneeliPdfMode = true;
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+        isKulmalistaPdfMode = false;
+        selectedKulmalistaPdfJobNumber = null;
+        selectedKulmalistaPdfItems = {};
+        clearBlockAssignMode();
+        selectedPaneeliPdfJobNumber = jobNumber;
+        selectedPaneeliPdfItems = {};
+    }
+    loadMittatView();
+}
+
+function togglePaneeliPdfMode() {
+    isPaneeliPdfMode = !isPaneeliPdfMode;
+
+    if (isPaneeliPdfMode) {
+        isPackingListMode = false;
+        selectedPackingJobNumber = null;
+        selectedPackingItems = {};
+        isLasilistaPdfMode = false;
+        selectedLasilistaPdfJobNumber = null;
+        selectedLasilistaPdfItems = {};
+        isKulmalistaPdfMode = false;
+        selectedKulmalistaPdfJobNumber = null;
+        selectedKulmalistaPdfItems = {};
+        clearBlockAssignMode();
+    } else {
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
+    }
+
+    loadMittatView();
+}
+
+function selectPaneeliPdfJob(jobNumber) {
+    if (!isPaneeliPdfMode) return;
+
+    if (selectedPaneeliPdfJobNumber === jobNumber) {
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
+    } else {
+        selectedPaneeliPdfJobNumber = jobNumber;
+        selectedPaneeliPdfItems = {};
+    }
+
+    loadMittatView();
+}
+
+function togglePaneeliPdfItem(jobNumber, itemName) {
+    if (!isPaneeliPdfMode || selectedPaneeliPdfJobNumber !== jobNumber) return;
+
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    if (!itemHasPaneelit(mittatData[jobNumber]?.[itemName])) {
+        showToast('Tuotteessa ei ole paneeleita.', 'warning');
+        return;
+    }
+
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+    if (checkedPaneelit[`${jobNumber}-${itemName}`]) {
+        showToast('Tuote on jo merkitty paneelit-checkpointilla.', 'warning');
+        return;
+    }
+
+    const itemKey = `${jobNumber}||${itemName}`;
+    selectedPaneeliPdfItems[itemKey] = !selectedPaneeliPdfItems[itemKey];
+
+    if (!selectedPaneeliPdfItems[itemKey]) {
+        delete selectedPaneeliPdfItems[itemKey];
+    }
+
+    loadMittatView();
+}
+
+function collectCombinedPaneeliRows(jobNumber, selectedItemNames) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const jobData = mittatData[jobNumber] || {};
+    const grouped = {};
+
+    selectedItemNames.forEach((itemName) => {
+        const itemData = jobData[itemName];
+        if (!itemData || !Array.isArray(itemData.data)) return;
+
+        const paneeliSections = itemData.data.filter((section) => isPaneelitSectionTitle(section.title));
+        if (paneeliSections.length === 0) return;
+
+        paneeliSections.forEach((section) => {
+            if (!Array.isArray(section.items)) return;
+            section.items.forEach((resultItem) => {
+                const parsed = parsePaneeliRow(resultItem);
+                if (!parsed) return;
+                const lengthKey = String(parsed.length);
+                grouped[lengthKey] = (grouped[lengthKey] || 0) + parsed.count;
+            });
+        });
+    });
+
+    return grouped;
+}
+
+async function generatePaneeliSummaryPdf(jobNumber, groupedRows) {
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+        throw new Error('jsPDF ei ole saatavilla.');
+    }
+
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const dateText = formatFinnishDate(new Date());
+    const textScale = 2.2;
+    const rowsScale = 1.4;
+    const scaled = (value) => value * textScale;
+    let y = scaled(24);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(scaled(22));
+    doc.text('PANEELIT', pageWidth / 2, y, { align: 'center' });
+    y += scaled(11);
+
+    doc.setFontSize(scaled(12));
+    doc.text(`TYÖNRO: ${jobNumber}`, 20, y);
+    y += scaled(9);
+    doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
+    y += scaled(9);
+
+    const lengths = Object.keys(groupedRows).sort((a, b) => {
+        const aNum = Number(a);
+        const bNum = Number(b);
+        if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+            return bNum - aNum;
+        }
+        return sortByFinnishNumberString(a, b);
+    });
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(scaled(12 * rowsScale));
+    lengths.forEach((lengthKey) => {
+        if (y > pageHeight - scaled(20)) {
+            doc.addPage();
+            y = scaled(20);
+        }
+        const count = groupedRows[lengthKey];
+        const lengthText = Number.isFinite(Number(lengthKey))
+            ? String(Number(lengthKey))
+            : lengthKey;
+        doc.text(`${lengthText} x ${count}`, 28, y);
+        y += scaled(9.8);
+    });
+
+    const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cleanDate = dateText.replace(/\./g, '-');
+    doc.save(`paneelit_${cleanJob}_${cleanDate}.pdf`);
+}
+
+async function downloadPaneeliSummaryPdf(jobNumber) {
+    if (!isPaneeliPdfMode || !jobNumber) {
+        showToast('Valitse ensin työnumero.', 'warning');
+        return;
+    }
+
+    const selectedItemNames = Object.keys(selectedPaneeliPdfItems)
+        .filter((key) => key.startsWith(`${jobNumber}||`) && selectedPaneeliPdfItems[key])
+        .map((key) => key.split('||')[1]);
+
+    if (selectedItemNames.length === 0) {
+        showToast('Valitse vähintään yksi tuote.', 'warning');
+        return;
+    }
+
+    const groupedRows = collectCombinedPaneeliRows(jobNumber, selectedItemNames);
+    if (Object.keys(groupedRows).length === 0) {
+        showToast('Valituista tuotteista ei löytynyt paneeleita.', 'warning');
+        return;
+    }
+
+    try {
+        await generatePaneeliSummaryPdf(jobNumber, groupedRows);
+
+        const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+        selectedItemNames.forEach((itemName) => {
+            checkedPaneelit[`${jobNumber}-${itemName}`] = true;
+        });
+        localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
+        syncMitatStateToFirestore();
+
+        isPaneeliPdfMode = false;
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
+        const mittatView = document.getElementById('mittatView');
+        if (mittatView && !mittatView.classList.contains('d-none')) {
+            loadMittatView();
+        }
+        showToast('Paneelit PDF ladattu. Paneelit merkitty.', 'success');
+    } catch (error) {
+        console.error('❌ Paneelit PDF -luonti epäonnistui:', error);
+        showToast('Paneelit PDF -luonti epäonnistui.', 'error');
     }
 }
 
@@ -7899,7 +8206,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
 
     const oldKey = `${jobNumber}-${itemName}`;
     const newKey = `${jobNumber}-${trimmedName}`;
-    ['checkedMitat', 'checkedKulmalistat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach(storeKey => {
+    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach(storeKey => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         if (oldKey in obj) {
             obj[newKey] = obj[oldKey];
@@ -7961,7 +8268,7 @@ function renameMitatJob(jobNumber, btn) {
     delete mittatData[jobNumber];
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
 
-    ['checkedMitat', 'checkedKulmalistat', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach((storeKey) => {
+    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach((storeKey) => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         let changed = false;
         itemNames.forEach((itemName) => {
@@ -8025,11 +8332,13 @@ function renameMitatJob(jobNumber, btn) {
     if (selectedPackingJobNumber === jobNumber) selectedPackingJobNumber = trimmed;
     if (selectedLasilistaPdfJobNumber === jobNumber) selectedLasilistaPdfJobNumber = trimmed;
     if (selectedKulmalistaPdfJobNumber === jobNumber) selectedKulmalistaPdfJobNumber = trimmed;
+    if (selectedPaneeliPdfJobNumber === jobNumber) selectedPaneeliPdfJobNumber = trimmed;
     if (selectedBlockJobNumber === jobNumber) selectedBlockJobNumber = trimmed;
     if (pendingJobBlocksJobNumber === jobNumber) pendingJobBlocksJobNumber = trimmed;
     remapSelectedJobItemKeys(selectedPackingItems, jobNumber, trimmed);
     remapSelectedJobItemKeys(selectedLasilistaPdfItems, jobNumber, trimmed);
     remapSelectedJobItemKeys(selectedKulmalistaPdfItems, jobNumber, trimmed);
+    remapSelectedJobItemKeys(selectedPaneeliPdfItems, jobNumber, trimmed);
     remapSelectedJobItemKeys(selectedBlockItems, jobNumber, trimmed);
 
     loadMittatView();
@@ -8259,8 +8568,8 @@ function recalculateFromInputs(inputs) {
         else if (c === 'economy-pariovi')   result = umpi ? calculateUmpioviResults(w, s, k, c) : calculateEconomyPariovi(w, s, k, ph);
         else if (c === 'janisol-kayntiovi') result = umpi ? calculateUmpioviResults(w, 0, k, c) : calculateJanisolKayntiovi(w, k, ph);
         else if (c === 'janisol-pariovi')   result = umpi ? calculateUmpioviResults(w, s, k, c) : calculateJanisolPariovi(w, s, k, ph);
-        else if (c === 'economy-ikkuna')    result = calculateEconomyIkkuna(pw.length ? pw : [w], ph, k);
-        else if (c === 'janisol-ikkuna')    result = calculateJanisolIkkuna(pw.length ? pw : [w], ph, k);
+        else if (c === 'economy-ikkuna')    result = calculateEconomyIkkuna(pw.length ? pw : [w], ph, k, !!inputs.yhdistettyLeveys);
+        else if (c === 'janisol-ikkuna')    result = calculateJanisolIkkuna(pw.length ? pw : [w], ph, k, !!inputs.yhdistettyLeveys);
         else if (c === 'verkko-ovi') result = calculateVerkko(w, ph, null, c);
         else if (c === 'verkko-seina') result = calculateVerkko(w, ph, pw.length ? pw : [w], c);
         else result = { lasilista: [], uretaani: [], potkupelti: [], harjalista: [] };
@@ -8455,6 +8764,12 @@ function collectInputsFromEditForm(formEl, baseInputs) {
     return inp;
 }
 
+function shouldUseYhdistettyLeveys(inputs, allEntries) {
+    if (inputs?.yhdistettyLeveys) return true;
+    if (!isWindowCalculatorType(inputs?.calculator) || !inputs?.kickPlateEnabled) return false;
+    return (allEntries || []).some(e => e && isDoorCalculatorType(e.calculator));
+}
+
 function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 'mitat') {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber]?.[itemName];
@@ -8475,6 +8790,9 @@ function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 
     const entries = (item.inputsHistory && item.inputsHistory.length > 0)
         ? item.inputsHistory
         : [item.inputs];
+    entries.forEach(e => {
+        if (e && shouldUseYhdistettyLeveys(e, entries)) e.yhdistettyLeveys = true;
+    });
     const allData = entries.map(e => {
         if (!e || !e.calculator) return null;
         try { return recalculateFromInputs(e); } catch (err) {
@@ -8784,6 +9102,25 @@ function toggleKulmalistatCheck(checkKey, checkboxElement) {
     }
 }
 
+function togglePaneelitCheck(checkKey, checkboxElement) {
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+    const isChecked = !checkedPaneelit[checkKey];
+    checkedPaneelit[checkKey] = isChecked;
+    localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
+    syncMitatStateToFirestore();
+
+    if (checkboxElement) {
+        if (isChecked) {
+            checkboxElement.classList.add('checked');
+            checkboxElement.textContent = '✓';
+        } else {
+            checkboxElement.classList.remove('checked');
+            checkboxElement.textContent = '';
+        }
+        checkboxElement.setAttribute('aria-checked', String(isChecked));
+    }
+}
+
 function updateJobDoneCounter(jobNumber) {
     const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const wrapperElement = document.getElementById(`${jobId}-done-counter`);
@@ -8809,6 +9146,7 @@ function updateJobDoneCounter(jobNumber) {
 function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
@@ -8823,6 +9161,10 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     }
     if (isDone && itemHasKulmalistat(item) && !checkedKulmalistat[checkKey]) {
         showToast('Merkitse ensin kulmalistat ennen tehty-merkintää.', 'warning');
+        return;
+    }
+    if (isDone && itemHasPaneelit(item) && !checkedPaneelit[checkKey]) {
+        showToast('Merkitse ensin paneelit ennen tehty-merkintää.', 'warning');
         return;
     }
     if (isDone) {
@@ -8893,6 +9235,7 @@ function deleteJobMitat(jobNumber) {
     // Remove checkbox states and item notes for all items in job
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
@@ -8906,6 +9249,7 @@ function deleteJobMitat(jobNumber) {
         const checkKey = `${jobNumber}-${itemName}`;
         delete checkedMitat[checkKey];
         delete checkedKulmalistat[checkKey];
+        delete checkedPaneelit[checkKey];
         delete doneMitat[checkKey];
         delete packedMitat[checkKey];
         delete packedPackageNumbers[checkKey];
@@ -8929,6 +9273,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('checkedKulmalistat', JSON.stringify(checkedKulmalistat));
+    localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
@@ -8966,6 +9311,16 @@ function deleteJobMitat(jobNumber) {
         Object.keys(selectedKulmalistaPdfItems).forEach((key) => {
             if (key.startsWith(`${jobNumber}||`)) {
                 delete selectedKulmalistaPdfItems[key];
+            }
+        });
+    }
+    if (selectedPaneeliPdfJobNumber === jobNumber) {
+        selectedPaneeliPdfJobNumber = null;
+        selectedPaneeliPdfItems = {};
+    } else {
+        Object.keys(selectedPaneeliPdfItems).forEach((key) => {
+            if (key.startsWith(`${jobNumber}||`)) {
+                delete selectedPaneeliPdfItems[key];
             }
         });
     }
@@ -9026,6 +9381,12 @@ function deleteMitta(jobNumber, itemName) {
             localStorage.setItem('checkedKulmalistat', JSON.stringify(checkedKulmalistat));
         }
 
+        const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+        if (Object.prototype.hasOwnProperty.call(checkedPaneelit, checkKey)) {
+            delete checkedPaneelit[checkKey];
+            localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
+        }
+
         const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
         if (Object.prototype.hasOwnProperty.call(doneMitat, checkKey)) {
             delete doneMitat[checkKey];
@@ -9067,6 +9428,9 @@ function deleteMitta(jobNumber, itemName) {
         if (selectedKulmalistaPdfItems[lasilistaPdfKey]) {
             delete selectedKulmalistaPdfItems[lasilistaPdfKey];
         }
+        if (selectedPaneeliPdfItems[lasilistaPdfKey]) {
+            delete selectedPaneeliPdfItems[lasilistaPdfKey];
+        }
         if (selectedBlockItems[packingKey]) {
             delete selectedBlockItems[packingKey];
         }
@@ -9097,6 +9461,10 @@ function deleteMitta(jobNumber, itemName) {
             if (selectedKulmalistaPdfJobNumber === jobNumber) {
                 selectedKulmalistaPdfJobNumber = null;
                 selectedKulmalistaPdfItems = {};
+            }
+            if (selectedPaneeliPdfJobNumber === jobNumber) {
+                selectedPaneeliPdfJobNumber = null;
+                selectedPaneeliPdfItems = {};
             }
             if (selectedBlockJobNumber === jobNumber) {
                 clearBlockAssignMode();
