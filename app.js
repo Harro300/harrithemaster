@@ -246,7 +246,34 @@ function paketitIndexRowsEqual(a, b) {
         && String(a.lastPackedAt || '') === String(b.lastPackedAt || '')
         && Number(a.itemCount) === Number(b.itemCount)
         && Number(a.packageCount) === Number(b.packageCount)
-        && JSON.stringify(a.itemNames || []) === JSON.stringify(b.itemNames || []);
+        && JSON.stringify(a.itemNames || []) === JSON.stringify(b.itemNames || [])
+        && Number(a.rev || 0) === Number(b.rev || 0);
+}
+
+function preservePaketitIndexRev(jobNumber, row) {
+    if (!row) return row;
+    const existing = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
+    if (existing && existing.rev != null) row.rev = existing.rev;
+    return row;
+}
+
+function invalidatePaketitJobCacheForIndexChanges(prevJobs, nextJobs) {
+    const prevByJob = new Map((prevJobs || []).map((job) => [String(job.jobNumber), job]));
+    const nextByJob = new Map((nextJobs || []).map((job) => [String(job.jobNumber), job]));
+    nextByJob.forEach((row, key) => {
+        if (!paketitIndexRowsEqual(prevByJob.get(key), row)) {
+            paketitJobCache.delete(key);
+        }
+    });
+    prevByJob.forEach((_, key) => {
+        if (!nextByJob.has(key)) paketitJobCache.delete(key);
+    });
+}
+
+function paketitPayloadMatchesIndex(jobNumber, payload) {
+    const row = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
+    if (!row) return true;
+    return paketitIndexRowsEqual(buildPaketitIndexRowFromPayload(payload), row);
 }
 
 async function syncMitatStateToFirestore() {
@@ -319,6 +346,28 @@ async function syncMitatInputsToFirestore(jobNumberOrNumbers) {
         }
     } catch (error) {
         console.error('❌ Inputs-synkronointi Firestoreen epäonnistui:', error);
+    }
+}
+
+async function syncJobItemInputsToFirestore(jobNumber, itemName, item) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (!jobNumber || !itemName || !item) return;
+    try {
+        const { db, doc, setDoc } = window.firebase;
+        await setDoc(doc(db, 'mitatState', 'inputs'), {
+            inputs: {
+                [jobNumber]: {
+                    [itemName]: {
+                        inputs: item.inputs || null,
+                        inputsHistory: item.inputsHistory || null
+                    }
+                }
+            }
+        }, { merge: true });
+    } catch (error) {
+        console.error('❌ Tuotekohtainen inputs-synkka epäonnistui:', jobNumber, itemName, error);
     }
 }
 
@@ -634,13 +683,13 @@ function buildPaketitIndexRow(jobNumber) {
         jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems
     );
     if (packedItems.length === 0) return null;
-    return {
+    return preservePaketitIndexRev(jobNumber, {
         jobNumber: String(jobNumber),
         lastPackedAt: latestPackedTimestampForJob(jobNumber, packedTimestamps),
         itemCount: packedItems.length,
         packageCount: packageCountFromPackedItems(packedItems),
         itemNames: packedItems.map((item) => item.itemName)
-    };
+    });
 }
 
 function buildPaketitIndexRowFromPayload(payload) {
@@ -679,18 +728,29 @@ async function writeJobPayloadToFirestore(jobNumber, payload) {
     const indexRow = buildPaketitIndexRowFromPayload(payload);
     const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
     if (indexRow) {
-        if (!paketitIndexRowsEqual(indexRow, existingRow)) {
-            const idx = existingRow
-                ? paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber))
-                : -1;
-            if (idx >= 0) paketitIndexJobs[idx] = indexRow;
-            else paketitIndexJobs.push(indexRow);
-            await upsertPaketitIndexRow(indexRow);
-        }
+        indexRow.rev = Date.now();
+        const idx = existingRow
+            ? paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber))
+            : -1;
+        if (idx >= 0) paketitIndexJobs[idx] = indexRow;
+        else paketitIndexJobs.push(indexRow);
+        await upsertPaketitIndexRow(indexRow);
     } else if (existingRow) {
         paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
         await removePaketitIndexRow(jobNumber);
     }
+}
+
+async function bumpPaketitIndexRev(jobNumber) {
+    if (!jobNumber) return;
+    const row = buildPaketitIndexRow(jobNumber)
+        || paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
+    if (!row) return;
+    const next = { ...row, jobNumber: String(jobNumber), rev: Date.now() };
+    const idx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber));
+    if (idx >= 0) paketitIndexJobs[idx] = next;
+    else paketitIndexJobs.push(next);
+    await upsertPaketitIndexRow(next);
 }
 
 function remapJobPayloadItemName(payload, oldName, newName) {
@@ -858,7 +918,8 @@ async function copyMissingPackedJobsToFirestore() {
 
 async function fetchPaketitJobPayload(jobNumber) {
     const cached = paketitJobCache.get(String(jobNumber));
-    if (cached) return cached;
+    if (cached && paketitPayloadMatchesIndex(jobNumber, cached)) return cached;
+    if (cached) paketitJobCache.delete(String(jobNumber));
 
     if (window.firebase && window.firebase.db && currentUser) {
         try {
@@ -1223,7 +1284,9 @@ function setupRealtimeListeners() {
                     return;
                 }
                 const data = docSnapshot.data() || {};
-                paketitIndexJobs = Array.isArray(data.jobs) ? data.jobs.slice() : [];
+                const nextJobs = Array.isArray(data.jobs) ? data.jobs.slice() : [];
+                invalidatePaketitJobCacheForIndexChanges(paketitIndexJobs, nextJobs);
+                paketitIndexJobs = nextJobs;
                 paketitIndexLoaded = true;
 
                 const paketitView = document.getElementById('paketitView');
@@ -9517,11 +9580,7 @@ function shouldUseYhdistettyLeveys(inputs, allEntries) {
     return (allEntries || []).some(e => e && isDoorCalculatorType(e.calculator));
 }
 
-function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 'mitat') {
-    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    const item = mittatData[jobNumber]?.[itemName];
-    if (!item) { showToast('Mittaa ei löytynyt.', 'warning'); return; }
-
+function applyInputEditsToItem(item, formEl, entryIdx) {
     const hasHistory = item.inputsHistory && item.inputsHistory.length > 0;
     const baseInputs = hasHistory
         ? (item.inputsHistory[entryIdx] || item.inputsHistory[0])
@@ -9550,10 +9609,30 @@ function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 
 
     const calcOk = allData.length > 0;
     if (calcOk) item.data = mergeDataArrays(allData);
+    return calcOk;
+}
 
-    localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore(jobNumber);
+async function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 'mitat') {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    let item = mittatData[jobNumber]?.[itemName];
+    let packedPayload = null;
+    if (!item) {
+        packedPayload = await fetchPaketitJobPayload(jobNumber);
+        item = packedPayload?.items?.[itemName];
+    }
+    if (!item) { showToast('Mittaa ei löytynyt.', 'warning'); return; }
+
+    const calcOk = applyInputEditsToItem(item, formEl, entryIdx);
+
+    if (packedPayload) {
+        await writeJobPayloadToFirestore(jobNumber, packedPayload);
+        await syncJobItemInputsToFirestore(jobNumber, itemName, item);
+    } else {
+        localStorage.setItem('mittatData', JSON.stringify(mittatData));
+        dualWriteMitatState(jobNumber);
+        syncMitatInputsToFirestore(jobNumber);
+        void bumpPaketitIndexRev(jobNumber);
+    }
 
     if (calcOk) {
         showToast('Syötteet päivitetty ja tulokset laskettu uudelleen.', 'success');
@@ -9605,9 +9684,14 @@ function buildLasilistaMetaEditForm(item, jobNumber, itemName, context = 'mitat'
     return html;
 }
 
-function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mitat') {
+async function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mitat') {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    const item = mittatData[jobNumber]?.[itemName];
+    let item = mittatData[jobNumber]?.[itemName];
+    let packedPayload = null;
+    if (!item) {
+        packedPayload = await fetchPaketitJobPayload(jobNumber);
+        item = packedPayload?.items?.[itemName];
+    }
     if (!item) { showToast('Mittaa ei löytynyt.', 'warning'); return; }
 
     const rawSize = formEl?.querySelector('[name="lasilistaSize"]')?.value || '';
@@ -9615,9 +9699,14 @@ function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mi
     item.lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
     item.lasilistaColor = normalizeLasilistaColor(rawColor);
 
-    localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore(jobNumber);
+    if (packedPayload) {
+        await writeJobPayloadToFirestore(jobNumber, packedPayload);
+    } else {
+        localStorage.setItem('mittatData', JSON.stringify(mittatData));
+        dualWriteMitatState(jobNumber);
+        syncMitatInputsToFirestore(jobNumber);
+        void bumpPaketitIndexRev(jobNumber);
+    }
 
     if (context === 'paketit') {
         loadPaketitView();
