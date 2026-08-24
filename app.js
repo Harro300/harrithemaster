@@ -187,35 +187,71 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('itemBlocks', JSON.stringify(state.itemBlocks || {}));
 }
 
+function mergePrefixedJobChecks(target, jobNumber, itemMap) {
+    Object.entries(itemMap || {}).forEach(([itemName, val]) => {
+        if (val == null || val === false) return;
+        target[`${jobNumber}-${itemName}`] = val;
+    });
+}
+
+function applyActiveJobPayloadsToLocalStorage(payloads) {
+    const state = {
+        mittatData: {},
+        checkedMitat: {},
+        checkedKulmalistat: {},
+        checkedPaneelit: {},
+        doneMitat: {},
+        packedMitat: {},
+        packedPackageNumbers: {},
+        hiddenMitatItems: {},
+        mittatNotes: {},
+        packedTimestamps: {},
+        jobBlocks: {},
+        itemBlocks: {}
+    };
+    (payloads || []).forEach((payload) => {
+        if (!payload || !payload.jobNumber) return;
+        const jobNumber = String(payload.jobNumber);
+        const items = payload.items && typeof payload.items === 'object' ? payload.items : {};
+        state.mittatData[jobNumber] = JSON.parse(JSON.stringify(items));
+        const checks = payload.checks || {};
+        mergePrefixedJobChecks(state.checkedMitat, jobNumber, checks.lasilistat);
+        mergePrefixedJobChecks(state.checkedKulmalistat, jobNumber, checks.kulmalistat);
+        mergePrefixedJobChecks(state.checkedPaneelit, jobNumber, checks.paneelit);
+        mergePrefixedJobChecks(state.doneMitat, jobNumber, checks.done);
+        mergePrefixedJobChecks(state.packedMitat, jobNumber, checks.packed);
+        mergePrefixedJobChecks(state.packedPackageNumbers, jobNumber, checks.packageNumbers);
+        mergePrefixedJobChecks(state.hiddenMitatItems, jobNumber, checks.hidden);
+        if (payload.notes && payload.notes.job) {
+            state.mittatNotes[`job-${jobNumber}`] = payload.notes.job;
+        }
+        Object.entries((payload.notes && payload.notes.items) || {}).forEach(([itemName, note]) => {
+            if (note) state.mittatNotes[`item-${jobNumber}-${itemName}`] = note;
+        });
+        if (Array.isArray(payload.jobBlocks)) {
+            state.jobBlocks[jobNumber] = payload.jobBlocks;
+        }
+        mergePrefixedJobChecks(state.itemBlocks, jobNumber, payload.itemBlocks);
+        Object.entries(payload.packedTimestamps || {}).forEach(([pkg, ts]) => {
+            if (ts) state.packedTimestamps[`${jobNumber}-${pkg}`] = ts;
+        });
+    });
+    applyMitatStateToLocalStorage(state);
+}
+
+function paketitIndexRowsEqual(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return String(a.jobNumber) === String(b.jobNumber)
+        && String(a.lastPackedAt || '') === String(b.lastPackedAt || '')
+        && Number(a.itemCount) === Number(b.itemCount)
+        && Number(a.packageCount) === Number(b.packageCount)
+        && JSON.stringify(a.itemNames || []) === JSON.stringify(b.itemNames || []);
+}
+
 async function syncMitatStateToFirestore() {
-    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
-        return;
-    }
-
-    const currentJobCount = Object.keys(
-        JSON.parse(localStorage.getItem('mittatData') || '{}')
-    ).length;
-    if (currentJobCount === 0 && lastKnownJobCount > 0) {
-        console.warn('Synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
-        return;
-    }
-
-    try {
-        const { db, doc, setDoc, serverTimestamp } = window.firebase;
-        const state = getMitatStateFromLocalStorage();
-        // Overwrite full document to ensure deleted note keys are removed too.
-        // Using merge:true would keep omitted map keys in Firestore.
-        await setDoc(
-            doc(db, 'mitatState', 'global'),
-            {
-                ...state,
-                updatedBy: currentUser.email,
-                updatedAt: serverTimestamp()
-            }
-        );
-    } catch (error) {
-        console.error('❌ Mitat-synkronointi Firestoreen epäonnistui:', error);
-    }
+    // global-katkaisu: blobia ei kirjoiteta. Vanha dokumentti jää Firestoren varaksi.
+    return;
 }
 
 function downloadBackup(source) {
@@ -231,7 +267,8 @@ function downloadBackup(source) {
         source,
         version: 1,
         mittatState: state,
-        inputs
+        inputs,
+        paketitIndex: paketitIndexJobs.slice()
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -244,27 +281,42 @@ function downloadBackup(source) {
     showToast('Varmuuskopio ladattu', 'success');
 }
 
-async function syncMitatInputsToFirestore() {
+async function syncMitatInputsToFirestore(jobNumberOrNumbers) {
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
+    const jobs = Array.isArray(jobNumberOrNumbers)
+        ? jobNumberOrNumbers.filter(Boolean).map(String)
+        : (jobNumberOrNumbers ? [String(jobNumberOrNumbers)] : []);
+    if (jobs.length === 0) return;
+
     try {
-        const { db, doc, setDoc } = window.firebase;
+        const { db, doc, setDoc, updateDoc, deleteField, getDoc } = window.firebase;
+        const ref = doc(db, 'mitatState', 'inputs');
         const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-        const inputsMap = {};
-        for (const jobNumber of Object.keys(mittatData)) {
-            for (const itemName of Object.keys(mittatData[jobNumber])) {
-                const item = mittatData[jobNumber][itemName];
-                if (item && (item.inputs || item.inputsHistory)) {
-                    if (!inputsMap[jobNumber]) inputsMap[jobNumber] = {};
-                    inputsMap[jobNumber][itemName] = {
-                        inputs: item.inputs || null,
-                        inputsHistory: item.inputsHistory || null
-                    };
+
+        for (const jobNumber of jobs) {
+            const jobItems = mittatData[jobNumber];
+            const jobInputs = {};
+            if (jobItems && typeof jobItems === 'object') {
+                for (const itemName of Object.keys(jobItems)) {
+                    const item = jobItems[itemName];
+                    if (item && (item.inputs || item.inputsHistory)) {
+                        jobInputs[itemName] = {
+                            inputs: item.inputs || null,
+                            inputsHistory: item.inputsHistory || null
+                        };
+                    }
                 }
             }
+            if (Object.keys(jobInputs).length > 0) {
+                await setDoc(ref, { inputs: { [jobNumber]: jobInputs } }, { merge: true });
+            } else {
+                const snap = await getDoc(ref);
+                if (!snap.exists()) continue;
+                await updateDoc(ref, { [`inputs.${jobNumber}`]: deleteField() });
+            }
         }
-        await setDoc(doc(db, 'mitatState', 'inputs'), { inputs: inputsMap });
     } catch (error) {
         console.error('❌ Inputs-synkronointi Firestoreen epäonnistui:', error);
     }
@@ -420,9 +472,12 @@ async function syncTuotantoJobToFirestore(jobNumber) {
         putPaketitJobCache(jobNumber, payload);
 
         const indexRow = buildPaketitIndexRow(jobNumber);
+        const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
         if (indexRow) {
-            await upsertPaketitIndexRow(indexRow);
-        } else {
+            if (!paketitIndexRowsEqual(indexRow, existingRow)) {
+                await upsertPaketitIndexRow(indexRow);
+            }
+        } else if (existingRow) {
             await removePaketitIndexRow(jobNumber);
         }
     } catch (error) {
@@ -444,20 +499,22 @@ function dualWriteMitatState(jobNumberOrNumbers) {
     if (!isMitatDataClearedAgainstKnownJobs()) {
         jobs.forEach((jobNumber) => {
             const row = buildPaketitIndexRow(jobNumber);
+            const idx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber));
+            const existing = idx >= 0 ? paketitIndexJobs[idx] : null;
             if (row) {
-                const idx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber));
-                if (idx >= 0) {
-                    paketitIndexJobs[idx] = row;
-                } else {
-                    paketitIndexJobs.push(row);
+                if (!paketitIndexRowsEqual(row, existing)) {
+                    if (idx >= 0) {
+                        paketitIndexJobs[idx] = row;
+                    } else {
+                        paketitIndexJobs.push(row);
+                    }
                 }
-            } else {
+            } else if (existing) {
                 paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
             }
         });
     }
     void syncTuotantoJobsToFirestore(jobs);
-    syncMitatStateToFirestore();
 }
 
 async function copyMissingActiveJobsToFirestore() {
@@ -584,6 +641,80 @@ function buildPaketitIndexRow(jobNumber) {
         packageCount: packageCountFromPackedItems(packedItems),
         itemNames: packedItems.map((item) => item.itemName)
     };
+}
+
+function buildPaketitIndexRowFromPayload(payload) {
+    if (!payload || !payload.jobNumber) return null;
+    const packedItems = getPackedItemsFromJobPayload(payload);
+    if (packedItems.length === 0) return null;
+    let latest = null;
+    let latestMs = Number.NEGATIVE_INFINITY;
+    Object.values(payload.packedTimestamps || {}).forEach((ts) => {
+        const parsed = Date.parse(String(ts || ''));
+        if (Number.isFinite(parsed) && parsed > latestMs) {
+            latestMs = parsed;
+            latest = ts;
+        }
+    });
+    return {
+        jobNumber: String(payload.jobNumber),
+        lastPackedAt: latest,
+        itemCount: packedItems.length,
+        packageCount: packageCountFromPackedItems(packedItems),
+        itemNames: packedItems.map((item) => item.itemName)
+    };
+}
+
+async function writeJobPayloadToFirestore(jobNumber, payload) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (isMitatDataClearedAgainstKnownJobs()) return;
+    const { db, doc, setDoc, serverTimestamp } = window.firebase;
+    payload.jobNumber = String(jobNumber);
+    payload.updatedBy = currentUser.email;
+    payload.updatedAt = serverTimestamp();
+    await setDoc(doc(db, 'mitatState', getTuotantoJobDocId(jobNumber)), payload);
+    putPaketitJobCache(jobNumber, payload);
+    const indexRow = buildPaketitIndexRowFromPayload(payload);
+    const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
+    if (indexRow) {
+        if (!paketitIndexRowsEqual(indexRow, existingRow)) {
+            const idx = existingRow
+                ? paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber))
+                : -1;
+            if (idx >= 0) paketitIndexJobs[idx] = indexRow;
+            else paketitIndexJobs.push(indexRow);
+            await upsertPaketitIndexRow(indexRow);
+        }
+    } else if (existingRow) {
+        paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
+        await removePaketitIndexRow(jobNumber);
+    }
+}
+
+function remapJobPayloadItemName(payload, oldName, newName) {
+    if (!payload || !payload.items || !payload.items[oldName]) return false;
+    if (payload.items[newName]) return false;
+    payload.items[newName] = payload.items[oldName];
+    delete payload.items[oldName];
+    const maps = [
+        payload.checks && payload.checks.lasilistat,
+        payload.checks && payload.checks.kulmalistat,
+        payload.checks && payload.checks.paneelit,
+        payload.checks && payload.checks.done,
+        payload.checks && payload.checks.packed,
+        payload.checks && payload.checks.packageNumbers,
+        payload.checks && payload.checks.hidden,
+        payload.itemBlocks,
+        payload.notes && payload.notes.items
+    ];
+    maps.forEach((map) => {
+        if (!map || !(oldName in map)) return;
+        map[newName] = map[oldName];
+        delete map[oldName];
+    });
+    return true;
 }
 
 function putPaketitJobCache(jobNumber, payload) {
@@ -950,7 +1081,7 @@ function setupRealtimeListeners() {
         return;
     }
     
-    const { db, collection, onSnapshot, doc } = window.firebase;
+    const { db, collection, onSnapshot, doc, query, where } = window.firebase;
     
     console.log('🎧 Aloitetaan reaaliaikainen kuuntelu...');
     
@@ -1015,49 +1146,35 @@ function setupRealtimeListeners() {
         console.error('❌ Virhe formulaSets-kuuntelijan luonnissa:', error);
     }
 
-    // LISTENER 4: Mitat state document
+    // LISTENER 4: Active production jobs (status == active)
     try {
         let isFirstLoadMitat = true;
         mitatStateUnsubscribe = onSnapshot(
-            doc(db, 'mitatState', 'global'),
-            (docSnapshot) => {
-                if (!docSnapshot.exists()) {
-                    return;
-                }
-
-                const data = docSnapshot.data();
-                applyMitatStateToLocalStorage({
-                    mittatData: data.mittatData || {},
-                    checkedMitat: data.checkedMitat || {},
-                    checkedKulmalistat: data.checkedKulmalistat || {},
-                    checkedPaneelit: data.checkedPaneelit || {},
-                    doneMitat: data.doneMitat || {},
-                    packedMitat: data.packedMitat || {},
-                    packedPackageNumbers: data.packedPackageNumbers || {},
-                    hiddenMitatItems: data.hiddenMitatItems || {},
-                    mittatNotes: data.mittatNotes || {},
-                    packedTimestamps: data.packedTimestamps || {},
-                    jobBlocks: data.jobBlocks || {},
-                    itemBlocks: data.itemBlocks || {}
+            query(collection(db, 'mitatState'), where('status', '==', 'active')),
+            (snapshot) => {
+                const payloads = [];
+                snapshot.forEach((jobDoc) => {
+                    const data = jobDoc.data();
+                    if (data && data.jobNumber) payloads.push(data);
                 });
-                lastKnownJobCount = Object.keys(data.mittatData || {}).length;
+                lastKnownJobCount = payloads.length;
+                applyActiveJobPayloadsToLocalStorage(payloads);
                 mitatStateLoaded = true;
 
-                if (isFirstLoadMitat) {
-                    void (async () => {
-                        await copyMissingActiveJobsToFirestore();
-                        await copyMissingPackedJobsToFirestore();
-                    })();
+                let isOwnUpdate = true;
+                let hasRemoval = false;
+                if (typeof snapshot.docChanges === 'function') {
+                    const changes = snapshot.docChanges();
+                    hasRemoval = changes.some((change) => change.type === 'removed');
+                    if (changes.length === 0) {
+                        isOwnUpdate = false;
+                    } else {
+                        isOwnUpdate = changes.every((change) => change.doc.data().updatedBy === currentUser?.email);
+                    }
                 }
 
-                const isOwnUpdate = data.updatedBy === currentUser?.email;
-
-                // Refresh Mitat view if visible.
-                // Skip self-originated updates to avoid double-render flicker:
-                // local actions already update UI immediately, while remote
-                // updates from other users should still re-render in real time.
                 const mittatView = document.getElementById('mittatView');
-                if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat)) {
+                if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat || hasRemoval)) {
                     loadMittatView();
                 }
                 if (isFirstLoadMitat || pendingJobDeepLink) {
@@ -1070,11 +1187,11 @@ function setupRealtimeListeners() {
                 isFirstLoadMitat = false;
             },
             (error) => {
-                console.error('❌ MitatState-kuunteluvirhe:', error);
+                console.error('❌ Aktiivisten töiden kuunteluvirhe:', error);
             }
         );
     } catch (error) {
-        console.error('❌ Virhe mitatState-kuuntelijan luonnissa:', error);
+        console.error('❌ Virhe aktiivisten töiden kuuntelijan luonnissa:', error);
     }
 
     // LISTENER 5: Mitat inputs document (erillinen pieni dokumentti luotettavaa inputs-synkronia varten)
@@ -5679,7 +5796,7 @@ function confirmTransferToMitat() {
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
@@ -7091,60 +7208,94 @@ function initPaketitDragAndDrop(container) {
             );
             if (newPkgKey === currentPkgKey) return;
 
-            const checkKey = `${paketitDraggedJobNumber}-${paketitDraggedItemName}`;
-            const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
-            if (newPkgKey === 0) {
-                delete packedPackageNumbers[checkKey];
-            } else {
-                packedPackageNumbers[checkKey] = newPkgKey;
+            const jobNumber = paketitDraggedJobNumber;
+            const itemName = paketitDraggedItemName;
+            const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+            if (mittatData[jobNumber]?.[itemName]) {
+                const checkKey = `${jobNumber}-${itemName}`;
+                const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+                if (newPkgKey === 0) {
+                    delete packedPackageNumbers[checkKey];
+                } else {
+                    packedPackageNumbers[checkKey] = newPkgKey;
+                }
+                localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
+                dualWriteMitatState(jobNumber);
+                loadPaketitView();
+                return;
             }
-            localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
-            dualWriteMitatState(paketitDraggedJobNumber);
-            loadPaketitView();
+
+            void (async () => {
+                const payload = await fetchPaketitJobPayload(jobNumber);
+                if (!payload || !payload.items || !payload.items[itemName]) {
+                    showToast('Mittaa ei löydetty.', 'warning');
+                    return;
+                }
+                if (!payload.checks) payload.checks = {};
+                if (!payload.checks.packageNumbers) payload.checks.packageNumbers = {};
+                if (newPkgKey === 0) {
+                    delete payload.checks.packageNumbers[itemName];
+                } else {
+                    payload.checks.packageNumbers[itemName] = newPkgKey;
+                }
+                await writeJobPayloadToFirestore(jobNumber, payload);
+                loadPaketitView();
+            })();
         });
     });
 }
 
-function renamePaketitItem(jobNumber, itemName, btn) {
+async function renamePaketitItem(jobNumber, itemName, btn) {
     const newName = prompt('Anna uusi nimi:', itemName);
     if (!newName || newName.trim() === itemName) return;
     const trimmedName = newName.trim();
 
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    if (!mittatData[jobNumber]?.[itemName]) {
-        showToast('Mittaa ei löydetty.', 'warning');
-        return;
-    }
-    if (mittatData[jobNumber][trimmedName]) {
-        showToast(`Nimi "${trimmedName}" on jo käytössä.`, 'warning');
-        return;
-    }
-
-    mittatData[jobNumber][trimmedName] = mittatData[jobNumber][itemName];
-    delete mittatData[jobNumber][itemName];
-    localStorage.setItem('mittatData', JSON.stringify(mittatData));
-
-    const oldKey = `${jobNumber}-${itemName}`;
-    const newKey = `${jobNumber}-${trimmedName}`;
-    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
-        const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
-        if (oldKey in obj) {
-            obj[newKey] = obj[oldKey];
-            delete obj[oldKey];
-            localStorage.setItem(storeKey, JSON.stringify(obj));
+    if (mittatData[jobNumber]?.[itemName]) {
+        if (mittatData[jobNumber][trimmedName]) {
+            showToast(`Nimi "${trimmedName}" on jo käytössä.`, 'warning');
+            return;
         }
-    });
 
-    const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
-    const oldNoteKey = `item-${jobNumber}-${itemName}`;
-    const newNoteKey = `item-${jobNumber}-${trimmedName}`;
-    if (oldNoteKey in notes) {
-        notes[newNoteKey] = notes[oldNoteKey];
-        delete notes[oldNoteKey];
-        localStorage.setItem('mittatNotes', JSON.stringify(notes));
+        mittatData[jobNumber][trimmedName] = mittatData[jobNumber][itemName];
+        delete mittatData[jobNumber][itemName];
+        localStorage.setItem('mittatData', JSON.stringify(mittatData));
+
+        const oldKey = `${jobNumber}-${itemName}`;
+        const newKey = `${jobNumber}-${trimmedName}`;
+        ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
+            const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
+            if (oldKey in obj) {
+                obj[newKey] = obj[oldKey];
+                delete obj[oldKey];
+                localStorage.setItem(storeKey, JSON.stringify(obj));
+            }
+        });
+
+        const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
+        const oldNoteKey = `item-${jobNumber}-${itemName}`;
+        const newNoteKey = `item-${jobNumber}-${trimmedName}`;
+        if (oldNoteKey in notes) {
+            notes[newNoteKey] = notes[oldNoteKey];
+            delete notes[oldNoteKey];
+            localStorage.setItem('mittatNotes', JSON.stringify(notes));
+        }
+
+        dualWriteMitatState(jobNumber);
+        syncMitatInputsToFirestore(jobNumber);
+    } else {
+        const payload = await fetchPaketitJobPayload(jobNumber);
+        if (!payload || !payload.items || !payload.items[itemName]) {
+            showToast('Mittaa ei löydetty.', 'warning');
+            return;
+        }
+        if (payload.items[trimmedName]) {
+            showToast(`Nimi "${trimmedName}" on jo käytössä.`, 'warning');
+            return;
+        }
+        remapJobPayloadItemName(payload, itemName, trimmedName);
+        await writeJobPayloadToFirestore(jobNumber, payload);
     }
-
-    dualWriteMitatState(jobNumber);
 
     const menu = btn.closest('.dropdown-menu');
     const dropdownToggle = menu?.previousElementSibling;
@@ -7158,9 +7309,13 @@ function renamePaketitItem(jobNumber, itemName, btn) {
     showToast(`Nimi muutettu: "${trimmedName}"`, 'success');
 }
 
-function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, editMeta = false) {
+async function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -1, editMeta = false) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    const item = mittatData[jobNumber]?.[itemName];
+    let item = mittatData[jobNumber]?.[itemName];
+    if (!item) {
+        const payload = await fetchPaketitJobPayload(jobNumber);
+        item = payload?.items?.[itemName];
+    }
     if (!item) {
         showToast('Mittaa ei löytynyt.', 'warning');
         return;
@@ -7480,7 +7635,7 @@ function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, item
 
 function persistMitatBlockState(jobNumber) {
     dualWriteMitatState(jobNumber || pendingJobBlocksJobNumber || selectedBlockJobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber || pendingJobBlocksJobNumber || selectedBlockJobNumber);
 }
 
 function deleteJobBlock(jobNumber, blockId) {
@@ -8817,7 +8972,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
     }
 
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
 
     const menu = btn.closest('.dropdown-menu');
     const dropdownToggle = menu?.previousElementSibling;
@@ -8911,7 +9066,7 @@ function renameMitatJob(jobNumber, btn) {
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
     dualWriteMitatState([jobNumber, trimmed]);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore([jobNumber, trimmed]);
 
     const menu = btn?.closest('.dropdown-menu');
     const dropdownToggle = menu?.previousElementSibling;
@@ -9398,7 +9553,7 @@ function saveEditedMitatInputs(jobNumber, itemName, entryIdx, formEl, context = 
 
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
 
     if (calcOk) {
         showToast('Syötteet päivitetty ja tulokset laskettu uudelleen.', 'success');
@@ -9462,7 +9617,7 @@ function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context = 'mi
 
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
 
     if (context === 'paketit') {
         loadPaketitView();
@@ -9820,9 +9975,6 @@ function deleteJobMitat(jobNumber) {
     }
     
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
-    if (!mittatData[jobNumber]) {
-        return;
-    }
 
     // Remove checkbox states and item notes for all items in job
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
@@ -9835,7 +9987,7 @@ function deleteJobMitat(jobNumber) {
     const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
     const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     const mittatNotes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
-    const itemNames = Object.keys(mittatData[jobNumber]);
+    const itemNames = Object.keys(mittatData[jobNumber] || {});
     
     itemNames.forEach(itemName => {
         const checkKey = `${jobNumber}-${itemName}`;
@@ -9874,7 +10026,7 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
     paketitJobCache.delete(String(jobNumber));
 
     if (selectedPackingJobNumber === jobNumber) {
@@ -10071,7 +10223,7 @@ function deleteMitta(jobNumber, itemName) {
         }
 
         dualWriteMitatState(jobNumber);
-        syncMitatInputsToFirestore();
+        syncMitatInputsToFirestore(jobNumber);
         
         loadMittatView();
         showToast('Mitat poistettu', 'info');
@@ -10904,7 +11056,7 @@ function bulkTransferScanQueue() {
     }
 
     dualWriteMitatState([...jobs]);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore([...jobs]);
     scanTransferQueue = [];
     scanBatchJobNumber = null;
     scanTransferQueueOpen = false;
@@ -11889,7 +12041,7 @@ function applyScanResult() {
 
     const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
     dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore();
+    syncMitatInputsToFirestore(jobNumber);
     closeScanReview();
     const countLabel = quantity > 1 ? ` (${quantity} kpl)` : '';
     showToast(`Mitat siirretty: ${jobNumber} - ${itemName}${countLabel}`, 'success');
