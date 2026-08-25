@@ -9292,6 +9292,7 @@ async function renameMitatJob(jobNumber, btn) {
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
     pendingMitatJobRename = { from: String(jobNumber), to: String(trimmed) };
+    selectedMitatJobNumber = trimmed;
     loadMittatView();
 
     let renamedOk = false;
