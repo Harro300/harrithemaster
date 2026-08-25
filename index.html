@@ -4156,7 +4156,8 @@
         orderBy,
         serverTimestamp,
         setDoc,
-        deleteField
+        deleteField,
+        writeBatch
       } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 
       // Firebase configuration
@@ -4204,7 +4205,8 @@
         query: query,
         where: where,
         orderBy: orderBy,
-        serverTimestamp: serverTimestamp
+        serverTimestamp: serverTimestamp,
+        writeBatch: writeBatch
       };
 
       // Ilmoita kun Firebase on valmis
@@ -4225,7 +4227,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260824R3"></script>
+    <script src="app.js?v=20260825R5"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>

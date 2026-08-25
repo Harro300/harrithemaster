@@ -36,6 +36,27 @@ const PAKETIT_JOB_CACHE_LIMIT = 50;
 const PAKETIT_PREFETCH_COUNT = 10;
 let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
+let pendingMitatJobRename = null;
+const MITAT_JOB_TOMBSTONE_MS = 60000;
+const mitatJobTombstones = new Map();
+
+function tombstoneMitatJob(jobNumber) {
+    const key = String(jobNumber || '');
+    if (key) mitatJobTombstones.set(key, Date.now());
+}
+
+function isMitatJobTombstoned(jobNumber) {
+    const key = String(jobNumber || '');
+    if (!key) return false;
+    const ts = mitatJobTombstones.get(key);
+    if (ts == null) return false;
+    if (Date.now() - ts > MITAT_JOB_TOMBSTONE_MS) {
+        mitatJobTombstones.delete(key);
+        return false;
+    }
+    return true;
+}
+
 let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
 let isTuotantoContentView = false;
@@ -212,6 +233,7 @@ function applyActiveJobPayloadsToLocalStorage(payloads) {
     (payloads || []).forEach((payload) => {
         if (!payload || !payload.jobNumber) return;
         const jobNumber = String(payload.jobNumber);
+        if (isMitatJobTombstoned(jobNumber)) return;
         const items = payload.items && typeof payload.items === 'object' ? payload.items : {};
         state.mittatData[jobNumber] = JSON.parse(JSON.stringify(items));
         const checks = payload.checks || {};
@@ -496,6 +518,12 @@ async function syncTuotantoJobToFirestore(jobNumber) {
     try {
         const { db, doc, setDoc, deleteDoc, serverTimestamp } = window.firebase;
         const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+        if (isMitatJobTombstoned(jobNumber)) {
+            await deleteDoc(ref);
+            paketitJobCache.delete(String(jobNumber));
+            await removePaketitIndexRow(jobNumber);
+            return;
+        }
         const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
         const jobItems = mittatData[jobNumber];
         const hasItems = jobItems && typeof jobItems === 'object' && Object.keys(jobItems).length > 0;
@@ -563,7 +591,92 @@ function dualWriteMitatState(jobNumberOrNumbers) {
             }
         });
     }
-    void syncTuotantoJobsToFirestore(jobs);
+    return syncTuotantoJobsToFirestore(jobs);
+}
+
+async function syncMitatJobRenameToFirestore(fromJob, toJob) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return false;
+    }
+    fromJob = String(fromJob || '');
+    toJob = String(toJob || '');
+    if (!fromJob || !toJob || fromJob === toJob) return false;
+    if (isMitatDataClearedAgainstKnownJobs()) {
+        console.warn('Työnumeron muokkaus-synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
+        return false;
+    }
+
+    const payload = buildTuotantoJobPayload(toJob);
+    if (!payload) {
+        console.error('❌ Työnumeron muokkaus: uutta työdokumenttia ei voitu rakentaa', toJob);
+        return false;
+    }
+
+    try {
+        const { db, doc, setDoc, deleteDoc, writeBatch, serverTimestamp } = window.firebase;
+        payload.status = isJobFullyPacked(toJob) ? 'packed' : 'active';
+        payload.updatedBy = currentUser.email;
+        payload.updatedAt = serverTimestamp();
+
+        const newRef = doc(db, 'mitatState', getTuotantoJobDocId(toJob));
+        const oldRef = doc(db, 'mitatState', getTuotantoJobDocId(fromJob));
+        tombstoneMitatJob(fromJob);
+        try {
+            if (typeof writeBatch === 'function') {
+                const batch = writeBatch(db);
+                batch.set(newRef, payload);
+                batch.delete(oldRef);
+                await batch.commit();
+            } else {
+                await setDoc(newRef, payload);
+                await deleteDoc(oldRef);
+            }
+        } catch (batchError) {
+            console.warn('Työnumeron writeBatch epäonnistui, yritetään setDoc+deleteDoc:', batchError);
+            await setDoc(newRef, payload);
+            await deleteDoc(oldRef);
+        }
+
+        putPaketitJobCache(toJob, payload);
+        paketitJobCache.delete(fromJob);
+    } catch (error) {
+        console.error('❌ Työnumeron muokkaus-synkka epäonnistui:', fromJob, toJob, error);
+        return false;
+    }
+
+    try {
+        const { db, doc, setDoc, updateDoc, deleteField, getDoc } = window.firebase;
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const jobItems = mittatData[toJob];
+        const jobInputs = {};
+        if (jobItems && typeof jobItems === 'object') {
+            for (const itemName of Object.keys(jobItems)) {
+                const item = jobItems[itemName];
+                if (item && (item.inputs || item.inputsHistory)) {
+                    jobInputs[itemName] = {
+                        inputs: item.inputs || null,
+                        inputsHistory: item.inputsHistory || null
+                    };
+                }
+            }
+        }
+        const inputsRef = doc(db, 'mitatState', 'inputs');
+        const inputUpdate = { [`inputs.${fromJob}`]: deleteField() };
+        if (Object.keys(jobInputs).length > 0) {
+            inputUpdate[`inputs.${toJob}`] = jobInputs;
+        }
+        const inputsSnap = await getDoc(inputsRef);
+        if (inputsSnap.exists()) {
+            await updateDoc(inputsRef, inputUpdate);
+        } else if (Object.keys(jobInputs).length > 0) {
+            await setDoc(inputsRef, { inputs: { [toJob]: jobInputs } }, { merge: true });
+        }
+
+        await renamePaketitIndexJob(fromJob, toJob);
+    } catch (error) {
+        console.error('❌ Työnumeron inputs/indeksi-siirto epäonnistui:', fromJob, toJob, error);
+    }
+    return true;
 }
 
 async function copyMissingActiveJobsToFirestore() {
@@ -581,6 +694,7 @@ async function copyMissingActiveJobsToFirestore() {
 
     try {
         for (const jobNumber of Object.keys(mittatData)) {
+            if (isMitatJobTombstoned(jobNumber)) continue;
             if (isJobFullyPacked(jobNumber)) continue;
             try {
                 const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
@@ -845,6 +959,44 @@ async function removePaketitIndexRow(jobNumber) {
         await writePaketitIndexJobs(next);
     } catch (error) {
         console.error('❌ Paketit-indeksin poisto epäonnistui:', jobNumber, error);
+    }
+}
+
+async function renamePaketitIndexJob(fromJob, toJob) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return;
+    }
+    if (isMitatDataClearedAgainstKnownJobs()) return;
+    fromJob = String(fromJob || '');
+    toJob = String(toJob || '');
+    if (!fromJob || !toJob) return;
+
+    const memOld = paketitIndexJobs.find((job) => String(job.jobNumber) === fromJob);
+    let newRow = buildPaketitIndexRow(toJob);
+    if (newRow && memOld && memOld.rev != null) newRow.rev = memOld.rev;
+
+    paketitIndexJobs = paketitIndexJobs.filter((job) =>
+        String(job.jobNumber) !== fromJob && String(job.jobNumber) !== toJob
+    );
+    if (newRow) paketitIndexJobs.push(newRow);
+
+    try {
+        const jobs = await readPaketitIndexJobsFromFirestore();
+        const fsOld = jobs.find((job) => String(job.jobNumber) === fromJob);
+        if (newRow && fsOld && fsOld.rev != null && (newRow.rev == null || Number(fsOld.rev) > Number(newRow.rev))) {
+            newRow.rev = fsOld.rev;
+        }
+        const next = jobs.filter((job) =>
+            String(job.jobNumber) !== fromJob && String(job.jobNumber) !== toJob
+        );
+        if (newRow) next.push(newRow);
+        const fromWasIn = jobs.some((job) => String(job.jobNumber) === fromJob);
+        if (fromWasIn || newRow) {
+            await writePaketitIndexJobs(next);
+            paketitIndexJobs = next;
+        }
+    } catch (error) {
+        console.error('❌ Paketit-indeksin rename epäonnistui:', fromJob, toJob, error);
     }
 }
 
@@ -1213,20 +1365,29 @@ function setupRealtimeListeners() {
         mitatStateUnsubscribe = onSnapshot(
             query(collection(db, 'mitatState'), where('status', '==', 'active')),
             (snapshot) => {
-                const payloads = [];
+                let payloads = [];
                 snapshot.forEach((jobDoc) => {
                     const data = jobDoc.data();
                     if (data && data.jobNumber) payloads.push(data);
                 });
+                if (pendingMitatJobRename) {
+                    const to = String(pendingMitatJobRename.to);
+                    const hasTo = payloads.some((payload) => String(payload.jobNumber) === to);
+                    if (!hasTo) {
+                        return;
+                    }
+                }
                 lastKnownJobCount = payloads.length;
                 applyActiveJobPayloadsToLocalStorage(payloads);
                 mitatStateLoaded = true;
 
                 let isOwnUpdate = true;
                 let hasRemoval = false;
+                let hasAddition = false;
                 if (typeof snapshot.docChanges === 'function') {
                     const changes = snapshot.docChanges();
                     hasRemoval = changes.some((change) => change.type === 'removed');
+                    hasAddition = changes.some((change) => change.type === 'added');
                     if (changes.length === 0) {
                         isOwnUpdate = false;
                     } else {
@@ -1235,7 +1396,7 @@ function setupRealtimeListeners() {
                 }
 
                 const mittatView = document.getElementById('mittatView');
-                if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat || hasRemoval)) {
+                if (mittatView && !mittatView.classList.contains('d-none') && (!isOwnUpdate || isFirstLoadMitat || hasRemoval || hasAddition)) {
                     loadMittatView();
                 }
                 if (isFirstLoadMitat || pendingJobDeepLink) {
@@ -1761,6 +1922,8 @@ async function logout() {
     lastKnownJobCount = -1;
     tuotantoJobCopyDone = false;
     paketitIndexCopyDone = false;
+    pendingMitatJobRename = null;
+    mitatJobTombstones.clear();
     paketitIndexLoaded = false;
     paketitIndexJobs = [];
     paketitJobCache.clear();
@@ -9058,7 +9221,7 @@ function remapSelectedJobItemKeys(map, oldJobNumber, newJobNumber) {
     });
 }
 
-function renameMitatJob(jobNumber, btn) {
+async function renameMitatJob(jobNumber, btn) {
     const newJobNumber = prompt('Anna uusi työnumero:', jobNumber);
     if (!newJobNumber || newJobNumber.trim() === jobNumber) return;
     const trimmed = newJobNumber.trim();
@@ -9128,35 +9291,45 @@ function renameMitatJob(jobNumber, btn) {
     });
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
-    dualWriteMitatState([jobNumber, trimmed]);
-    syncMitatInputsToFirestore([jobNumber, trimmed]);
-
-    const menu = btn?.closest('.dropdown-menu');
-    const dropdownToggle = menu?.previousElementSibling;
-    if (dropdownToggle && window.bootstrap?.Dropdown) {
-        const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
-        if (instance) instance.hide();
-    }
-
-    if (selectedMitatJobNumber === jobNumber) selectedMitatJobNumber = trimmed;
-    if (selectedPackingJobNumber === jobNumber) selectedPackingJobNumber = trimmed;
-    if (selectedLasilistaPdfJobNumber === jobNumber) selectedLasilistaPdfJobNumber = trimmed;
-    if (selectedKulmalistaPdfJobNumber === jobNumber) selectedKulmalistaPdfJobNumber = trimmed;
-    if (selectedPaneeliPdfJobNumber === jobNumber) selectedPaneeliPdfJobNumber = trimmed;
-    if (selectedBlockJobNumber === jobNumber) selectedBlockJobNumber = trimmed;
-    if (pendingJobBlocksJobNumber === jobNumber) pendingJobBlocksJobNumber = trimmed;
-    remapSelectedJobItemKeys(selectedPackingItems, jobNumber, trimmed);
-    remapSelectedJobItemKeys(selectedLasilistaPdfItems, jobNumber, trimmed);
-    remapSelectedJobItemKeys(selectedKulmalistaPdfItems, jobNumber, trimmed);
-    remapSelectedJobItemKeys(selectedPaneeliPdfItems, jobNumber, trimmed);
-    remapSelectedJobItemKeys(selectedBlockItems, jobNumber, trimmed);
-
+    pendingMitatJobRename = { from: String(jobNumber), to: String(trimmed) };
     loadMittatView();
-    const paketitView = document.getElementById('paketitView');
-    if (paketitView && !paketitView.classList.contains('d-none')) {
-        loadPaketitView();
+
+    let renamedOk = false;
+    try {
+        renamedOk = await syncMitatJobRenameToFirestore(jobNumber, trimmed);
+    } finally {
+        const menu = btn?.closest('.dropdown-menu');
+        const dropdownToggle = menu?.previousElementSibling;
+        if (dropdownToggle && window.bootstrap?.Dropdown) {
+            const instance = bootstrap.Dropdown.getInstance(dropdownToggle);
+            if (instance) instance.hide();
+        }
+
+        if (selectedMitatJobNumber === jobNumber) selectedMitatJobNumber = trimmed;
+        if (selectedPackingJobNumber === jobNumber) selectedPackingJobNumber = trimmed;
+        if (selectedLasilistaPdfJobNumber === jobNumber) selectedLasilistaPdfJobNumber = trimmed;
+        if (selectedKulmalistaPdfJobNumber === jobNumber) selectedKulmalistaPdfJobNumber = trimmed;
+        if (selectedPaneeliPdfJobNumber === jobNumber) selectedPaneeliPdfJobNumber = trimmed;
+        if (selectedBlockJobNumber === jobNumber) selectedBlockJobNumber = trimmed;
+        if (pendingJobBlocksJobNumber === jobNumber) pendingJobBlocksJobNumber = trimmed;
+        remapSelectedJobItemKeys(selectedPackingItems, jobNumber, trimmed);
+        remapSelectedJobItemKeys(selectedLasilistaPdfItems, jobNumber, trimmed);
+        remapSelectedJobItemKeys(selectedKulmalistaPdfItems, jobNumber, trimmed);
+        remapSelectedJobItemKeys(selectedPaneeliPdfItems, jobNumber, trimmed);
+        remapSelectedJobItemKeys(selectedBlockItems, jobNumber, trimmed);
+
+        loadMittatView();
+        const paketitView = document.getElementById('paketitView');
+        if (paketitView && !paketitView.classList.contains('d-none')) {
+            loadPaketitView();
+        }
+        pendingMitatJobRename = null;
     }
-    showToast(`Työnumero muutettu: "${trimmed}"`, 'success');
+    if (renamedOk) {
+        showToast(`Työnumero muutettu: "${trimmed}"`, 'success');
+    } else {
+        showToast('Työnumeron synkka epäonnistui. Tarkista yhteys ja yritä uudelleen.', 'warning');
+    }
 }
 
 function showJobDetails(jobNumber, btn) {
