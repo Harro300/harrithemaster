@@ -36,26 +36,9 @@ const PAKETIT_JOB_CACHE_LIMIT = 50;
 const PAKETIT_PREFETCH_COUNT = 10;
 let pendingJobDeepLink = null;
 let skipNextPaketitViewReload = false;
-let pendingMitatJobRename = null;
-const MITAT_JOB_TOMBSTONE_MS = 60000;
-const mitatJobTombstones = new Map();
-
-function tombstoneMitatJob(jobNumber) {
-    const key = String(jobNumber || '');
-    if (key) mitatJobTombstones.set(key, Date.now());
-}
-
-function isMitatJobTombstoned(jobNumber) {
-    const key = String(jobNumber || '');
-    if (!key) return false;
-    const ts = mitatJobTombstones.get(key);
-    if (ts == null) return false;
-    if (Date.now() - ts > MITAT_JOB_TOMBSTONE_MS) {
-        mitatJobTombstones.delete(key);
-        return false;
-    }
-    return true;
-}
+// Työnumero → Firestore-dokumentin ID. Dokumentti-ID on pysyvä eikä sitä
+// johdeta työnumerosta kirjoituksissa; kartta täyttyy snapshoteista ja hauista.
+const mitatJobDocIds = new Map();
 
 let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
@@ -233,7 +216,6 @@ function applyActiveJobPayloadsToLocalStorage(payloads) {
     (payloads || []).forEach((payload) => {
         if (!payload || !payload.jobNumber) return;
         const jobNumber = String(payload.jobNumber);
-        if (isMitatJobTombstoned(jobNumber)) return;
         const items = payload.items && typeof payload.items === 'object' ? payload.items : {};
         state.mittatData[jobNumber] = JSON.parse(JSON.stringify(items));
         const checks = payload.checks || {};
@@ -420,8 +402,15 @@ function isJobFullyPacked(jobNumber) {
 
 const MITAT_JOB_DOC_PREFIX = 'job_';
 
+// Vain uusien dokumenttien luontinimi. Olemassa oleviin dokumentteihin
+// viitataan aina resolveMitatJobDocId:n kautta, koska työnumeron muokkaus
+// muuttaa jobNumber-kenttää mutta ei dokumentin ID:tä.
 function getTuotantoJobDocId(jobNumber) {
     return MITAT_JOB_DOC_PREFIX + encodeURIComponent(String(jobNumber));
+}
+
+function resolveMitatJobDocId(jobNumber) {
+    return mitatJobDocIds.get(String(jobNumber)) || getTuotantoJobDocId(jobNumber);
 }
 
 function jobNumberFromCheckKey(checkKey) {
@@ -517,19 +506,15 @@ async function syncTuotantoJobToFirestore(jobNumber) {
 
     try {
         const { db, doc, setDoc, deleteDoc, serverTimestamp } = window.firebase;
-        const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
-        if (isMitatJobTombstoned(jobNumber)) {
-            await deleteDoc(ref);
-            paketitJobCache.delete(String(jobNumber));
-            await removePaketitIndexRow(jobNumber);
-            return;
-        }
+        const docId = resolveMitatJobDocId(jobNumber);
+        const ref = doc(db, 'mitatState', docId);
         const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
         const jobItems = mittatData[jobNumber];
         const hasItems = jobItems && typeof jobItems === 'object' && Object.keys(jobItems).length > 0;
 
         if (!hasItems) {
             await deleteDoc(ref);
+            mitatJobDocIds.delete(String(jobNumber));
             paketitJobCache.delete(String(jobNumber));
             await removePaketitIndexRow(jobNumber);
             return;
@@ -538,6 +523,7 @@ async function syncTuotantoJobToFirestore(jobNumber) {
         const payload = buildTuotantoJobPayload(jobNumber);
         if (!payload) {
             await deleteDoc(ref);
+            mitatJobDocIds.delete(String(jobNumber));
             paketitJobCache.delete(String(jobNumber));
             await removePaketitIndexRow(jobNumber);
             return;
@@ -546,6 +532,7 @@ async function syncTuotantoJobToFirestore(jobNumber) {
         payload.updatedBy = currentUser.email;
         payload.updatedAt = serverTimestamp();
         await setDoc(ref, payload);
+        mitatJobDocIds.set(String(jobNumber), docId);
         putPaketitJobCache(jobNumber, payload);
 
         const indexRow = buildPaketitIndexRow(jobNumber);
@@ -613,29 +600,18 @@ async function syncMitatJobRenameToFirestore(fromJob, toJob) {
     }
 
     try {
-        const { db, doc, setDoc, deleteDoc, writeBatch, serverTimestamp } = window.firebase;
+        const { db, doc, setDoc, serverTimestamp } = window.firebase;
         payload.status = isJobFullyPacked(toJob) ? 'packed' : 'active';
         payload.updatedBy = currentUser.email;
         payload.updatedAt = serverTimestamp();
 
-        const newRef = doc(db, 'mitatState', getTuotantoJobDocId(toJob));
-        const oldRef = doc(db, 'mitatState', getTuotantoJobDocId(fromJob));
-        tombstoneMitatJob(fromJob);
-        try {
-            if (typeof writeBatch === 'function') {
-                const batch = writeBatch(db);
-                batch.set(newRef, payload);
-                batch.delete(oldRef);
-                await batch.commit();
-            } else {
-                await setDoc(newRef, payload);
-                await deleteDoc(oldRef);
-            }
-        } catch (batchError) {
-            console.warn('Työnumeron writeBatch epäonnistui, yritetään setDoc+deleteDoc:', batchError);
-            await setDoc(newRef, payload);
-            await deleteDoc(oldRef);
-        }
+        // Dokumentin ID pysyy samana — vain jobNumber-kenttä (ja muu payload)
+        // päivittyy. Yksi atominen kirjoitus, joten muut laitteet eivät voi
+        // nähdä vanhaa ja uutta työnumeroa yhtä aikaa.
+        const docId = resolveMitatJobDocId(fromJob);
+        await setDoc(doc(db, 'mitatState', docId), payload);
+        mitatJobDocIds.delete(fromJob);
+        mitatJobDocIds.set(toJob, docId);
 
         putPaketitJobCache(toJob, payload);
         paketitJobCache.delete(fromJob);
@@ -694,10 +670,9 @@ async function copyMissingActiveJobsToFirestore() {
 
     try {
         for (const jobNumber of Object.keys(mittatData)) {
-            if (isMitatJobTombstoned(jobNumber)) continue;
             if (isJobFullyPacked(jobNumber)) continue;
             try {
-                const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+                const ref = doc(db, 'mitatState', resolveMitatJobDocId(jobNumber));
                 const snap = await getDoc(ref);
                 if (snap.exists()) continue;
                 const payload = buildTuotantoJobPayload(jobNumber);
@@ -837,7 +812,9 @@ async function writeJobPayloadToFirestore(jobNumber, payload) {
     payload.jobNumber = String(jobNumber);
     payload.updatedBy = currentUser.email;
     payload.updatedAt = serverTimestamp();
-    await setDoc(doc(db, 'mitatState', getTuotantoJobDocId(jobNumber)), payload);
+    const docId = resolveMitatJobDocId(jobNumber);
+    await setDoc(doc(db, 'mitatState', docId), payload);
+    mitatJobDocIds.set(String(jobNumber), docId);
     putPaketitJobCache(jobNumber, payload);
     const indexRow = buildPaketitIndexRowFromPayload(payload);
     const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
@@ -1047,7 +1024,7 @@ async function copyMissingPackedJobsToFirestore() {
             );
             if (packedItems.length === 0) continue;
             try {
-                const ref = doc(db, 'mitatState', getTuotantoJobDocId(jobNumber));
+                const ref = doc(db, 'mitatState', resolveMitatJobDocId(jobNumber));
                 const snap = await getDoc(ref);
                 if (!snap.exists()) {
                     const payload = buildTuotantoJobPayload(jobNumber);
@@ -1075,10 +1052,34 @@ async function fetchPaketitJobPayload(jobNumber) {
 
     if (window.firebase && window.firebase.db && currentUser) {
         try {
-            const { db, doc, getDoc } = window.firebase;
-            const snap = await getDoc(doc(db, 'mitatState', getTuotantoJobDocId(jobNumber)));
+            const { db, doc, getDoc, collection, query, where, getDocs } = window.firebase;
+            let snap = null;
+            const mappedId = mitatJobDocIds.get(String(jobNumber));
+            if (mappedId) {
+                snap = await getDoc(doc(db, 'mitatState', mappedId));
+            }
+            if (!snap || !snap.exists()) {
+                snap = await getDoc(doc(db, 'mitatState', getTuotantoJobDocId(jobNumber)));
+            }
             if (snap.exists()) {
+                mitatJobDocIds.set(String(jobNumber), snap.id);
                 const payload = snap.data();
+                putPaketitJobCache(jobNumber, payload);
+                return payload;
+            }
+            // Uudelleennimetty työ: dokumentin ID ei enää vastaa työnumeroa,
+            // joten haetaan jobNumber-kentällä.
+            const qs = await getDocs(query(
+                collection(db, 'mitatState'),
+                where('jobNumber', '==', String(jobNumber))
+            ));
+            let payload = null;
+            qs.forEach((jobDoc) => {
+                if (payload) return;
+                payload = jobDoc.data();
+                mitatJobDocIds.set(String(jobNumber), jobDoc.id);
+            });
+            if (payload) {
                 putPaketitJobCache(jobNumber, payload);
                 return payload;
             }
@@ -1365,18 +1366,26 @@ function setupRealtimeListeners() {
         mitatStateUnsubscribe = onSnapshot(
             query(collection(db, 'mitatState'), where('status', '==', 'active')),
             (snapshot) => {
-                let payloads = [];
+                const payloads = [];
+                const docIdToJob = new Map();
                 snapshot.forEach((jobDoc) => {
                     const data = jobDoc.data();
-                    if (data && data.jobNumber) payloads.push(data);
-                });
-                if (pendingMitatJobRename) {
-                    const to = String(pendingMitatJobRename.to);
-                    const hasTo = payloads.some((payload) => String(payload.jobNumber) === to);
-                    if (!hasTo) {
-                        return;
+                    if (data && data.jobNumber) {
+                        payloads.push(data);
+                        docIdToJob.set(jobDoc.id, String(data.jobNumber));
                     }
-                }
+                });
+                // Ylläpidä työnumero → dokumentti-ID -karttaa. Jos dokumentin
+                // jobNumber on vaihtunut (rename toisella laitteella), poista
+                // vanhentunut kirjaus, jotta kirjoitukset eivät osu väärään työhön.
+                mitatJobDocIds.forEach((docId, jobKey) => {
+                    if (docIdToJob.has(docId) && docIdToJob.get(docId) !== jobKey) {
+                        mitatJobDocIds.delete(jobKey);
+                    }
+                });
+                docIdToJob.forEach((jobKey, docId) => {
+                    mitatJobDocIds.set(jobKey, docId);
+                });
                 lastKnownJobCount = payloads.length;
                 applyActiveJobPayloadsToLocalStorage(payloads);
                 mitatStateLoaded = true;
@@ -1922,8 +1931,7 @@ async function logout() {
     lastKnownJobCount = -1;
     tuotantoJobCopyDone = false;
     paketitIndexCopyDone = false;
-    pendingMitatJobRename = null;
-    mitatJobTombstones.clear();
+    mitatJobDocIds.clear();
     paketitIndexLoaded = false;
     paketitIndexJobs = [];
     paketitJobCache.clear();
@@ -9291,7 +9299,6 @@ async function renameMitatJob(jobNumber, btn) {
     });
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
-    pendingMitatJobRename = { from: String(jobNumber), to: String(trimmed) };
     selectedMitatJobNumber = trimmed;
     loadMittatView();
 
@@ -9324,7 +9331,6 @@ async function renameMitatJob(jobNumber, btn) {
         if (paketitView && !paketitView.classList.contains('d-none')) {
             loadPaketitView();
         }
-        pendingMitatJobRename = null;
     }
     if (renamedOk) {
         showToast(`Työnumero muutettu: "${trimmed}"`, 'success');
