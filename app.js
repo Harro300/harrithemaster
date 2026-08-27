@@ -6474,14 +6474,21 @@ function normalizeKokoonpanijatState(data) {
     Object.keys(rawGreen).forEach((userId) => {
         if (rawGreen[userId]) greenJobs[String(userId)] = String(rawGreen[userId]);
     });
-    return { users, assignments, greenJobs };
+    const greenMarkedAt = {};
+    const rawMarked = data?.greenMarkedAt && typeof data.greenMarkedAt === 'object' ? data.greenMarkedAt : {};
+    Object.keys(rawMarked).forEach((jobNumber) => {
+        const ts = Number(rawMarked[jobNumber]);
+        if (Number.isFinite(ts)) greenMarkedAt[String(jobNumber)] = ts;
+    });
+    return { users, assignments, greenJobs, greenMarkedAt };
 }
 
 function buildKokoonpanijatPayload() {
     return {
         users: getKokoonpanijat(),
         assignments: getJobTekijatAll(),
-        greenJobs: getGreenJobs()
+        greenJobs: getGreenJobs(),
+        greenMarkedAt: getGreenMarkedAtAll()
     };
 }
 
@@ -6498,7 +6505,11 @@ function stableStringifyKokoonpanijat(state) {
     Object.keys(normalized.greenJobs).sort().forEach((userId) => {
         greenJobs[userId] = normalized.greenJobs[userId];
     });
-    return JSON.stringify({ users, assignments, greenJobs });
+    const greenMarkedAt = {};
+    Object.keys(normalized.greenMarkedAt).sort().forEach((jobNumber) => {
+        greenMarkedAt[jobNumber] = normalized.greenMarkedAt[jobNumber];
+    });
+    return JSON.stringify({ users, assignments, greenJobs, greenMarkedAt });
 }
 
 function kokoonpanijatStateEqual(a, b) {
@@ -6510,6 +6521,7 @@ function applyKokoonpanijatPayloadToLocalStorage(data) {
     localStorage.setItem('kokoonpanijat', JSON.stringify(normalized.users));
     localStorage.setItem('jobTekijat', JSON.stringify(normalized.assignments));
     localStorage.setItem('kokoonpanijaGreenJobs', JSON.stringify(normalized.greenJobs));
+    localStorage.setItem('kokoonpanijaGreenMarkedAt', JSON.stringify(normalized.greenMarkedAt));
 }
 
 async function syncKokoonpanijatToFirestore() {
@@ -6543,14 +6555,46 @@ function isTekijaGreenOnJob(userId, jobNumber) {
 }
 
 function jobHasGreenTekija(jobNumber) {
-    const green = getGreenJobs();
+    return jobHasGreenTekijaFrom(getGreenJobs(), jobNumber);
+}
+
+function jobHasGreenTekijaFrom(green, jobNumber) {
     return getJobTekijaIds(jobNumber).some((id) => String(green[id] || '') === String(jobNumber));
+}
+
+function getGreenMarkedAtAll() {
+    const raw = JSON.parse(localStorage.getItem('kokoonpanijaGreenMarkedAt') || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+}
+
+function writeGreenMarkedAtAll(map) {
+    localStorage.setItem('kokoonpanijaGreenMarkedAt', JSON.stringify(map));
+}
+
+function getGreenMarkedAt(jobNumber) {
+    const ts = Number(getGreenMarkedAtAll()[String(jobNumber)]);
+    return Number.isFinite(ts) ? ts : 0;
+}
+
+function touchGreenMarkedAt(jobNumber) {
+    const map = getGreenMarkedAtAll();
+    map[String(jobNumber)] = Date.now();
+    writeGreenMarkedAtAll(map);
+}
+
+function removeGreenMarkedAt(jobNumber) {
+    const map = getGreenMarkedAtAll();
+    if (!(String(jobNumber) in map)) return;
+    delete map[String(jobNumber)];
+    writeGreenMarkedAtAll(map);
 }
 
 function clearTekijaGreenJob(userId) {
     const green = getGreenJobs();
     if (!(userId in green)) return;
+    const oldJob = String(green[userId]);
     delete green[userId];
+    if (oldJob && !jobHasGreenTekijaFrom(green, oldJob)) removeGreenMarkedAt(oldJob);
     saveGreenJobs(green);
 }
 
@@ -6562,7 +6606,14 @@ function remapGreenJobs(fromJob, toJob) {
         green[userId] = String(toJob);
         changed = true;
     });
-    if (changed) saveGreenJobs(green);
+    if (!changed) return;
+    const marked = getGreenMarkedAtAll();
+    if (String(fromJob) in marked) {
+        marked[String(toJob)] = marked[String(fromJob)];
+        delete marked[String(fromJob)];
+        writeGreenMarkedAtAll(marked);
+    }
+    saveGreenJobs(green);
 }
 
 function clearGreenJobsForJob(jobNumber) {
@@ -6573,15 +6624,22 @@ function clearGreenJobsForJob(jobNumber) {
         delete green[userId];
         changed = true;
     });
-    if (changed) saveGreenJobs(green);
+    if (!changed) return;
+    removeGreenMarkedAt(jobNumber);
+    saveGreenJobs(green);
 }
 
 function toggleTekijaGreenJob(userId, jobNumber) {
     const green = getGreenJobs();
-    if (String(green[userId] || '') === String(jobNumber)) {
+    const thisJob = String(jobNumber);
+    const prevJob = green[userId] ? String(green[userId]) : '';
+    if (prevJob === thisJob) {
         delete green[userId];
+        if (!jobHasGreenTekijaFrom(green, thisJob)) removeGreenMarkedAt(thisJob);
     } else {
-        green[userId] = String(jobNumber);
+        green[userId] = thisJob;
+        touchGreenMarkedAt(thisJob);
+        if (prevJob && !jobHasGreenTekijaFrom(green, prevJob)) removeGreenMarkedAt(prevJob);
     }
     saveGreenJobs(green);
     loadMittatView();
@@ -6967,6 +7025,13 @@ function loadMittatView() {
     };
 
     const jobNumbers = Object.keys(mittatData).sort((a, b) => {
+        const aGreen = jobHasGreenTekija(a);
+        const bGreen = jobHasGreenTekija(b);
+        if (aGreen !== bGreen) return aGreen ? -1 : 1;
+        if (aGreen && bGreen) {
+            const markedDiff = getGreenMarkedAt(b) - getGreenMarkedAt(a);
+            if (markedDiff !== 0) return markedDiff;
+        }
         const aLatest = getJobLatestTimestamp(a);
         const bLatest = getJobLatestTimestamp(b);
         if (aLatest !== bLatest) return aLatest - bLatest;
