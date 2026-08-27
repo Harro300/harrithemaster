@@ -1357,6 +1357,121 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin-bottom: 1.25rem;
 }
 
+.kokoonpanijat-active-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+
+.kokoonpanija-chip {
+    min-height: 40px;
+    padding: 6px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.kokoonpanija-chip:hover,
+.kokoonpanija-chip:focus-visible {
+    border-color: var(--accent-color);
+    outline: none;
+}
+
+.kokoonpanija-chip--selected {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+}
+
+.kokoonpanija-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.kokoonpanija-badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.kokoonpanija-badge--green {
+    background: #198754;
+    color: #fff;
+}
+
+.mitat-job-title--green,
+.mitat-job-title--green .mitat-job-number-btn,
+.mitat-job-title--green .mitat-job-number-text,
+.mitat-sidebar-title.mitat-job-title--green {
+    color: #198754;
+}
+
+.mitat-job-title--green.mitat-job-title-blink,
+.mitat-sidebar-title.mitat-job-title--green.mitat-job-title-blink {
+    animation: none;
+}
+
+.mitat-job-title--green .mitat-job-number-btn:hover,
+.mitat-job-title--green .mitat-job-number-btn:focus-visible {
+    color: #146c43;
+}
+
+.kokoonpanija-badges--sidebar {
+    display: flex;
+    margin-top: 2px;
+}
+
+.mitat-sidebar-text {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.kokoonpanija-modal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.kokoonpanija-modal-row:last-child {
+    border-bottom: 0;
+}
+
+.kokoonpanija-modal-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+}
+
+.kokoonpanija-modal-active {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
 .mitat-search-input {
     padding: 10px 16px;
     font-size: 0.9rem;

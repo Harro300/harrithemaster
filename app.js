@@ -27,6 +27,8 @@ let mitatStateLoaded = false;
 let lastKnownJobCount = -1;
 let tuotantoJobCopyDone = false;
 let paketitIndexUnsubscribe = null;
+let kokoonpanijatUnsubscribe = null;
+let kokoonpanijatLoaded = false;
 let paketitIndexJobs = [];
 let paketitIndexLoaded = false;
 let paketitIndexCopyDone = false;
@@ -1478,6 +1480,41 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe paketitIndex-kuuntelijan luonnissa:', error);
     }
+
+    try {
+        kokoonpanijatUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'kokoonpanijat'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    kokoonpanijatLoaded = true;
+                    if (getKokoonpanijat().length > 0) {
+                        void syncKokoonpanijatToFirestore();
+                    }
+                    return;
+                }
+                const incoming = normalizeKokoonpanijatState(docSnapshot.data() || {});
+                const same = kokoonpanijatStateEqual(incoming, buildKokoonpanijatPayload());
+                if (!same) {
+                    applyKokoonpanijatPayloadToLocalStorage(incoming);
+                }
+                kokoonpanijatLoaded = true;
+                if (!same) {
+                    const mittatView = document.getElementById('mittatView');
+                    if (mittatView && !mittatView.classList.contains('d-none')) {
+                        loadMittatView();
+                    } else {
+                        renderKokoonpanijatBar();
+                    }
+                    refreshKokoonpanijatOpenModals();
+                }
+            },
+            (error) => {
+                console.error('❌ Kokoonpanijat-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe kokoonpanijat-kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -1505,6 +1542,12 @@ function stopRealtimeListeners() {
         paketitIndexUnsubscribe();
         paketitIndexUnsubscribe = null;
     }
+
+    if (kokoonpanijatUnsubscribe) {
+        kokoonpanijatUnsubscribe();
+        kokoonpanijatUnsubscribe = null;
+    }
+    kokoonpanijatLoaded = false;
     
     console.log('✅ Kuuntelijat lopetettu');
 }
@@ -1935,6 +1978,7 @@ async function logout() {
     paketitIndexLoaded = false;
     paketitIndexJobs = [];
     paketitJobCache.clear();
+    kokoonpanijatLoaded = false;
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -6329,6 +6373,500 @@ function setTuotantoDisplayMode(mode) {
     loadMittatView();
 }
 
+const KOKOONPANIJAT_MAX = 6;
+
+function createKokoonpanijaId() {
+    return `kp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getKokoonpanijat() {
+    const raw = JSON.parse(localStorage.getItem('kokoonpanijat') || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((user) => user && typeof user === 'object' && user.id && user.name)
+        .map((user) => ({
+            id: String(user.id),
+            name: String(user.name),
+            active: !!user.active
+        }));
+}
+
+function saveKokoonpanijat(list) {
+    localStorage.setItem('kokoonpanijat', JSON.stringify(list));
+    void syncKokoonpanijatToFirestore();
+}
+
+function getJobTekijatAll() {
+    const raw = JSON.parse(localStorage.getItem('jobTekijat') || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+}
+
+function saveJobTekijatAll(map) {
+    localStorage.setItem('jobTekijat', JSON.stringify(map));
+    void syncKokoonpanijatToFirestore();
+}
+
+function getJobTekijaIds(jobNumber) {
+    const ids = getJobTekijatAll()[String(jobNumber)];
+    return Array.isArray(ids) ? ids.filter(Boolean).map(String) : [];
+}
+
+function setJobTekijaIds(jobNumber, ids) {
+    const all = getJobTekijatAll();
+    const unique = [...new Set((ids || []).map(String).filter(Boolean))];
+    if (unique.length === 0) {
+        delete all[String(jobNumber)];
+    } else {
+        all[String(jobNumber)] = unique;
+    }
+    saveJobTekijatAll(all);
+}
+
+function remapJobTekijat(fromJob, toJob) {
+    const all = getJobTekijatAll();
+    if (fromJob in all) {
+        all[toJob] = all[fromJob];
+        delete all[fromJob];
+        saveJobTekijatAll(all);
+    }
+    remapGreenJobs(fromJob, toJob);
+}
+
+function deleteJobTekijat(jobNumber) {
+    const all = getJobTekijatAll();
+    if (String(jobNumber) in all) {
+        delete all[String(jobNumber)];
+        saveJobTekijatAll(all);
+    }
+    clearGreenJobsForJob(jobNumber);
+}
+
+function getGreenJobs() {
+    const raw = JSON.parse(localStorage.getItem('kokoonpanijaGreenJobs') || '{}');
+    return raw && typeof raw === 'object' ? raw : {};
+}
+
+function saveGreenJobs(map) {
+    localStorage.setItem('kokoonpanijaGreenJobs', JSON.stringify(map));
+    void syncKokoonpanijatToFirestore();
+}
+
+function normalizeKokoonpanijatState(data) {
+    const users = Array.isArray(data?.users)
+        ? data.users
+            .filter((user) => user && typeof user === 'object' && user.id && user.name)
+            .map((user) => ({
+                id: String(user.id),
+                name: String(user.name),
+                active: !!user.active
+            }))
+        : [];
+    const assignments = {};
+    const rawAssignments = data?.assignments && typeof data.assignments === 'object' ? data.assignments : {};
+    Object.keys(rawAssignments).forEach((jobNumber) => {
+        const ids = Array.isArray(rawAssignments[jobNumber])
+            ? rawAssignments[jobNumber].filter(Boolean).map(String)
+            : [];
+        if (ids.length > 0) assignments[String(jobNumber)] = ids;
+    });
+    const greenJobs = {};
+    const rawGreen = data?.greenJobs && typeof data.greenJobs === 'object' ? data.greenJobs : {};
+    Object.keys(rawGreen).forEach((userId) => {
+        if (rawGreen[userId]) greenJobs[String(userId)] = String(rawGreen[userId]);
+    });
+    return { users, assignments, greenJobs };
+}
+
+function buildKokoonpanijatPayload() {
+    return {
+        users: getKokoonpanijat(),
+        assignments: getJobTekijatAll(),
+        greenJobs: getGreenJobs()
+    };
+}
+
+function stableStringifyKokoonpanijat(state) {
+    const normalized = normalizeKokoonpanijatState(state);
+    const users = normalized.users
+        .slice()
+        .sort((a, b) => a.id.localeCompare(b.id));
+    const assignments = {};
+    Object.keys(normalized.assignments).sort().forEach((jobNumber) => {
+        assignments[jobNumber] = [...normalized.assignments[jobNumber]].sort();
+    });
+    const greenJobs = {};
+    Object.keys(normalized.greenJobs).sort().forEach((userId) => {
+        greenJobs[userId] = normalized.greenJobs[userId];
+    });
+    return JSON.stringify({ users, assignments, greenJobs });
+}
+
+function kokoonpanijatStateEqual(a, b) {
+    return stableStringifyKokoonpanijat(a) === stableStringifyKokoonpanijat(b);
+}
+
+function applyKokoonpanijatPayloadToLocalStorage(data) {
+    const normalized = normalizeKokoonpanijatState(data);
+    localStorage.setItem('kokoonpanijat', JSON.stringify(normalized.users));
+    localStorage.setItem('jobTekijat', JSON.stringify(normalized.assignments));
+    localStorage.setItem('kokoonpanijaGreenJobs', JSON.stringify(normalized.greenJobs));
+}
+
+async function syncKokoonpanijatToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !kokoonpanijatLoaded) {
+        return;
+    }
+    try {
+        const { db, doc, setDoc, serverTimestamp } = window.firebase;
+        const payload = buildKokoonpanijatPayload();
+        payload.updatedBy = currentUser.email;
+        payload.updatedAt = serverTimestamp();
+        await setDoc(doc(db, 'mitatState', 'kokoonpanijat'), payload);
+    } catch (error) {
+        console.error('❌ Kokoonpanijat-synkka epäonnistui:', error);
+    }
+}
+
+function refreshKokoonpanijatOpenModals() {
+    const modalEl = document.getElementById('kokoonpanijatModal');
+    if (modalEl && modalEl.classList.contains('show')) {
+        renderKokoonpanijatModalList();
+    }
+    const pickEl = document.getElementById('valitseTekijaModal');
+    if (pickEl && pickEl.classList.contains('show')) {
+        renderValitseTekijaList();
+    }
+}
+
+function isTekijaGreenOnJob(userId, jobNumber) {
+    return String(getGreenJobs()[userId] || '') === String(jobNumber);
+}
+
+function jobHasGreenTekija(jobNumber) {
+    const green = getGreenJobs();
+    return getJobTekijaIds(jobNumber).some((id) => String(green[id] || '') === String(jobNumber));
+}
+
+function clearTekijaGreenJob(userId) {
+    const green = getGreenJobs();
+    if (!(userId in green)) return;
+    delete green[userId];
+    saveGreenJobs(green);
+}
+
+function remapGreenJobs(fromJob, toJob) {
+    const green = getGreenJobs();
+    let changed = false;
+    Object.keys(green).forEach((userId) => {
+        if (String(green[userId]) !== String(fromJob)) return;
+        green[userId] = String(toJob);
+        changed = true;
+    });
+    if (changed) saveGreenJobs(green);
+}
+
+function clearGreenJobsForJob(jobNumber) {
+    const green = getGreenJobs();
+    let changed = false;
+    Object.keys(green).forEach((userId) => {
+        if (String(green[userId]) !== String(jobNumber)) return;
+        delete green[userId];
+        changed = true;
+    });
+    if (changed) saveGreenJobs(green);
+}
+
+function toggleTekijaGreenJob(userId, jobNumber) {
+    const green = getGreenJobs();
+    if (String(green[userId] || '') === String(jobNumber)) {
+        delete green[userId];
+    } else {
+        green[userId] = String(jobNumber);
+    }
+    saveGreenJobs(green);
+    loadMittatView();
+}
+
+function namesEqualFi(a, b) {
+    return String(a).localeCompare(String(b), 'fi', { sensitivity: 'accent' }) === 0;
+}
+
+function addKokoonpanija(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) {
+        showToast('Anna kokoonpanijan nimi.', 'warning');
+        return false;
+    }
+    const list = getKokoonpanijat();
+    if (list.length >= KOKOONPANIJAT_MAX) {
+        showToast('Kokoonpanijoita voi olla enintään 6.', 'warning');
+        return false;
+    }
+    if (list.some((user) => namesEqualFi(user.name, trimmed))) {
+        showToast('Tämänniminen kokoonpanija on jo olemassa.', 'warning');
+        return false;
+    }
+    list.push({ id: createKokoonpanijaId(), name: trimmed, active: false });
+    saveKokoonpanijat(list);
+    return true;
+}
+
+function removeKokoonpanija(id) {
+    saveKokoonpanijat(getKokoonpanijat().filter((user) => user.id !== id));
+    const all = getJobTekijatAll();
+    Object.keys(all).forEach((jobNumber) => {
+        all[jobNumber] = (all[jobNumber] || []).filter((userId) => userId !== id);
+        if (all[jobNumber].length === 0) delete all[jobNumber];
+    });
+    saveJobTekijatAll(all);
+    clearTekijaGreenJob(id);
+    if (selectedKokoonpanijaId === id) selectedKokoonpanijaId = null;
+}
+
+function toggleKokoonpanijaActive(id) {
+    const list = getKokoonpanijat();
+    const user = list.find((item) => item.id === id);
+    if (!user) return;
+    user.active = !user.active;
+    saveKokoonpanijat(list);
+    if (!user.active && selectedKokoonpanijaId === id) {
+        selectedKokoonpanijaId = null;
+    }
+}
+
+function toggleJobTekija(jobNumber, userId) {
+    const ids = getJobTekijaIds(jobNumber);
+    const index = ids.indexOf(userId);
+    if (index >= 0) {
+        ids.splice(index, 1);
+        if (isTekijaGreenOnJob(userId, jobNumber)) clearTekijaGreenJob(userId);
+    } else {
+        ids.push(userId);
+    }
+    setJobTekijaIds(jobNumber, ids);
+}
+
+function jobHasSelectedTekija(jobNumber) {
+    if (isKatseluMode() || !selectedKokoonpanijaId) return true;
+    return getJobTekijaIds(jobNumber).includes(selectedKokoonpanijaId);
+}
+
+function getTekijatForJob(jobNumber) {
+    const users = getKokoonpanijat();
+    return getJobTekijaIds(jobNumber)
+        .map((id) => users.find((user) => user.id === id))
+        .filter(Boolean);
+}
+
+function getTekijaNamesForJob(jobNumber) {
+    return getTekijatForJob(jobNumber).map((user) => user.name);
+}
+
+function buildTekijaBadgesHtml(jobNumber) {
+    const tekijat = getTekijatForJob(jobNumber);
+    if (tekijat.length === 0) return '';
+    const safeJob = sanitizeForAttribute(jobNumber);
+    let html = '<span class="kokoonpanija-badges">';
+    tekijat.forEach((user) => {
+        const green = isTekijaGreenOnJob(user.id, jobNumber);
+        const cls = green ? 'kokoonpanija-badge kokoonpanija-badge--green' : 'kokoonpanija-badge';
+        html += `<button type="button" class="${cls}" aria-pressed="${green ? 'true' : 'false'}" onclick="event.stopPropagation(); toggleTekijaGreenJob('${sanitizeForAttribute(user.id)}', '${safeJob}')">${escapeHtmlText(user.name)}</button>`;
+    });
+    html += '</span>';
+    return html;
+}
+
+function appendTekijaBadgesToSidebar(parent, jobNumber) {
+    const tekijat = getTekijatForJob(jobNumber);
+    if (tekijat.length === 0) return;
+    const wrap = document.createElement('span');
+    wrap.className = 'kokoonpanija-badges kokoonpanija-badges--sidebar';
+    tekijat.forEach((user) => {
+        const green = isTekijaGreenOnJob(user.id, jobNumber);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `kokoonpanija-badge${green ? ' kokoonpanija-badge--green' : ''}`;
+        btn.setAttribute('aria-pressed', String(green));
+        btn.textContent = user.name;
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleTekijaGreenJob(user.id, jobNumber);
+        });
+        wrap.appendChild(btn);
+    });
+    parent.appendChild(wrap);
+}
+
+function renderKokoonpanijatBar() {
+    const chips = document.getElementById('kokoonpanijatActiveRow');
+    if (!chips) return;
+    if (isKatseluMode()) {
+        chips.innerHTML = '';
+        chips.hidden = true;
+        return;
+    }
+    const active = getKokoonpanijat().filter((user) => user.active);
+    if (selectedKokoonpanijaId && !active.some((user) => user.id === selectedKokoonpanijaId)) {
+        selectedKokoonpanijaId = null;
+    }
+    chips.innerHTML = '';
+    if (active.length === 0) {
+        chips.hidden = true;
+        return;
+    }
+    chips.hidden = false;
+    active.forEach((user) => {
+        const selected = selectedKokoonpanijaId === user.id;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `kokoonpanija-chip${selected ? ' kokoonpanija-chip--selected' : ''}`;
+        btn.setAttribute('aria-pressed', String(selected));
+        btn.textContent = user.name;
+        btn.addEventListener('click', () => selectKokoonpanijaFilter(user.id));
+        chips.appendChild(btn);
+    });
+}
+
+function selectKokoonpanijaFilter(id) {
+    selectedKokoonpanijaId = selectedKokoonpanijaId === id ? null : id;
+    loadMittatView();
+}
+
+function updateKokoonpanijaAddDisabled() {
+    const btn = document.getElementById('kokoonpanijaAddBtn');
+    if (btn) btn.disabled = getKokoonpanijat().length >= KOKOONPANIJAT_MAX;
+}
+
+function renderKokoonpanijatModalList() {
+    const list = document.getElementById('kokoonpanijatList');
+    if (!list) return;
+    const users = getKokoonpanijat();
+    list.innerHTML = '';
+    if (users.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'text-muted small mb-0';
+        empty.textContent = 'Ei kokoonpanijoita. Lisää nimi alla.';
+        list.appendChild(empty);
+        updateKokoonpanijaAddDisabled();
+        return;
+    }
+    users.forEach((user) => {
+        const row = document.createElement('div');
+        row.className = 'kokoonpanija-modal-row';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'kokoonpanija-modal-name';
+        nameEl.textContent = user.name;
+
+        const activeWrap = document.createElement('div');
+        activeWrap.className = 'kokoonpanija-modal-active';
+        const label = document.createElement('span');
+        label.className = 'mitat-mini-label';
+        label.textContent = 'aktiivinen';
+        const check = document.createElement('div');
+        check.className = `preset-checkbox${user.active ? ' checked' : ''}`;
+        check.setAttribute('role', 'checkbox');
+        check.setAttribute('tabindex', '0');
+        check.setAttribute('aria-checked', String(!!user.active));
+        check.setAttribute('aria-label', `Aktiivinen ${user.name}`);
+        check.textContent = user.active ? '✓' : '';
+        const toggleActive = () => {
+            toggleKokoonpanijaActive(user.id);
+            renderKokoonpanijatModalList();
+            loadMittatView();
+        };
+        check.addEventListener('click', toggleActive);
+        check.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleActive();
+            }
+        });
+        activeWrap.appendChild(label);
+        activeWrap.appendChild(check);
+
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-sm btn-outline-danger';
+        del.textContent = 'Poista';
+        del.addEventListener('click', () => deleteKokoonpanijaWithConfirm(user.id, user.name));
+
+        row.appendChild(nameEl);
+        row.appendChild(activeWrap);
+        row.appendChild(del);
+        list.appendChild(row);
+    });
+    updateKokoonpanijaAddDisabled();
+}
+
+function openKokoonpanijatModal() {
+    renderKokoonpanijatModalList();
+    const input = document.getElementById('kokoonpanijaNameInput');
+    if (input) input.value = '';
+    updateKokoonpanijaAddDisabled();
+    const modalEl = document.getElementById('kokoonpanijatModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function confirmAddKokoonpanija() {
+    const input = document.getElementById('kokoonpanijaNameInput');
+    if (!addKokoonpanija(input ? input.value : '')) return;
+    if (input) input.value = '';
+    renderKokoonpanijatModalList();
+    loadMittatView();
+    showToast('Kokoonpanija lisätty.', 'success');
+}
+
+function deleteKokoonpanijaWithConfirm(id, name) {
+    if (!confirm(`Poistetaanko kokoonpanija "${name}"?`)) return;
+    removeKokoonpanija(id);
+    renderKokoonpanijatModalList();
+    loadMittatView();
+    showToast(`Kokoonpanija "${name}" poistettu.`, 'info');
+}
+
+function renderValitseTekijaList() {
+    const list = document.getElementById('valitseTekijaList');
+    if (!list || !pendingTekijaJobNumber) return;
+    const assigned = new Set(getJobTekijaIds(pendingTekijaJobNumber));
+    list.innerHTML = '';
+    getKokoonpanijat().forEach((user) => {
+        const selected = assigned.has(user.id);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `btn w-100 mb-2 ${selected ? 'btn-success' : 'btn-outline-primary'}`;
+        btn.textContent = selected ? `${user.name} (valittu)` : user.name;
+        btn.addEventListener('click', () => {
+            toggleJobTekija(pendingTekijaJobNumber, user.id);
+            renderValitseTekijaList();
+            loadMittatView();
+        });
+        list.appendChild(btn);
+    });
+}
+
+function openValitseTekijaModal(jobNumber, btn) {
+    const menu = btn?.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        bootstrap.Dropdown.getInstance(dropdownToggle)?.hide();
+    }
+    if (getKokoonpanijat().length === 0) {
+        showToast('Luo ensin kokoonpanija Kokoonpanijat-valikosta.', 'warning');
+        return;
+    }
+    pendingTekijaJobNumber = jobNumber;
+    renderValitseTekijaList();
+    const title = document.getElementById('valitseTekijaTitle');
+    if (title) title.textContent = `Valitse tekijä — ${jobNumber}`;
+    const modalEl = document.getElementById('valitseTekijaModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
 // Load and display Mitat view
 function loadMittatView() {
     const katselu = isKatseluMode();
@@ -6391,6 +6929,7 @@ function loadMittatView() {
         toggleShowHiddenItemsBtn.textContent = isShowingHiddenItems ? `Piilota piilotetut (${hiddenItemsCount})` : `Näytä piilotetut (${hiddenItemsCount})`;
     }
 
+    renderKokoonpanijatBar();
     applyTuotantoContentViewUi();
     if (isTuotantoContentView) return;
     
@@ -6457,13 +6996,18 @@ function loadMittatView() {
         const isFullyPacked = itemNames.length > 0 &&
             itemNames.every((itemName) => packedMitat[`${jobNumber}-${itemName}`]);
         if (isFullyPacked) return;
+        if (!jobHasSelectedTekija(jobNumber)) return;
 
         if (mitatSearchQuery && visibleItemNames.length === 0) return;
 
         html += `<div class="mitat-job-section" data-job-number="${encodeURIComponent(jobNumber)}">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
-        html += `<div class="d-flex align-items-center gap-2">`;
-        const jobTitleClass = isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title mitat-job-title-blink' : 'mitat-job-title';
+        html += `<div class="d-flex align-items-center gap-2 flex-wrap">`;
+        const jobTitleClass = [
+            'mitat-job-title',
+            isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title-blink' : '',
+            jobHasGreenTekija(jobNumber) ? 'mitat-job-title--green' : ''
+        ].filter(Boolean).join(' ');
         const safeJobAttr = sanitizeForAttribute(jobNumber);
         const jobBlockList = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
         const hasJobBlocks = jobBlockList.length > 0;
@@ -6478,10 +7022,12 @@ function loadMittatView() {
             html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showJobDetails('${safeJobAttr}', this)">Tiedot</button></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="renameMitatJob('${safeJobAttr}', this)">Muokkaa työnumeroa</button></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
+            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openValitseTekijaModal('${safeJobAttr}', this)">Valitse tekijä</button></li>`;
             html += `</ul>`;
             html += `</div>`;
         }
         html += `</h4>`;
+        html += buildTekijaBadgesHtml(jobNumber);
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         const progressCircumference = 2 * Math.PI * 15.5;
         const progressPercent = totalCount > 0 ? doneCount / totalCount : 0;
@@ -6809,6 +7355,12 @@ function loadMittatView() {
         applyPendingJobDeepLink();
         return;
     }
+    if (html === '' && selectedKokoonpanijaId) {
+        const filterName = getKokoonpanijat().find((user) => user.id === selectedKokoonpanijaId)?.name || '';
+        showMitatSplitMessage(`Ei töitä kokoonpanijalle "${escapeHtmlText(filterName)}".`);
+        applyPendingJobDeepLink();
+        return;
+    }
     if (html === '') {
         showMitatSplitMessage('Kaikki työnumerot on pakattu. Katso Paketit-sivu.');
         applyPendingJobDeepLink();
@@ -6868,13 +7420,20 @@ function setupMitatSplitLayout() {
             button.appendChild(progressClone);
         }
 
+        const textWrap = document.createElement('span');
+        textWrap.className = 'mitat-sidebar-text';
         const title = document.createElement('span');
         title.className = 'mitat-sidebar-title';
         title.textContent = `Työ ${jobNumber}`;
         if (section.querySelector('.mitat-job-title-blink')) {
             title.classList.add('mitat-job-title-blink');
         }
-        button.appendChild(title);
+        if (jobHasGreenTekija(jobNumber)) {
+            title.classList.add('mitat-job-title--green');
+        }
+        textWrap.appendChild(title);
+        appendTekijaBadgesToSidebar(textWrap, jobNumber);
+        button.appendChild(textWrap);
 
         const chevron = document.createElement('span');
         chevron.className = 'mitat-sidebar-chevron';
@@ -7680,6 +8239,8 @@ let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
 let selectedMitatJobNumber = null;
+let selectedKokoonpanijaId = null;
+let pendingTekijaJobNumber = null;
 let isMitatPanelFullscreen = false;
 let mitatFullscreenResizeHandler = null;
 let mitatFullscreenPreviousBodyOverflow = '';
@@ -9285,6 +9846,7 @@ async function renameMitatJob(jobNumber, btn) {
         delete jobBlocks[jobNumber];
         localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     }
+    remapJobTekijat(jobNumber, trimmed);
 
     const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
     const oldTsPrefix = `${jobNumber}-`;
@@ -9320,6 +9882,7 @@ async function renameMitatJob(jobNumber, btn) {
         if (selectedPaneeliPdfJobNumber === jobNumber) selectedPaneeliPdfJobNumber = trimmed;
         if (selectedBlockJobNumber === jobNumber) selectedBlockJobNumber = trimmed;
         if (pendingJobBlocksJobNumber === jobNumber) pendingJobBlocksJobNumber = trimmed;
+        if (pendingTekijaJobNumber === jobNumber) pendingTekijaJobNumber = trimmed;
         remapSelectedJobItemKeys(selectedPackingItems, jobNumber, trimmed);
         remapSelectedJobItemKeys(selectedLasilistaPdfItems, jobNumber, trimmed);
         remapSelectedJobItemKeys(selectedKulmalistaPdfItems, jobNumber, trimmed);
@@ -10275,6 +10838,7 @@ function deleteJobMitat(jobNumber) {
     delete mittatNotes[`job-${jobNumber}`];
     delete mittatData[jobNumber];
     delete jobBlocks[jobNumber];
+    deleteJobTekijat(jobNumber);
 
     // Remove packedTimestamps for this job (keys: jobNumber-packageNumber)
     const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
