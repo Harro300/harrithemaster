@@ -562,24 +562,10 @@ function dualWriteMitatState(jobNumberOrNumbers) {
     const jobs = Array.isArray(jobNumberOrNumbers)
         ? jobNumberOrNumbers
         : (jobNumberOrNumbers ? [jobNumberOrNumbers] : []);
-    if (!isMitatDataClearedAgainstKnownJobs()) {
-        jobs.forEach((jobNumber) => {
-            const row = buildPaketitIndexRow(jobNumber);
-            const idx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(jobNumber));
-            const existing = idx >= 0 ? paketitIndexJobs[idx] : null;
-            if (row) {
-                if (!paketitIndexRowsEqual(row, existing)) {
-                    if (idx >= 0) {
-                        paketitIndexJobs[idx] = row;
-                    } else {
-                        paketitIndexJobs.push(row);
-                    }
-                }
-            } else if (existing) {
-                paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
-            }
-        });
-    }
+    // Ei optimistista paketitIndexJobs-mutaatiota tässä: syncTuotantoJobToFirestore
+    // vertaa uutta indeksiriviä muistissa olevaan VANHAAN riviin päättääkseen
+    // kirjoitetaanko indeksi. Muisti päivittyy vasta onnistuneesta
+    // Firestore-kirjoituksesta (upsert/remove) tai paketitIndex-listeneristä.
     return syncTuotantoJobsToFirestore(jobs);
 }
 
@@ -917,6 +903,12 @@ async function upsertPaketitIndexRow(row) {
             jobs.push(row);
         }
         await writePaketitIndexJobs(jobs);
+        const memIdx = paketitIndexJobs.findIndex((job) => String(job.jobNumber) === String(row.jobNumber));
+        if (memIdx >= 0) {
+            paketitIndexJobs[memIdx] = row;
+        } else {
+            paketitIndexJobs.push(row);
+        }
     } catch (error) {
         console.error('❌ Paketit-indeksin päivitys epäonnistui:', row.jobNumber, error);
     }
@@ -934,8 +926,14 @@ async function removePaketitIndexRow(jobNumber) {
     try {
         const jobs = await readPaketitIndexJobsFromFirestore();
         const next = jobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
-        if (next.length === jobs.length) return;
+        if (next.length === jobs.length) {
+            // Firestoressa ei ollut riviä — siivoa mahdollinen vanhentunut muistirivi,
+            // jotta syncTuotantoJobToFirestoren vertailu ei yritä poistoa joka kerta.
+            paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
+            return;
+        }
         await writePaketitIndexJobs(next);
+        paketitIndexJobs = paketitIndexJobs.filter((job) => String(job.jobNumber) !== String(jobNumber));
     } catch (error) {
         console.error('❌ Paketit-indeksin poisto epäonnistui:', jobNumber, error);
     }
