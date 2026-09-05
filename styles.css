@@ -1438,6 +1438,10 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin-top: 2px;
 }
 
+.kokoonpanija-badges--sidebar .kokoonpanija-badge {
+    cursor: inherit;
+}
+
 .mitat-sidebar-text {
     min-width: 0;
     flex: 1;

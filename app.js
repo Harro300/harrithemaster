@@ -6745,16 +6745,10 @@ function appendTekijaBadgesToSidebar(parent, jobNumber) {
     wrap.className = 'kokoonpanija-badges kokoonpanija-badges--sidebar';
     tekijat.forEach((user) => {
         const green = isTekijaGreenOnJob(user.id, jobNumber);
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `kokoonpanija-badge${green ? ' kokoonpanija-badge--green' : ''}`;
-        btn.setAttribute('aria-pressed', String(green));
-        btn.textContent = user.name;
-        btn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            toggleTekijaGreenJob(user.id, jobNumber);
-        });
-        wrap.appendChild(btn);
+        const badge = document.createElement('span');
+        badge.className = `kokoonpanija-badge${green ? ' kokoonpanija-badge--green' : ''}`;
+        badge.textContent = user.name;
+        wrap.appendChild(badge);
     });
     parent.appendChild(wrap);
 }
