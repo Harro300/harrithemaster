@@ -533,17 +533,23 @@ async function syncTuotantoJobToFirestore(jobNumber) {
         payload.status = isJobFullyPacked(jobNumber) ? 'packed' : 'active';
         payload.updatedBy = currentUser.email;
         payload.updatedAt = serverTimestamp();
+        // Indeksirivi payloadista ENNEN setDocia: packed-status pudottaa työn
+        // active-kyselystä, ja oma snapshot voi tyhjentää localStoragen
+        // ennen kuin buildPaketitIndexRow ehtisi lukea sen.
+        const indexRow = preservePaketitIndexRev(
+            jobNumber,
+            buildPaketitIndexRowFromPayload(payload)
+        );
+        const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
         await setDoc(ref, payload);
         mitatJobDocIds.set(String(jobNumber), docId);
         putPaketitJobCache(jobNumber, payload);
 
-        const indexRow = buildPaketitIndexRow(jobNumber);
-        const existingRow = paketitIndexJobs.find((job) => String(job.jobNumber) === String(jobNumber));
         if (indexRow) {
             if (!paketitIndexRowsEqual(indexRow, existingRow)) {
                 await upsertPaketitIndexRow(indexRow);
             }
-        } else if (existingRow) {
+        } else if (existingRow && payload.status !== 'packed') {
             await removePaketitIndexRow(jobNumber);
         }
     } catch (error) {
