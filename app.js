@@ -7715,6 +7715,15 @@ function parsePaketitTimeMs(ts) {
     return Date.parse(String(ts));
 }
 
+function formatPaketitDate(ts) {
+    const parsed = parsePaketitTimeMs(ts);
+    if (!Number.isFinite(parsed)) return '';
+    const d = new Date(parsed);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}.${month}.${d.getFullYear()}`;
+}
+
 function matchesPaketitIndexSearch(row, query) {
     if (!query) return true;
     const q = String(query).toLowerCase().trim();
@@ -7727,6 +7736,8 @@ function matchesPaketitIndexSearch(row, query) {
         const parsed = parsePaketitTimeMs(row && row.lastPackedAt);
         return Number.isFinite(parsed) && parsed >= start && parsed <= end;
     }
+    const formatted = formatPaketitDate(row && row.lastPackedAt);
+    if (formatted && formatted.includes(q)) return true;
     if (String(row.jobNumber || '').toLowerCase().includes(q)) return true;
     return (row.itemNames || []).some((name) => String(name).toLowerCase().includes(q));
 }
