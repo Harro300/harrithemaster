@@ -1992,6 +1992,10 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .paketit-package-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     font-weight: 600;
     font-size: 0.82rem;
     color: var(--text-secondary);
@@ -1999,6 +2003,30 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     background: var(--bg-secondary);
     border-radius: 4px;
     margin-bottom: 2px;
+}
+
+.paketit-copy-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.paketit-copy-btn {
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 1px 6px;
+    line-height: 1.3;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.paketit-copy-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
 }
 
 .mitat-toggle-icon {

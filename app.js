@@ -7752,6 +7752,113 @@ function paketitTimestampLookup(jobNumber, payload) {
     };
 }
 
+function buildPakettiCopyText(jobNumber, pkgKey, itemNames, ts) {
+    const dateStr = formatPaketitDate(ts);
+    const pkgLabel = Number(pkgKey) === 0
+        ? 'Pakattu'
+        : (dateStr ? `Paketti ${pkgKey} (${dateStr})` : `Paketti ${pkgKey}`);
+    return [`Työ ${jobNumber}`, '', pkgLabel, ...(itemNames || [])].join('\n');
+}
+
+async function resolvePakettiCopySource(jobNumber, pkgKey) {
+    const key = Number(pkgKey);
+    let payload = await fetchPaketitJobPayload(jobNumber);
+    let packedItems;
+    let timestampForPkg;
+    if (payload) {
+        packedItems = getPackedItemsFromJobPayload(payload);
+        timestampForPkg = paketitTimestampLookup(jobNumber, payload);
+    } else {
+        const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
+        const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
+        const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
+        packedItems = getPackedItemsForJob(
+            jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems
+        );
+        timestampForPkg = paketitTimestampLookup(jobNumber, null);
+    }
+    const itemNames = packedItems
+        .filter((item) => (item.packageNumber ?? 0) === key)
+        .map((item) => item.itemName);
+    const ts = key === 0 ? null : timestampForPkg(key);
+    return { itemNames, ts };
+}
+
+function copyPakettiTextToClipboard(text) {
+    const fallback = () => new Promise((resolve, reject) => {
+        try {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (successful) resolve();
+            else reject(new Error('copy failed'));
+        } catch (error) {
+            reject(error);
+        }
+    });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).catch(() => fallback());
+    }
+    return fallback();
+}
+
+async function copyPakettiList(jobNumber, pkgKey) {
+    const source = await resolvePakettiCopySource(jobNumber, pkgKey);
+    if (!source.itemNames.length) {
+        showToast('Paketista ei löytynyt tuotteita.', 'warning');
+        return;
+    }
+    const text = buildPakettiCopyText(jobNumber, pkgKey, source.itemNames, source.ts);
+    try {
+        await copyPakettiTextToClipboard(text);
+        showToast('Kopioitu', 'success');
+    } catch (error) {
+        showToast('Kopiointi epäonnistui.', 'error');
+    }
+}
+
+async function downloadPakettiListPdf(jobNumber, pkgKey) {
+    const source = await resolvePakettiCopySource(jobNumber, pkgKey);
+    if (!source.itemNames.length) {
+        showToast('Paketista ei löytynyt tuotteita.', 'warning');
+        return;
+    }
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) {
+        showToast('PDF-lataus ei ole saatavilla.', 'error');
+        return;
+    }
+    const text = buildPakettiCopyText(jobNumber, pkgKey, source.itemNames, source.ts);
+    const doc = new jsPDF('p', 'mm', 'a4');
+    const margin = 16;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const maxWidth = pageWidth - margin * 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    const lines = doc.splitTextToSize(text, maxWidth);
+    let y = margin;
+    const lineHeight = 6;
+    lines.forEach((line) => {
+        if (y > pageHeight - margin) {
+            doc.addPage();
+            y = margin;
+        }
+        doc.text(line, margin, y);
+        y += lineHeight;
+    });
+    const pkgPart = Number(pkgKey) === 0 ? 'Pakattu' : `Paketti_${pkgKey}`;
+    const safeJob = String(jobNumber).replace(/[^\w.-]+/g, '_');
+    doc.save(`Työ_${safeJob}_${pkgPart}.pdf`);
+}
+
 function renderPaketitJobBodyHtml(jobNumber, packedItems, timestampForPkg, isRangeQuery) {
     let html = '';
     const packageGroups = new Map();
@@ -7791,8 +7898,15 @@ function renderPaketitJobBodyHtml(jobNumber, packedItems, timestampForPkg, isRan
         const dropZoneAttrs = isAdmin
             ? ` paketit-drop-zone" data-job-number="${sanitizeForAttribute(jobNumber)}" data-pkg-key="${pkgKey}`
             : '';
+        const safeJob = sanitizeForAttribute(jobNumber);
         html += `<div class="paketit-package-group${dropZoneAttrs}">`;
-        html += `<div class="paketit-package-header">${groupLabel}${groupTimestamp}</div>`;
+        html += `<div class="paketit-package-header">`;
+        html += `<span>${groupLabel}${groupTimestamp}</span>`;
+        html += `<span class="paketit-copy-actions">`;
+        html += `<button type="button" class="paketit-copy-btn" title="Kopioi lista" onclick="event.stopPropagation(); copyPakettiList('${safeJob}', ${pkgKey})">Kopioi</button>`;
+        html += `<button type="button" class="paketit-copy-btn" title="Lataa PDF" onclick="event.stopPropagation(); downloadPakettiListPdf('${safeJob}', ${pkgKey})">PDF</button>`;
+        html += `</span>`;
+        html += `</div>`;
         groupItems.forEach((packedItem) => {
             const draggableAttrs = isAdmin
                 ? ` draggable="true" data-job-number="${sanitizeForAttribute(jobNumber)}" data-item-name="${sanitizeForAttribute(packedItem.itemName)}" data-pkg-key="${pkgKey}"`
