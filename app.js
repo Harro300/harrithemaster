@@ -7809,7 +7809,20 @@ function copyPakettiTextToClipboard(text) {
     return fallback();
 }
 
-async function copyPakettiList(jobNumber, pkgKey) {
+function flashPakettiCopyButton(btn) {
+    if (!btn) return;
+    if (!btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent;
+    btn.textContent = 'Kopioitu!';
+    btn.classList.add('is-copied');
+    if (btn._pakettiCopyTimer) clearTimeout(btn._pakettiCopyTimer);
+    btn._pakettiCopyTimer = setTimeout(() => {
+        btn.textContent = btn.dataset.originalLabel || 'Kopioi';
+        btn.classList.remove('is-copied');
+        btn._pakettiCopyTimer = null;
+    }, 1500);
+}
+
+async function copyPakettiList(jobNumber, pkgKey, btn) {
     const source = await resolvePakettiCopySource(jobNumber, pkgKey);
     if (!source.itemNames.length) {
         showToast('Paketista ei löytynyt tuotteita.', 'warning');
@@ -7818,7 +7831,7 @@ async function copyPakettiList(jobNumber, pkgKey) {
     const text = buildPakettiCopyText(jobNumber, pkgKey, source.itemNames, source.ts);
     try {
         await copyPakettiTextToClipboard(text);
-        showToast('Kopioitu', 'success');
+        flashPakettiCopyButton(btn);
     } catch (error) {
         showToast('Kopiointi epäonnistui.', 'error');
     }
@@ -7903,7 +7916,7 @@ function renderPaketitJobBodyHtml(jobNumber, packedItems, timestampForPkg, isRan
         html += `<div class="paketit-package-header">`;
         html += `<span>${groupLabel}${groupTimestamp}</span>`;
         html += `<span class="paketit-copy-actions">`;
-        html += `<button type="button" class="paketit-copy-btn" title="Kopioi lista" onclick="event.stopPropagation(); copyPakettiList('${safeJob}', ${pkgKey})">Kopioi</button>`;
+        html += `<button type="button" class="paketit-copy-btn" title="Kopioi lista" onclick="event.stopPropagation(); copyPakettiList('${safeJob}', ${pkgKey}, this)">Kopioi</button>`;
         html += `<button type="button" class="paketit-copy-btn" title="Lataa PDF" onclick="event.stopPropagation(); downloadPakettiListPdf('${safeJob}', ${pkgKey})">PDF</button>`;
         html += `</span>`;
         html += `</div>`;

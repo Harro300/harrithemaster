@@ -2024,7 +2024,8 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     cursor: pointer;
 }
 
-.paketit-copy-btn:hover {
+.paketit-copy-btn:hover,
+.paketit-copy-btn.is-copied {
     color: var(--text-primary);
     border-color: var(--text-secondary);
 }
