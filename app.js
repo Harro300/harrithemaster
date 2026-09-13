@@ -9147,25 +9147,30 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
     const textScale = 2.2;
     const lasilistaRowsScale = 1.4;
     const scaled = (value) => value * textScale;
-    let y = scaled(24);
+    const ptToMm = (pt) => pt * 0.3528;
+    const pageMargin = 12;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(scaled(22));
-    doc.text('LASILISTAT', pageWidth / 2, y, { align: 'center' });
-    y += scaled(11);
+    const titleFontSize = scaled(22);
+    const jobFontSize = scaled(12);
+    const sizeFontSize = scaled(14 * lasilistaRowsScale);
+    const rowFontSize = scaled(12 * lasilistaRowsScale * 0.85);
 
-    doc.setFontSize(scaled(12));
+    const titleStep = scaled(11);
+    const jobStep = scaled(9);
+    const dateStep = scaled(9);
+    const sizeHeaderStep = scaled(8);
+    const afterSection = scaled(3);
+
+    const rowFontHeightMm = ptToMm(rowFontSize);
+    const rowGap = Math.max(0, scaled(9.8) - rowFontHeightMm);
+    const rowStep = rowFontHeightMm + rowGap * 0.5;
+    const titleAscentMm = ptToMm(titleFontSize) * 0.8;
+
     const jobLine = lasilistaColor ? `TYÖNRO: ${jobNumber} / ${lasilistaColor}` : `TYÖNRO: ${jobNumber}`;
-    doc.text(jobLine, 20, y);
-    y += scaled(9);
-    doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
-    y += scaled(9);
-
     const sizeKeys = Object.keys(groupedRows).sort((a, b) =>
         a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' })
     );
-
-    sizeKeys.forEach((size) => {
+    const sections = sizeKeys.map((size) => {
         const lengths = Object.keys(groupedRows[size]).sort((a, b) => {
             const aNum = Number(a);
             const bNum = Number(b);
@@ -9174,36 +9179,87 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
             }
             return sortByFinnishNumberString(a, b);
         });
+        return { size, lengths };
+    }).filter((section) => section.lengths.length > 0);
 
-        if (lengths.length === 0) return;
+    let bodyHeight = titleStep + jobStep + dateStep;
+    sections.forEach((section, sectionIndex) => {
+        bodyHeight += sizeHeaderStep + section.lengths.length * rowStep;
+        if (sectionIndex < sections.length - 1) {
+            bodyHeight += afterSection;
+        }
+    });
+    const naturalHeight = titleAscentMm + bodyHeight;
+    const availableHeight = pageHeight - pageMargin * 2;
+    const fillScale = naturalHeight > 0 ? Math.max(1, availableHeight / naturalHeight) : 1;
 
-        if (y > pageHeight - scaled(30)) {
+    const fs = (value) => value * fillScale;
+    const pageBottom = pageHeight - pageMargin;
+    const continuationY = () => pageMargin + ptToMm(sizeFontSize * fillScale) * 0.8;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(fs(titleFontSize));
+    let y = pageMargin + fs(titleAscentMm);
+    doc.text('LASILISTAT', pageWidth / 2, y, { align: 'center' });
+    y += fs(titleStep);
+
+    doc.setFontSize(fs(jobFontSize));
+    doc.text(jobLine, 20, y);
+    y += fs(jobStep);
+    doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
+    y += fs(dateStep);
+
+    sections.forEach((section, sectionIndex) => {
+        if (y + fs(sizeHeaderStep) > pageBottom) {
             doc.addPage();
-            y = scaled(20);
+            y = continuationY();
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(scaled(14 * lasilistaRowsScale));
-        doc.text(`Lasilista ${size}`, 20, y);
-        y += scaled(8);
+        doc.setFontSize(fs(sizeFontSize));
+        doc.text(`Lasilista ${section.size}`, 20, y);
+        y += fs(sizeHeaderStep);
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(scaled(12 * lasilistaRowsScale));
-        lengths.forEach((lengthKey) => {
-            if (y > pageHeight - scaled(20)) {
+        doc.setFontSize(fs(rowFontSize));
+        section.lengths.forEach((lengthKey) => {
+            if (y + fs(rowStep) > pageBottom) {
                 doc.addPage();
-                y = scaled(20);
+                y = continuationY();
             }
-            const count = groupedRows[size][lengthKey];
+            const count = groupedRows[section.size][lengthKey];
             const lengthText = Number.isFinite(Number(lengthKey))
                 ? String(Number(lengthKey))
                 : lengthKey;
             doc.text(`${lengthText} x ${count}`, 28, y);
-            y += scaled(9.8);
+            y += fs(rowStep);
         });
 
-        y += scaled(3);
+        if (sectionIndex < sections.length - 1) {
+            y += fs(afterSection);
+        }
     });
+
+    doc.addPage();
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(56);
+    const labelColor = String(lasilistaColor || '').trim();
+    if (labelColor) {
+        const lineGap = 22;
+        doc.text(String(jobNumber), pageWidth / 2, pageHeight / 2 - lineGap / 2, {
+            align: 'center',
+            baseline: 'middle'
+        });
+        doc.text(labelColor, pageWidth / 2, pageHeight / 2 + lineGap / 2, {
+            align: 'center',
+            baseline: 'middle'
+        });
+    } else {
+        doc.text(String(jobNumber), pageWidth / 2, pageHeight / 2, {
+            align: 'center',
+            baseline: 'middle'
+        });
+    }
 
     const cleanJob = String(jobNumber).replace(/[^a-zA-Z0-9_-]/g, '_');
     const cleanDate = dateText.replace(/\./g, '-');
