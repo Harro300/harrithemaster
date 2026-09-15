@@ -6930,6 +6930,9 @@ function loadMittatView() {
     const container = document.getElementById('mittatContainer');
     const openState = captureMitatOpenState();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
+    const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
@@ -7047,12 +7050,16 @@ function loadMittatView() {
         
         const itemNames = Object.keys(mittatData[jobNumber]).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' }));
         const jobHasHiddenItems = itemNames.some((itemName) => hiddenMitatItems[`${jobNumber}-${itemName}`]);
-        const visibleItemNames = itemNames.filter((itemName) => {
+        const searchVisibleNames = itemNames.filter((itemName) => {
             const checkKey = `${jobNumber}-${itemName}`;
             const passesHidden = isShowingHiddenItems || !hiddenMitatItems[checkKey];
             if (!passesHidden) return false;
             return matchesMitatSearch(jobNumber, itemName, mittatData[jobNumber][itemName], mitatSearchQuery, jobBlocksAll, itemBlocksAll);
         });
+        if (mitatSearchQuery && searchVisibleNames.length === 0) return;
+        const visibleItemNames = searchVisibleNames.filter((itemName) =>
+            itemMatchesJobViewFilter(jobNumber, itemName, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit)
+        );
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
@@ -7060,8 +7067,6 @@ function loadMittatView() {
             itemNames.every((itemName) => packedMitat[`${jobNumber}-${itemName}`]);
         if (isFullyPacked) return;
         if (!jobHasSelectedTekija(jobNumber)) return;
-
-        if (mitatSearchQuery && visibleItemNames.length === 0) return;
 
         html += `<div class="mitat-job-section" data-job-number="${encodeURIComponent(jobNumber)}">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
@@ -7080,9 +7085,20 @@ function loadMittatView() {
             html += `<span class="mitat-job-number-text">${escapeHtmlText(jobNumber)}</span>`;
         } else {
             html += `<div class="dropdown d-inline-block mitat-item-actions">`;
-            html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="true" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
+            html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
             html += `<ul class="dropdown-menu p-2 mitat-job-actions-menu" onclick="event.stopPropagation();">`;
             html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showJobDetails('${safeJobAttr}', this)">Tiedot</button></li>`;
+            const viewFilter = getMitatJobViewFilter(jobNumber);
+            const showAllView = !viewFilter.unmarked && !viewFilter.lasilistat && !viewFilter.done && !viewFilter.packed;
+            html += `<li class="mt-1">`;
+            html += `<button class="btn btn-sm btn-outline-secondary w-100 mitat-job-view-toggle" type="button" aria-expanded="false" onclick="toggleMitatJobViewMenu(event, this)">Näkymä</button>`;
+            html += `<ul class="mitat-job-view-submenu list-unstyled mb-0 mt-1" hidden>`;
+            html += buildMitatJobViewFilterRow(safeJobAttr, 'all', 'Näytä kaikki', showAllView);
+            html += buildMitatJobViewFilterRow(safeJobAttr, 'unmarked', 'Näytä merkkaamattomat', viewFilter.unmarked);
+            html += buildMitatJobViewFilterRow(safeJobAttr, 'lasilistat', 'Näytä sahatut lasilistat', viewFilter.lasilistat);
+            html += buildMitatJobViewFilterRow(safeJobAttr, 'done', 'Näytä tehdyt', viewFilter.done);
+            html += buildMitatJobViewFilterRow(safeJobAttr, 'packed', 'Näytä pakatut', viewFilter.packed);
+            html += `</ul></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="renameMitatJob('${safeJobAttr}', this)">Muokkaa työnumeroa</button></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
             html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openValitseTekijaModal('${safeJobAttr}', this)">Valitse tekijä</button></li>`;
@@ -7102,6 +7118,10 @@ function loadMittatView() {
         html += `</svg>`;
         html += `<span class="mitat-job-progress-text" id="${jobId}-progress-text">${doneCount}/${totalCount}</span>`;
         html += `</div>`;
+        const viewFilterLabel = formatMitatJobViewFilterLabel(getMitatJobViewFilter(jobNumber));
+        if (viewFilterLabel) {
+            html += `<span class="mitat-job-view-status">${escapeHtmlText(viewFilterLabel)} · ${visibleItemNames.length}</span>`;
+        }
         if (!katselu && isPackingListMode) {
             const isSelectedJob = selectedPackingJobNumber === jobNumber;
             const selectClass = isSelectedJob ? 'btn-success' : 'btn-outline-primary';
@@ -7184,7 +7204,10 @@ function loadMittatView() {
         }
 
         if (visibleItemNames.length === 0) {
-            html += `<p class="text-muted small mb-0 px-2 py-2">Kaikki tuotteet on piilotettu.</p>`;
+            const emptyMsg = searchVisibleNames.length > 0
+                ? 'Ei tuotteita tässä näkymässä.'
+                : 'Kaikki tuotteet on piilotettu.';
+            html += `<p class="text-muted small mb-0 px-2 py-2">${emptyMsg}</p>`;
         }
 
         const itemGroups = getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, itemBlocksAll);
@@ -7526,6 +7549,7 @@ function setupMitatSplitLayout() {
     });
 
     syncMitatFullscreenDom();
+    restorePendingMitatViewMenu();
 }
 
 function selectMitatJob(jobNumber) {
@@ -8440,6 +8464,8 @@ let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
 let selectedMitatJobNumber = null;
+let mitatJobViewFilters = {};
+let pendingMitatViewMenuJob = null;
 let selectedKokoonpanijaId = null;
 let pendingTekijaJobNumber = null;
 let isMitatPanelFullscreen = false;
@@ -8447,6 +8473,117 @@ let mitatFullscreenResizeHandler = null;
 let mitatFullscreenPreviousBodyOverflow = '';
 let mitatFullscreenPreviousDocumentOverflow = '';
 let paketitSearchQuery = '';
+
+function getMitatJobViewFilter(jobNumber) {
+    const filter = mitatJobViewFilters[jobNumber];
+    return {
+        unmarked: !!filter?.unmarked,
+        lasilistat: !!filter?.lasilistat,
+        done: !!filter?.done,
+        packed: !!filter?.packed
+    };
+}
+
+function emptyMitatJobViewFilter() {
+    return { unmarked: false, lasilistat: false, done: false, packed: false };
+}
+
+function formatMitatJobViewFilterLabel(filter) {
+    const names = [];
+    if (filter.unmarked) names.push('Merkkaamattomat');
+    if (filter.lasilistat) names.push('sahatut lasilistat');
+    if (filter.done) names.push('tehdyt');
+    if (filter.packed) names.push('pakatut');
+    if (names.length === 0) return null;
+    names[0] = names[0].charAt(0).toUpperCase() + names[0].slice(1);
+    return names.join(', ');
+}
+
+function itemHasAnyCheckpoint(checkKey, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit) {
+    return !!(
+        checkedMitat[checkKey] ||
+        checkedKulmalistat[checkKey] ||
+        checkedPaneelit[checkKey] ||
+        doneMitat[checkKey] ||
+        packedMitat[checkKey]
+    );
+}
+
+function itemMatchesJobViewFilter(jobNumber, itemName, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit) {
+    const filter = getMitatJobViewFilter(jobNumber);
+    if (!filter.unmarked && !filter.lasilistat && !filter.done && !filter.packed) return true;
+    const checkKey = `${jobNumber}-${itemName}`;
+    const isPacked = !!packedMitat[checkKey];
+    const isDone = !!doneMitat[checkKey];
+    const isLasilistat = !!checkedMitat[checkKey];
+    if (filter.unmarked && !itemHasAnyCheckpoint(checkKey, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit)) return true;
+    if (filter.lasilistat && isLasilistat && !isDone && !isPacked) return true;
+    if (filter.done && isDone && !isPacked) return true;
+    if (filter.packed && isPacked) return true;
+    return false;
+}
+
+function buildMitatJobViewFilterRow(safeJobAttr, key, label, checked) {
+    const boxClass = checked ? 'preset-checkbox checked' : 'preset-checkbox';
+    const mark = checked ? '✓' : '';
+    return `<li><button type="button" class="mitat-job-view-row" onclick="event.stopPropagation(); toggleMitatJobViewFilter('${safeJobAttr}', '${key}')"><span>${label}</span><span class="${boxClass}" role="checkbox" aria-checked="${checked}">${mark}</span></button></li>`;
+}
+
+function toggleMitatJobViewMenu(event, btn) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    const submenu = btn?.closest('li')?.querySelector('.mitat-job-view-submenu');
+    if (!submenu) return;
+    submenu.hidden = !submenu.hidden;
+    btn?.setAttribute('aria-expanded', submenu.hidden ? 'false' : 'true');
+}
+
+function toggleMitatJobViewFilter(jobNumber, key) {
+    const current = getMitatJobViewFilter(jobNumber);
+    const specificKeys = ['unmarked', 'lasilistat', 'done', 'packed'];
+    const activeCount = specificKeys.filter((item) => current[item]).length;
+
+    if (key === 'all') {
+        if (activeCount === 0) return;
+        mitatJobViewFilters[jobNumber] = emptyMitatJobViewFilter();
+    } else if (specificKeys.includes(key)) {
+        if (current[key]) {
+            mitatJobViewFilters[jobNumber] = activeCount === 1
+                ? emptyMitatJobViewFilter()
+                : { ...current, [key]: false };
+        } else {
+            mitatJobViewFilters[jobNumber] = { ...current, [key]: true };
+        }
+    } else {
+        return;
+    }
+
+    pendingMitatViewMenuJob = jobNumber;
+    loadMittatView();
+}
+
+function restorePendingMitatViewMenu() {
+    const jobNumber = pendingMitatViewMenuJob;
+    if (!jobNumber) return;
+    pendingMitatViewMenuJob = null;
+    const section = document.querySelector(`.mitat-job-section[data-job-number="${encodeURIComponent(jobNumber)}"]`);
+    const toggle = section?.querySelector('.mitat-job-number-btn');
+    if (toggle && window.bootstrap?.Dropdown) {
+        bootstrap.Dropdown.getOrCreateInstance(toggle).show();
+    }
+    const submenu = section?.querySelector('.mitat-job-view-submenu');
+    const menuBtn = section?.querySelector('.mitat-job-view-toggle');
+    if (submenu) submenu.hidden = false;
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', 'true');
+}
+
+function remapMitatJobViewFilter(oldJobNumber, newJobNumber) {
+    if (oldJobNumber in mitatJobViewFilters) {
+        mitatJobViewFilters[newJobNumber] = mitatJobViewFilters[oldJobNumber];
+        delete mitatJobViewFilters[oldJobNumber];
+    }
+    if (pendingMitatViewMenuJob === oldJobNumber) pendingMitatViewMenuJob = newJobNumber;
+}
 
 function handlePaketitSearchInput(value) {
     paketitSearchQuery = value.trim();
@@ -10118,6 +10255,7 @@ async function renameMitatJob(jobNumber, btn) {
     });
     if (timestampsChanged) localStorage.setItem('packedTimestamps', JSON.stringify(packedTimestamps));
 
+    remapMitatJobViewFilter(jobNumber, trimmed);
     selectedMitatJobNumber = trimmed;
     loadMittatView();
 

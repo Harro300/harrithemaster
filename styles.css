@@ -1721,7 +1721,7 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .mitat-job-title .dropdown-menu {
-    min-width: 200px;
+    min-width: 240px;
     z-index: 1050;
     padding: 0.25rem !important;
     font-size: 0.75rem;
@@ -1740,6 +1740,52 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-job-actions-menu .btn:disabled {
     color: #6c757d;
+}
+
+.mitat-job-view-submenu {
+    padding: 2px 0 0;
+}
+
+.mitat-job-view-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.mitat-job-view-row:hover,
+.mitat-job-view-row:focus-visible {
+    background: var(--bg-tertiary);
+}
+
+.mitat-job-view-row .preset-checkbox {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid var(--border-light);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+.mitat-job-view-row .preset-checkbox.checked {
+    border-color: var(--accent-color);
+    background: var(--accent-color);
+    color: var(--bg-secondary);
 }
 
 .mitat-job-title-blink {
@@ -1798,6 +1844,14 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     font-size: 0.6rem;
     font-weight: 700;
     color: var(--text-primary);
+}
+
+.mitat-job-view-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    line-height: 1.2;
 }
 
 .mitat-job-delete-btn {
