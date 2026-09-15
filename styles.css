@@ -2048,7 +2048,7 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 .paketit-package-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 8px;
     font-weight: 600;
     font-size: 0.82rem;
