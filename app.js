@@ -46,6 +46,7 @@ let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
 let isTuotantoContentView = false;
 let isLapivientiView = false;
+let selectedLapivientiWeek = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -6234,7 +6235,8 @@ function recordLapivientiEvent(checkKey, jobNumber, item) {
         userId: selected ? selected.id : null,
         userName: selected ? selected.name : 'tuntematon',
         dayKey: lapivientiDayKey(),
-        column: lapivientiColumn(item)
+        column: lapivientiColumn(item),
+        at: Date.now()
     });
     saveLapivientiEvents(events);
 }
@@ -6283,26 +6285,114 @@ function dayKeyToFinnishDate(dayKey) {
     return formatFinnishDate(new Date(parts[0], parts[1] - 1, parts[2]));
 }
 
-function aggregateLapivientiRows() {
+function dayKeySortValue(dayKey) {
+    const parts = String(dayKey || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return Number.POSITIVE_INFINITY;
+    return parts[0] * 10000 + parts[1] * 100 + parts[2];
+}
+
+function dateToIsoWeekKey(date) {
+    const tmp = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = tmp.getUTCDay() || 7;
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+    return `${tmp.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function dayKeyToIsoWeekKey(dayKey) {
+    const parts = String(dayKey || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return '';
+    return dateToIsoWeekKey(new Date(parts[0], parts[1] - 1, parts[2]));
+}
+
+function currentIsoWeekKey() {
+    return dateToIsoWeekKey(new Date());
+}
+
+function parseIsoWeekKey(weekKey) {
+    const match = String(weekKey || '').match(/^(\d{4})-W(\d{2})$/);
+    if (!match) return null;
+    return { year: Number(match[1]), week: Number(match[2]) };
+}
+
+function formatIsoWeekLabel(weekKey) {
+    const parsed = parseIsoWeekKey(weekKey);
+    if (!parsed) return String(weekKey || '');
+    return `vko ${parsed.week} / ${parsed.year}`;
+}
+
+function shiftIsoWeekKey(weekKey, delta) {
+    const parsed = parseIsoWeekKey(weekKey);
+    if (!parsed) return weekKey;
+    const jan4 = new Date(Date.UTC(parsed.year, 0, 4));
+    const jan4Day = jan4.getUTCDay() || 7;
+    const thursday = new Date(jan4);
+    thursday.setUTCDate(jan4.getUTCDate() - jan4Day + 4 + (parsed.week - 1 + Number(delta || 0)) * 7);
+    return dateToIsoWeekKey(new Date(thursday.getUTCFullYear(), thursday.getUTCMonth(), thursday.getUTCDate()));
+}
+
+function resolveLapivientiWeek() {
+    return selectedLapivientiWeek || currentIsoWeekKey();
+}
+
+function collectLapivientiWeekKeys(extraWeekKey) {
+    const weeks = new Set();
+    getLapivientiEvents().forEach((event) => {
+        const key = dayKeyToIsoWeekKey(event.dayKey);
+        if (key) weeks.add(key);
+    });
+    if (extraWeekKey) weeks.add(extraWeekKey);
+    return [...weeks].sort().reverse();
+}
+
+function changeLapivientiWeek(weekKey) {
+    const parsed = parseIsoWeekKey(weekKey);
+    if (!parsed) return;
+    selectedLapivientiWeek = `${parsed.year}-W${String(parsed.week).padStart(2, '0')}`;
+    loadMittatView();
+}
+
+function shiftLapivientiWeek(delta) {
+    changeLapivientiWeek(shiftIsoWeekKey(resolveLapivientiWeek(), delta));
+}
+
+function lapivientiEventAt(event) {
+    const at = Number(event?.at);
+    return Number.isFinite(at) && at > 0 ? at : null;
+}
+
+function aggregateLapivientiRows(weekKey) {
     const grouped = new Map();
     getLapivientiEvents().forEach((event) => {
+        if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
         const userName = lapivientiTekijaName(event);
         const key = `${event.dayKey}|${event.jobNumber}|${userName}`;
+        const at = lapivientiEventAt(event);
         if (!grouped.has(key)) {
             grouped.set(key, {
                 dayKey: event.dayKey,
                 jobNumber: event.jobNumber,
                 userName,
                 ovi: 0,
-                ikkuna: 0
+                ikkuna: 0,
+                firstAt: at
             });
+        } else if (at != null) {
+            const row = grouped.get(key);
+            if (row.firstAt == null || at < row.firstAt) row.firstAt = at;
         }
         const row = grouped.get(key);
         if (event.column === 'ikkuna') row.ikkuna += 1;
         else row.ovi += 1;
     });
     return [...grouped.values()].sort((a, b) => {
-        if (a.dayKey !== b.dayKey) return String(a.dayKey).localeCompare(String(b.dayKey));
+        const aDay = dayKeySortValue(a.dayKey);
+        const bDay = dayKeySortValue(b.dayKey);
+        if (aDay !== bDay) return aDay - bDay;
+        const aAt = a.firstAt == null ? Number.POSITIVE_INFINITY : a.firstAt;
+        const bAt = b.firstAt == null ? Number.POSITIVE_INFINITY : b.firstAt;
+        if (aAt !== bAt) return aAt - bAt;
         const jobCmp = String(a.jobNumber).localeCompare(String(b.jobNumber), 'fi', { numeric: true, sensitivity: 'base' });
         if (jobCmp !== 0) return jobCmp;
         return String(a.userName).localeCompare(String(b.userName), 'fi', { sensitivity: 'base' });
@@ -6310,8 +6400,22 @@ function aggregateLapivientiRows() {
 }
 
 function buildLapivientiTableHtml() {
-    const rows = aggregateLapivientiRows();
-    let html = '<div class="lapivienti-wrap"><h3 class="lapivienti-heading">Läpivienti</h3>';
+    const weekKey = resolveLapivientiWeek();
+    const weeks = collectLapivientiWeekKeys(weekKey);
+    const rows = aggregateLapivientiRows(weekKey);
+    let html = '<div class="lapivienti-wrap">';
+    html += '<div class="lapivienti-header">';
+    html += '<h3 class="lapivienti-heading">Läpivienti</h3>';
+    html += '<div class="lapivienti-week-controls">';
+    html += '<button type="button" class="lapivienti-week-btn" onclick="shiftLapivientiWeek(-1)" aria-label="Edellinen viikko">‹</button>';
+    html += `<select id="lapivientiWeekSelect" class="lapivienti-week-select" onchange="changeLapivientiWeek(this.value)" aria-label="Viikko">`;
+    weeks.forEach((week) => {
+        const selected = week === weekKey ? ' selected' : '';
+        html += `<option value="${escapeHtmlText(week)}"${selected}>${escapeHtmlText(formatIsoWeekLabel(week))}</option>`;
+    });
+    html += '</select>';
+    html += '<button type="button" class="lapivienti-week-btn" onclick="shiftLapivientiWeek(1)" aria-label="Seuraava viikko">›</button>';
+    html += '</div></div>';
     html += '<table class="lapivienti-table"><thead><tr>';
     html += '<th scope="col">pvm:</th>';
     html += '<th scope="col">työnro:</th>';
@@ -6320,7 +6424,7 @@ function buildLapivientiTableHtml() {
     html += '<th scope="col">ikkuna kpl:</th>';
     html += '</tr></thead><tbody>';
     if (rows.length === 0) {
-        html += '<tr><td colspan="5" class="lapivienti-empty">Ei merkittyjä tuotteita.</td></tr>';
+        html += '<tr><td colspan="5" class="lapivienti-empty">Ei merkittyjä tuotteita tällä viikolla.</td></tr>';
     } else {
         rows.forEach((row) => {
             html += '<tr>';
@@ -6332,8 +6436,47 @@ function buildLapivientiTableHtml() {
             html += '</tr>';
         });
     }
-    html += '</tbody></table></div>';
+    const oviTotal = rows.reduce((sum, row) => sum + (Number(row.ovi) || 0), 0);
+    const ikkunaTotal = rows.reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
+    html += '</tbody><tfoot><tr>';
+    html += '<th scope="row" colspan="3">yhteensä</th>';
+    html += `<td class="lapivienti-num">${oviTotal}</td>`;
+    html += `<td class="lapivienti-num">${ikkunaTotal}</td>`;
+    html += '</tr></tfoot></table>';
+    html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="copyLapivientiTable(this)">Kopioi</button>';
+    html += '</div>';
     return html;
+}
+
+function lapivientiTsvCell(value) {
+    return String(value ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+}
+
+function buildLapivientiTsv(rows) {
+    const lines = ['pvm:\ttyönro:\ttekijä:\tovi kpl:\tikkuna kpl:'];
+    (rows || []).forEach((row) => {
+        lines.push([
+            dayKeyToFinnishDate(row.dayKey),
+            row.jobNumber,
+            row.userName,
+            row.ovi ? String(row.ovi) : '',
+            row.ikkuna ? String(row.ikkuna) : ''
+        ].map(lapivientiTsvCell).join('\t'));
+    });
+    const oviTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ovi) || 0), 0);
+    const ikkunaTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
+    lines.push(['yhteensä', '', '', String(oviTotal), String(ikkunaTotal)].join('\t'));
+    return lines.join('\n');
+}
+
+async function copyLapivientiTable(btn) {
+    const rows = aggregateLapivientiRows(resolveLapivientiWeek());
+    try {
+        await copyPakettiTextToClipboard(buildLapivientiTsv(rows));
+        flashPakettiCopyButton(btn);
+    } catch (error) {
+        showToast('Kopiointi epäonnistui.', 'error');
+    }
 }
 
 function formatLasilistaMeters(mm) {
