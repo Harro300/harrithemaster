@@ -9319,48 +9319,36 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
         return { size, lengths };
     }).filter((section) => section.lengths.length > 0);
 
-    let bodyHeight = titleStep + jobStep + dateStep;
-    sections.forEach((section, sectionIndex) => {
-        bodyHeight += sizeHeaderStep + section.lengths.length * rowStep;
-        if (sectionIndex < sections.length - 1) {
-            bodyHeight += afterSection;
-        }
-    });
-    const naturalHeight = titleAscentMm + bodyHeight;
-    const availableHeight = pageHeight - pageMargin * 2;
-    const fillScale = naturalHeight > 0 ? Math.max(1, availableHeight / naturalHeight) : 1;
-
-    const fs = (value) => value * fillScale;
     const pageBottom = pageHeight - pageMargin;
-    const continuationY = () => pageMargin + ptToMm(sizeFontSize * fillScale) * 0.8;
+    const continuationY = () => pageMargin + ptToMm(sizeFontSize) * 0.8;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(fs(titleFontSize));
-    let y = pageMargin + fs(titleAscentMm);
+    doc.setFontSize(titleFontSize);
+    let y = pageMargin + titleAscentMm;
     doc.text('LASILISTAT', pageWidth / 2, y, { align: 'center' });
-    y += fs(titleStep);
+    y += titleStep;
 
-    doc.setFontSize(fs(jobFontSize));
+    doc.setFontSize(jobFontSize);
     doc.text(jobLine, 20, y);
-    y += fs(jobStep);
+    y += jobStep;
     doc.text(`PVM: ${dateText}`, pageWidth - 20, y, { align: 'right' });
-    y += fs(dateStep);
+    y += dateStep;
 
     sections.forEach((section, sectionIndex) => {
-        if (y + fs(sizeHeaderStep) > pageBottom) {
+        if (y + sizeHeaderStep > pageBottom) {
             doc.addPage();
             y = continuationY();
         }
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(fs(sizeFontSize));
+        doc.setFontSize(sizeFontSize);
         doc.text(`Lasilista ${section.size}`, 20, y);
-        y += fs(sizeHeaderStep);
+        y += sizeHeaderStep;
 
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(fs(rowFontSize));
+        doc.setFontSize(rowFontSize);
         section.lengths.forEach((lengthKey) => {
-            if (y + fs(rowStep) > pageBottom) {
+            if (y + rowStep > pageBottom) {
                 doc.addPage();
                 y = continuationY();
             }
@@ -9369,11 +9357,11 @@ async function generateLasilistaSummaryPdf(jobNumber, groupedRows, lasilistaColo
                 ? String(Number(lengthKey))
                 : lengthKey;
             doc.text(`${lengthText} x ${count}`, 28, y);
-            y += fs(rowStep);
+            y += rowStep;
         });
 
         if (sectionIndex < sections.length - 1) {
-            y += fs(afterSection);
+            y += afterSection;
         }
     });
 
