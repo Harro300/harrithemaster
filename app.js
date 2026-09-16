@@ -45,6 +45,7 @@ const mitatJobDocIds = new Map();
 let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
 let isTuotantoContentView = false;
+let isLapivientiView = false;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -6157,6 +6158,18 @@ function toggleTuotantoContentView(event) {
         event.stopPropagation();
     }
     isTuotantoContentView = !isTuotantoContentView;
+    if (isTuotantoContentView) isLapivientiView = false;
+    closeTuotantoDisplayOptionsMenu();
+    loadMittatView();
+}
+
+function toggleLapivientiView(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    isLapivientiView = !isLapivientiView;
+    if (isLapivientiView) isTuotantoContentView = false;
     closeTuotantoDisplayOptionsMenu();
     loadMittatView();
 }
@@ -6186,6 +6199,141 @@ function classifyProductionItem(item) {
     if (calc.includes('ikkuna')) return 'ikkuna';
     if (itemUsesPystypaneli(item, item?.inputsHistory, item?.inputs)) return 'paneliovi';
     return 'ovi';
+}
+
+function lapivientiColumn(item) {
+    const type = classifyProductionItem(item);
+    if (type === 'ikkuna' || type === 'verkkoseina') return 'ikkuna';
+    return 'ovi';
+}
+
+function lapivientiDayKey(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getLapivientiEvents() {
+    const raw = JSON.parse(localStorage.getItem('lapivientiEvents') || '[]');
+    return Array.isArray(raw) ? raw.filter((event) => event && typeof event === 'object' && event.itemKey) : [];
+}
+
+function saveLapivientiEvents(events) {
+    localStorage.setItem('lapivientiEvents', JSON.stringify(events));
+}
+
+function recordLapivientiEvent(checkKey, jobNumber, item) {
+    const events = getLapivientiEvents().filter((event) => event.itemKey !== checkKey);
+    const selected = selectedKokoonpanijaId
+        ? getKokoonpanijat().find((user) => user.id === selectedKokoonpanijaId)
+        : null;
+    events.push({
+        itemKey: checkKey,
+        jobNumber: String(jobNumber),
+        userId: selected ? selected.id : null,
+        userName: selected ? selected.name : 'tuntematon',
+        dayKey: lapivientiDayKey(),
+        column: lapivientiColumn(item)
+    });
+    saveLapivientiEvents(events);
+}
+
+function removeLapivientiEvent(checkKey) {
+    const events = getLapivientiEvents();
+    const next = events.filter((event) => event.itemKey !== checkKey);
+    if (next.length !== events.length) saveLapivientiEvents(next);
+}
+
+function remapLapivientiItemKey(oldKey, newKey, newJobNumber) {
+    const events = getLapivientiEvents();
+    let changed = false;
+    events.forEach((event) => {
+        if (event.itemKey !== oldKey) return;
+        event.itemKey = newKey;
+        if (newJobNumber != null) event.jobNumber = String(newJobNumber);
+        changed = true;
+    });
+    if (changed) saveLapivientiEvents(events);
+}
+
+function remapLapivientiJob(fromJob, toJob, itemNames) {
+    (itemNames || []).forEach((itemName) => {
+        remapLapivientiItemKey(`${fromJob}-${itemName}`, `${toJob}-${itemName}`, toJob);
+    });
+}
+
+function deleteLapivientiForJob(jobNumber) {
+    const events = getLapivientiEvents();
+    const next = events.filter((event) => String(event.jobNumber) !== String(jobNumber));
+    if (next.length !== events.length) saveLapivientiEvents(next);
+}
+
+function lapivientiTekijaName(event) {
+    if (event.userId) {
+        const current = getKokoonpanijat().find((user) => user.id === event.userId);
+        if (current?.name) return current.name;
+    }
+    return event.userName || 'tuntematon';
+}
+
+function dayKeyToFinnishDate(dayKey) {
+    const parts = String(dayKey || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return String(dayKey || '');
+    return formatFinnishDate(new Date(parts[0], parts[1] - 1, parts[2]));
+}
+
+function aggregateLapivientiRows() {
+    const grouped = new Map();
+    getLapivientiEvents().forEach((event) => {
+        const userName = lapivientiTekijaName(event);
+        const key = `${event.dayKey}|${event.jobNumber}|${userName}`;
+        if (!grouped.has(key)) {
+            grouped.set(key, {
+                dayKey: event.dayKey,
+                jobNumber: event.jobNumber,
+                userName,
+                ovi: 0,
+                ikkuna: 0
+            });
+        }
+        const row = grouped.get(key);
+        if (event.column === 'ikkuna') row.ikkuna += 1;
+        else row.ovi += 1;
+    });
+    return [...grouped.values()].sort((a, b) => {
+        if (a.dayKey !== b.dayKey) return String(a.dayKey).localeCompare(String(b.dayKey));
+        const jobCmp = String(a.jobNumber).localeCompare(String(b.jobNumber), 'fi', { numeric: true, sensitivity: 'base' });
+        if (jobCmp !== 0) return jobCmp;
+        return String(a.userName).localeCompare(String(b.userName), 'fi', { sensitivity: 'base' });
+    });
+}
+
+function buildLapivientiTableHtml() {
+    const rows = aggregateLapivientiRows();
+    let html = '<div class="lapivienti-wrap"><h3 class="lapivienti-heading">Läpivienti</h3>';
+    html += '<table class="lapivienti-table"><thead><tr>';
+    html += '<th scope="col">pvm:</th>';
+    html += '<th scope="col">työnro:</th>';
+    html += '<th scope="col">tekijä:</th>';
+    html += '<th scope="col">ovi kpl:</th>';
+    html += '<th scope="col">ikkuna kpl:</th>';
+    html += '</tr></thead><tbody>';
+    if (rows.length === 0) {
+        html += '<tr><td colspan="5" class="lapivienti-empty">Ei merkittyjä tuotteita.</td></tr>';
+    } else {
+        rows.forEach((row) => {
+            html += '<tr>';
+            html += `<td>${escapeHtmlText(dayKeyToFinnishDate(row.dayKey))}</td>`;
+            html += `<td>${escapeHtmlText(row.jobNumber)}</td>`;
+            html += `<td>${escapeHtmlText(row.userName)}</td>`;
+            html += `<td class="lapivienti-num">${row.ovi ? row.ovi : ''}</td>`;
+            html += `<td class="lapivienti-num">${row.ikkuna ? row.ikkuna : ''}</td>`;
+            html += '</tr>';
+        });
+    }
+    html += '</tbody></table></div>';
+    return html;
 }
 
 function formatLasilistaMeters(mm) {
@@ -6342,14 +6490,27 @@ function applyTuotantoContentViewUi() {
         contentBtn.classList.toggle('btn-outline-secondary', !isTuotantoContentView);
         contentBtn.textContent = isTuotantoContentView ? '✓ Tuotanto sivun sisältö' : 'Tuotanto sivun sisältö';
     }
+    const lapivientiBtn = document.getElementById('btnLapivientiView');
+    if (lapivientiBtn) {
+        lapivientiBtn.classList.toggle('naytto-mode-current', isLapivientiView);
+        lapivientiBtn.classList.toggle('btn-secondary', isLapivientiView);
+        lapivientiBtn.classList.toggle('btn-outline-secondary', !isLapivientiView);
+        lapivientiBtn.textContent = isLapivientiView ? '✓ Läpivienti' : 'Läpivienti';
+    }
+    const overlay = isTuotantoContentView || isLapivientiView;
     const searchRow = document.getElementById('mitatSearchRow');
     const splitHost = document.getElementById('mitatSplitLayoutHost');
     const summary = document.getElementById('tuotantoContentSummary');
-    if (searchRow) searchRow.style.display = isTuotantoContentView ? 'none' : '';
-    if (splitHost) splitHost.style.display = isTuotantoContentView ? 'none' : '';
+    const lapivienti = document.getElementById('lapivientiView');
+    if (searchRow) searchRow.style.display = overlay ? 'none' : '';
+    if (splitHost) splitHost.style.display = overlay ? 'none' : '';
     if (summary) {
         summary.hidden = !isTuotantoContentView;
         summary.innerHTML = isTuotantoContentView ? buildTuotantoContentSummary() : '';
+    }
+    if (lapivienti) {
+        lapivienti.hidden = !isLapivientiView;
+        lapivienti.innerHTML = isLapivientiView ? buildLapivientiTableHtml() : '';
     }
 }
 
@@ -6990,7 +7151,7 @@ function loadMittatView() {
 
     renderKokoonpanijatBar();
     applyTuotantoContentViewUi();
-    if (isTuotantoContentView) return;
+    if (isTuotantoContentView || isLapivientiView) return;
     
     // Check if empty
     if (Object.keys(mittatData).length === 0) {
@@ -10138,6 +10299,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
             localStorage.setItem(storeKey, JSON.stringify(obj));
         }
     });
+    remapLapivientiItemKey(oldKey, newKey, jobNumber);
 
     const notes = JSON.parse(localStorage.getItem('mittatNotes') || '{}');
     const oldNoteKey = `item-${jobNumber}-${itemName}`;
@@ -10229,6 +10391,7 @@ async function renameMitatJob(jobNumber, btn) {
         localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     }
     remapJobTekijat(jobNumber, trimmed);
+    remapLapivientiJob(jobNumber, trimmed, itemNames);
 
     const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
     const oldTsPrefix = `${jobNumber}-`;
@@ -11131,12 +11294,14 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     }
     if (isDone) {
         doneMitat[checkKey] = true;
+        recordLapivientiEvent(checkKey, jobNumber, item);
     } else {
         delete doneMitat[checkKey];
         // If item is no longer "done", remove packed marker as well.
         delete packedMitat[checkKey];
         delete packedPackageNumbers[checkKey];
         delete hiddenMitatItems[checkKey];
+        removeLapivientiEvent(checkKey);
     }
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
@@ -11222,6 +11387,7 @@ function deleteJobMitat(jobNumber) {
     delete mittatData[jobNumber];
     delete jobBlocks[jobNumber];
     deleteJobTekijat(jobNumber);
+    deleteLapivientiForJob(jobNumber);
 
     // Remove packedTimestamps for this job (keys: jobNumber-packageNumber)
     const packedTimestamps = JSON.parse(localStorage.getItem('packedTimestamps') || '{}');
@@ -11354,6 +11520,7 @@ function deleteMitta(jobNumber, itemName) {
             delete doneMitat[checkKey];
             localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
         }
+        removeLapivientiEvent(checkKey);
 
         const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
         if (Object.prototype.hasOwnProperty.call(packedMitat, checkKey)) {

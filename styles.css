@@ -2643,3 +2643,43 @@ body.dark-mode .scan-pdf-preview-canvas {
 .scan-transfer-queue-item-meta {
     font-size: 0.8rem;
 }
+
+.lapivienti-view {
+    margin-top: 0.5rem;
+}
+
+.lapivienti-heading {
+    color: var(--accent-color);
+    margin: 0 0 0.75rem;
+    font-size: 1.1rem;
+}
+
+.lapivienti-table {
+    width: 100%;
+    max-width: 42rem;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.lapivienti-table th,
+.lapivienti-table td {
+    border: 1px solid var(--border-color, #cfcfcf);
+    padding: 0.35rem 0.6rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.lapivienti-table th {
+    font-weight: 600;
+    background: var(--bg-tertiary);
+}
+
+.lapivienti-table td.lapivienti-num {
+    text-align: right;
+}
+
+.lapivienti-table .lapivienti-empty {
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: normal;
+}
