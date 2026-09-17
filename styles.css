@@ -1978,14 +1978,34 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .mitat-item-title {
+    display: inline-flex;
+    align-items: center;
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 2px;
+    margin-bottom: 0;
+    line-height: 1.2;
 }
 
 .mitat-item-title-hidden {
     color: #dc3545 !important;
+}
+
+.mitat-item-unit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    min-width: 1.2em;
+    height: 1.2em;
+    padding: 0 0.18em;
+    margin-left: 0.4em;
+    border: 1px solid var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.85em;
+    line-height: 1;
+    color: var(--text-secondary);
 }
 
 .mitat-item-header small {

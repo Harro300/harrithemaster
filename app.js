@@ -5760,6 +5760,8 @@ function transferResults() {
     }
     const countInput = document.getElementById('transferItemCount');
     if (countInput) countInput.value = 1;
+    const unitInput = document.getElementById('transferUnitCount');
+    if (unitInput) unitInput.value = 1;
 
     const jobInput = document.getElementById('transferJobNumber');
     if (jobInput && !jobInput.dataset.transferPrefillBound) {
@@ -5852,6 +5854,7 @@ function mergeResults(existing, incoming) {
         timestamp: incoming.timestamp,
         lasilistaSize: existing.lasilistaSize || incoming.lasilistaSize,
         lasilistaColor: existing.lasilistaColor || incoming.lasilistaColor,
+        unitCount: existing.unitCount ?? incoming.unitCount,
         metadataOnly: existing.metadataOnly && incoming.metadataOnly,
         inputs: incoming.inputs || existing.inputs || null,
         inputsHistory: inputsHistory.length > 0 ? inputsHistory : undefined,
@@ -5934,6 +5937,7 @@ function confirmTransferToMitat() {
     const rawLasilistaSize = document.getElementById('transferLasilistaSize')?.value || '';
     const lasilistaSize = rawLasilistaSize === 'ei-lasilistaa' ? '' : rawLasilistaSize;
     const lasilistaColor = normalizeLasilistaColor(document.getElementById('transferLasilistaColor')?.value || '');
+    const unitCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferUnitCount')?.value) || 1));
     const isNoResultsTransferMode = isUmpioviNoResultsMode();
     
     if (!jobNumber || !itemName || (!isNoResultsTransferMode && !rawLasilistaSize)) {
@@ -5956,6 +5960,7 @@ function confirmTransferToMitat() {
         timestamp: new Date().toISOString(),
         lasilistaSize: lasilistaSize,
         lasilistaColor: lasilistaColor,
+        unitCount: unitCount,
         metadataOnly: isNoResultsTransferMode,
         inputs: {
             calculator: currentCalculator,
@@ -6202,10 +6207,39 @@ function classifyProductionItem(item) {
     return 'ovi';
 }
 
+function collectItemCalculators(item) {
+    const calcs = [];
+    if (item?.calculator) calcs.push(item.calculator);
+    if (item?.inputs?.calculator) calcs.push(item.inputs.calculator);
+    (item?.inputsHistory || []).forEach((entry) => {
+        if (entry?.calculator) calcs.push(entry.calculator);
+    });
+    return calcs;
+}
+
+function itemHasDoorAndWindow(item) {
+    const calcs = collectItemCalculators(item);
+    const hasDoor = calcs.some((calc) => {
+        const s = String(calc || '');
+        return s.includes('kayntiovi') || s.includes('pariovi') || s === 'verkko-ovi' || s.startsWith('verkko-ovi');
+    });
+    const hasWindow = calcs.some((calc) => String(calc || '').includes('ikkuna'));
+    return hasDoor && hasWindow;
+}
+
 function lapivientiColumn(item) {
+    if (itemHasDoorAndWindow(item)) return 'ovi';
     const type = classifyProductionItem(item);
     if (type === 'ikkuna' || type === 'verkkoseina') return 'ikkuna';
     return 'ovi';
+}
+
+function lapivientiItemNameFromEvent(event) {
+    const jobNumber = String(event?.jobNumber || '');
+    const itemKey = String(event?.itemKey || '');
+    const prefix = `${jobNumber}-`;
+    if (!jobNumber || !itemKey.startsWith(prefix)) return '';
+    return itemKey.slice(prefix.length);
 }
 
 function lapivientiDayKey(date = new Date()) {
@@ -6236,9 +6270,21 @@ function recordLapivientiEvent(checkKey, jobNumber, item) {
         userName: selected ? selected.name : 'tuntematon',
         dayKey: lapivientiDayKey(),
         column: lapivientiColumn(item),
+        unitCount: parseItemUnitCount(item) || 0,
         at: Date.now()
     });
     saveLapivientiEvents(events);
+}
+
+function updateLapivientiEventUnitCount(checkKey, unitCount) {
+    const events = getLapivientiEvents();
+    let changed = false;
+    events.forEach((event) => {
+        if (event.itemKey !== checkKey) return;
+        event.unitCount = unitCount;
+        changed = true;
+    });
+    if (changed) saveLapivientiEvents(events);
 }
 
 function removeLapivientiEvent(checkKey) {
@@ -6364,6 +6410,7 @@ function lapivientiEventAt(event) {
 
 function aggregateLapivientiRows(weekKey) {
     const grouped = new Map();
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     getLapivientiEvents().forEach((event) => {
         if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
         const userName = lapivientiTekijaName(event);
@@ -6376,6 +6423,8 @@ function aggregateLapivientiRows(weekKey) {
                 userName,
                 ovi: 0,
                 ikkuna: 0,
+                oviYksikot: 0,
+                ikkunaYksikot: 0,
                 firstAt: at
             });
         } else if (at != null) {
@@ -6383,8 +6432,17 @@ function aggregateLapivientiRows(weekKey) {
             if (row.firstAt == null || at < row.firstAt) row.firstAt = at;
         }
         const row = grouped.get(key);
-        if (event.column === 'ikkuna') row.ikkuna += 1;
-        else row.ovi += 1;
+        const itemName = lapivientiItemNameFromEvent(event);
+        const liveItem = itemName ? mittatData[event.jobNumber]?.[itemName] : null;
+        const column = liveItem ? lapivientiColumn(liveItem) : event.column;
+        const units = Number(event.unitCount) || 0;
+        if (column === 'ikkuna') {
+            row.ikkuna += 1;
+            row.ikkunaYksikot += units;
+        } else {
+            row.ovi += 1;
+            row.oviYksikot += units;
+        }
     });
     return [...grouped.values()].sort((a, b) => {
         const aDay = dayKeySortValue(a.dayKey);
@@ -6421,10 +6479,12 @@ function buildLapivientiTableHtml() {
     html += '<th scope="col">työnro:</th>';
     html += '<th scope="col">tekijä:</th>';
     html += '<th scope="col">ovi kpl:</th>';
+    html += '<th scope="col">yksiköt:</th>';
     html += '<th scope="col">ikkuna kpl:</th>';
+    html += '<th scope="col">yksiköt:</th>';
     html += '</tr></thead><tbody>';
     if (rows.length === 0) {
-        html += '<tr><td colspan="5" class="lapivienti-empty">Ei merkittyjä tuotteita tällä viikolla.</td></tr>';
+        html += '<tr><td colspan="7" class="lapivienti-empty">Ei merkittyjä tuotteita tällä viikolla.</td></tr>';
     } else {
         rows.forEach((row) => {
             html += '<tr>';
@@ -6432,16 +6492,22 @@ function buildLapivientiTableHtml() {
             html += `<td>${escapeHtmlText(row.jobNumber)}</td>`;
             html += `<td>${escapeHtmlText(row.userName)}</td>`;
             html += `<td class="lapivienti-num">${row.ovi ? row.ovi : ''}</td>`;
+            html += `<td class="lapivienti-num">${row.oviYksikot ? row.oviYksikot : ''}</td>`;
             html += `<td class="lapivienti-num">${row.ikkuna ? row.ikkuna : ''}</td>`;
+            html += `<td class="lapivienti-num">${row.ikkunaYksikot ? row.ikkunaYksikot : ''}</td>`;
             html += '</tr>';
         });
     }
     const oviTotal = rows.reduce((sum, row) => sum + (Number(row.ovi) || 0), 0);
+    const oviYksikotTotal = rows.reduce((sum, row) => sum + (Number(row.oviYksikot) || 0), 0);
     const ikkunaTotal = rows.reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
+    const ikkunaYksikotTotal = rows.reduce((sum, row) => sum + (Number(row.ikkunaYksikot) || 0), 0);
     html += '</tbody><tfoot><tr>';
     html += '<th scope="row" colspan="3">yhteensä</th>';
     html += `<td class="lapivienti-num">${oviTotal}</td>`;
+    html += `<td class="lapivienti-num">${oviYksikotTotal}</td>`;
     html += `<td class="lapivienti-num">${ikkunaTotal}</td>`;
+    html += `<td class="lapivienti-num">${ikkunaYksikotTotal}</td>`;
     html += '</tr></tfoot></table>';
     html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="copyLapivientiTable(this)">Kopioi</button>';
     html += '</div>';
@@ -6453,19 +6519,23 @@ function lapivientiTsvCell(value) {
 }
 
 function buildLapivientiTsv(rows) {
-    const lines = ['pvm:\ttyönro:\ttekijä:\tovi kpl:\tikkuna kpl:'];
+    const lines = ['pvm:\ttyönro:\ttekijä:\tovi kpl:\tyksiköt:\tikkuna kpl:\tyksiköt:'];
     (rows || []).forEach((row) => {
         lines.push([
             dayKeyToFinnishDate(row.dayKey),
             row.jobNumber,
             row.userName,
             row.ovi ? String(row.ovi) : '',
-            row.ikkuna ? String(row.ikkuna) : ''
+            row.oviYksikot ? String(row.oviYksikot) : '',
+            row.ikkuna ? String(row.ikkuna) : '',
+            row.ikkunaYksikot ? String(row.ikkunaYksikot) : ''
         ].map(lapivientiTsvCell).join('\t'));
     });
     const oviTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ovi) || 0), 0);
+    const oviYksikotTotal = (rows || []).reduce((sum, row) => sum + (Number(row.oviYksikot) || 0), 0);
     const ikkunaTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
-    lines.push(['yhteensä', '', '', String(oviTotal), String(ikkunaTotal)].join('\t'));
+    const ikkunaYksikotTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ikkunaYksikot) || 0), 0);
+    lines.push(['yhteensä', '', '', String(oviTotal), String(oviYksikotTotal), String(ikkunaTotal), String(ikkunaYksikotTotal)].join('\t'));
     return lines.join('\n');
 }
 
@@ -7227,6 +7297,18 @@ function openValitseTekijaModal(jobNumber, btn) {
     }
 }
 
+function parseItemUnitCount(item) {
+    const n = parseInt(item?.unitCount, 10);
+    if (!Number.isFinite(n) || n < 1) return null;
+    return n;
+}
+
+function formatItemUnitSuffix(item) {
+    const n = parseItemUnitCount(item);
+    if (n == null) return '';
+    return ` <span class="mitat-item-unit">${n}</span>`;
+}
+
 // Load and display Mitat view
 function loadMittatView() {
     const katselu = isKatseluMode();
@@ -7565,7 +7647,7 @@ function loadMittatView() {
             html += `<div class="mitat-item-header-main">`;
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
-            html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
+            html += `<h5 class="${itemTitleClass}">- ${itemName}${formatItemUnitSuffix(item)}</h5>`;
             const safeItemAttr = sanitizeForAttribute(itemName);
             if (!katselu) {
                 html += `<div class="dropdown mitat-item-actions">`;
@@ -8676,6 +8758,7 @@ async function showPaketitItemDetails(jobNumber, itemName, btn, editEntryIdx = -
     } else {
         if (item.lasilistaSize) headerRows.push({ label: 'Lasilistan koko', value: item.lasilistaSize });
         if (item.lasilistaColor) headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
+        headerRows.push({ label: 'Yksikkömäärä', value: parseItemUnitCount(item) != null ? String(parseItemUnitCount(item)) : '—' });
         html += renderInputsRows(headerRows);
         html += `<div class="mt-2 mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="showPaketitItemDetails('${safeJob}','${safeItem}',null,-1,true)">Muokkaa lasilistaa</button></div>`;
     }
@@ -11086,6 +11169,7 @@ function buildLasilistaMetaEditForm(item, jobNumber, itemName, context = 'mitat'
     const currentSize = String(item?.lasilistaSize || '').trim();
     const sizeVal = currentSize || 'ei-lasilistaa';
     const colorVal = String(item?.lasilistaColor || '').replace(/"/g, '&quot;');
+    const unitVal = parseItemUnitCount(item) ?? 1;
     const sizeOpts = [
         ['ei-lasilistaa', 'Ei lasilistaa'],
         ['12x20', '12x20'], ['15x20', '15x20'], ['20x20', '20x20'],
@@ -11108,6 +11192,8 @@ function buildLasilistaMetaEditForm(item, jobNumber, itemName, context = 'mitat'
         `<select name="lasilistaSize" class="form-select form-select-sm" style="width:auto">${sizeOpts}</select>`);
     html += editRow('Lasilistan väri',
         `<input type="text" name="lasilistaColor" class="form-control form-control-sm" value="${colorVal}" placeholder="esim. RAL 7024" style="width:140px">`);
+    html += editRow('Yksikkömäärä',
+        `<input type="number" name="unitCount" class="form-control form-control-sm" min="1" max="99" value="${unitVal}" style="width:80px; text-align:center">`);
     html += `<div class="d-flex gap-2 mt-3">
         <button class="btn btn-sm btn-primary" onclick="saveEditedMitatLasilistaMeta('${safeJob}','${safeItem}',this.closest('.mitat-inputs-edit-form')${saveCtx})">Tallenna</button>
         <button class="btn btn-sm btn-outline-secondary" onclick="${cancelOnclick}">Peruuta</button>
@@ -11130,6 +11216,8 @@ async function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context
     const rawColor = formEl?.querySelector('[name="lasilistaColor"]')?.value || '';
     item.lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
     item.lasilistaColor = normalizeLasilistaColor(rawColor);
+    item.unitCount = Math.max(1, Math.min(99, parseInt(formEl?.querySelector('[name="unitCount"]')?.value) || 1));
+    updateLapivientiEventUnitCount(`${jobNumber}-${itemName}`, item.unitCount);
 
     if (packedPayload) {
         await writeJobPayloadToFirestore(jobNumber, packedPayload);
@@ -11191,6 +11279,7 @@ function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1, editMeta = 
         if (item.lasilistaColor) {
             headerRows.push({ label: 'Lasilistan väri', value: item.lasilistaColor });
         }
+        headerRows.push({ label: 'Yksikkömäärä', value: parseItemUnitCount(item) != null ? String(parseItemUnitCount(item)) : '—' });
         html += renderInputsRows(headerRows);
         html += `<div class="mt-2 mb-2"><button class="btn btn-sm btn-outline-secondary" onclick="showMitatItemInputs('${safeJob}','${safeItem}',-1,true)">Muokkaa lasilistaa</button></div>`;
     }
