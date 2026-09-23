@@ -2716,10 +2716,7 @@ function calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calculatorTyp
             results.potkupelti.push(`${kickHeight + innerHeightAdjust} x ${width + innerWidthAdjust}`);
 
             // Outer kickplate (Umpiovi-specific formula pair)
-            let outerWidth = width + outerWidthAdjust;
-            if (kickHeight > 310) {
-                outerWidth -= 5;
-            }
+            const outerWidth = applyKickHeightOuterWidthAdjust(width + outerWidthAdjust, kickHeight);
             results.potkupelti.push(`${kickHeight + outerHeightAdjust} x ${outerWidth}`);
         });
     }
@@ -2811,10 +2808,7 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     const mainInnerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    let mainOuterWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
-    if (kickHeight > 310) {
-        mainOuterWidth -= 5;
-    }
+    const mainOuterWidth = applyKickHeightOuterWidthAdjust(mainWidth + jf.potku_kaynti_ulko_leveys, kickHeight);
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi (Kick plates - Side door)
@@ -2835,12 +2829,9 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         : sideWidth + jf.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    let sideOuterWidth = settings.umpivasikkaEnabled
+    const sideOuterWidth = applyKickHeightOuterWidthAdjust(settings.umpivasikkaEnabled
         ? sideWidth + (jf.umpiovi_potku_lisa_ulko_leveys ?? jf.umpiovi_potku_ulko_leveys ?? 165)
-        : sideWidth + jf.potku_lisa_ulko_leveys;
-    if (kickHeight > 310) {
-        sideOuterWidth -= 5;
-    }
+        : sideWidth + jf.potku_lisa_ulko_leveys, kickHeight);
         results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
     }
     
@@ -2915,10 +2906,7 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
         const innerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
         results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
         
-        let outerWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
-        if (kickHeight > 310) {
-            outerWidth -= 5;
-        }
+        const outerWidth = applyKickHeightOuterWidthAdjust(mainWidth + jf.potku_kaynti_ulko_leveys, kickHeight);
         results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
     
@@ -3014,10 +3002,7 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     const mainInnerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    let mainOuterWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
-    if (kickHeight > 310) {
-        mainOuterWidth -= 5;
-    }
+    const mainOuterWidth = applyKickHeightOuterWidthAdjust(mainWidth + ef.potku_kaynti_ulko_leveys, kickHeight);
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi
@@ -3038,12 +3023,9 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         : sideWidth + ef.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    let sideOuterWidth = settings.umpivasikkaEnabled
+    const sideOuterWidth = applyKickHeightOuterWidthAdjust(settings.umpivasikkaEnabled
         ? sideWidth + (ef.umpiovi_potku_lisa_ulko_leveys ?? ef.umpiovi_potku_ulko_leveys ?? 160)
-        : sideWidth + ef.potku_lisa_ulko_leveys;
-    if (kickHeight > 310) {
-        sideOuterWidth -= 5;
-    }
+        : sideWidth + ef.potku_lisa_ulko_leveys, kickHeight);
         results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
     }
     
@@ -3118,10 +3100,7 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
         const innerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
         results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
         
-        let outerWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
-        if (kickHeight > 310) {
-            outerWidth -= 5;
-        }
+        const outerWidth = applyKickHeightOuterWidthAdjust(mainWidth + ef.potku_kaynti_ulko_leveys, kickHeight);
         results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
     
@@ -4524,6 +4503,10 @@ function getDefaultFormulas() {
             tiiviste_umpiovi_potku_ulko_korkeus: -20,
             tiiviste_umpiovi_potku_lisa_sisa_korkeus: -65,
             tiiviste_umpiovi_potku_lisa_ulko_korkeus: -20
+        },
+        poikkeamat: {
+            ulkopelti_x: 5,
+            ulkopelti_y: 310
         }
     };
 }
@@ -4646,6 +4629,13 @@ function loadFormulasToPanel() {
             if (input) input.value = formulas[calcKey][key];
         });
     });
+
+    if (formulas.poikkeamat) {
+        Object.keys(formulas.poikkeamat).forEach(key => {
+            const input = document.getElementById(`poikkeamat_${key}`);
+            if (input) input.value = formulas.poikkeamat[key];
+        });
+    }
     
     // Load available formula sets
     loadFormulaSetsList();
@@ -5361,6 +5351,10 @@ function collectFormulasFromPanel() {
             tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_ulko_korkeus').value),
             tiiviste_umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_lisa_sisa_korkeus').value),
             tiiviste_umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_lisa_ulko_korkeus').value)
+        },
+        poikkeamat: {
+            ulkopelti_x: poikkeamaNumber(parseFloat(document.getElementById('poikkeamat_ulkopelti_x').value), 5),
+            ulkopelti_y: poikkeamaNumber(parseFloat(document.getElementById('poikkeamat_ulkopelti_y').value), 310)
         }
     };
 }
@@ -11946,8 +11940,17 @@ function toggleScanner(enabled) {
     }
 }
 
+function poikkeamaNumber(value, fallback) {
+    if (value == null || value === '') return fallback;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+}
+
 function applyKickHeightOuterWidthAdjust(width, kickHeight) {
-    return kickHeight > 310 ? width - 5 : width;
+    const p = getActiveFormulas()?.poikkeamat || {};
+    const x = poikkeamaNumber(p.ulkopelti_x, 5);
+    const y = poikkeamaNumber(p.ulkopelti_y, 310);
+    return kickHeight > y ? width - x : width;
 }
 
 function calcPystypaneliStartEnd(X, Y, alotus = -5) {

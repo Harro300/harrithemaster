@@ -1077,7 +1077,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="janisol_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="165">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                         </div>
                         
@@ -1109,7 +1109,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="janisol_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -1747,7 +1747,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="economy_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="160">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -1780,7 +1780,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="economy_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -2685,7 +2685,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_janisol_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="165">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -2718,7 +2718,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_janisol_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="140">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -3113,7 +3113,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_janisol_kayntiovi_potku_kaynti_ulko_leveys" class="formula-input" value="165">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -3472,7 +3472,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_economy_kayntiovi_potku_kaynti_ulko_leveys" class="formula-input" value="160">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -3831,7 +3831,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_economy_pariovi_potku_kaynti_ulko_leveys" class="formula-input" value="160">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -3864,7 +3864,7 @@
                                 <label>Ulko leveys:</label>
                                 <span>Oven leveys +</span>
                                 <input type="number" id="pystypaneli_economy_pariovi_potku_lisa_ulko_leveys" class="formula-input" value="135">
-                                <span>mm (-5 jos >310)</span>
+                                <span>mm</span>
                             </div>
                             </div>
                         </div>
@@ -4184,6 +4184,23 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="admin-accordion-item">
+                    <div class="admin-accordion-header" onclick="toggleAdminAccordion(this)" role="button" tabindex="0" aria-expanded="false">
+                        <span>POIKKEAMAT</span>
+                        <span class="admin-accordion-icon">▼</span>
+                    </div>
+                    <div class="admin-accordion-content">
+                        <p class="text-muted mb-3">Koskee kaikkia ovilaskimia.</p>
+                        <div class="formula-row">
+                            <label>Ulkopotkupellin leveys:</label>
+                            <span>−</span>
+                            <input type="number" id="poikkeamat_ulkopelti_x" class="formula-input" value="5">
+                            <span>jos &gt;</span>
+                            <input type="number" id="poikkeamat_ulkopelti_y" class="formula-input" value="310">
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="admin-panel-footer">
@@ -4293,7 +4310,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20261004R4"></script>
+    <script src="app.js?v=20261004R5"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>
