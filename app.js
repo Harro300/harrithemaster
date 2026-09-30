@@ -5719,6 +5719,57 @@ function populateJobNumberSuggestions() {
     });
 }
 
+function isDoorUnitCalc(calc) {
+    const s = String(calc || '');
+    return s.includes('kayntiovi') || s.includes('pariovi') || s === 'verkko-ovi' || s.startsWith('verkko-ovi');
+}
+
+function isWindowUnitCalc(calc) {
+    const s = String(calc || '');
+    if (isDoorUnitCalc(s)) return false;
+    return s.includes('ikkuna') || s === 'verkko-seina' || s.startsWith('verkko-seina');
+}
+
+function doorLeafUnits(calc) {
+    return String(calc || '').includes('pariovi') ? 2 : 1;
+}
+
+function windowPaneUnits(part) {
+    const n = parseInt(part?.paneCount, 10);
+    if (Number.isFinite(n) && n >= 1) return n;
+    const heights = Array.isArray(part?.paneHeights)
+        ? part.paneHeights.filter((value) => String(value).trim() !== '')
+        : [];
+    return Math.max(1, heights.length || 1);
+}
+
+function collectTransferUnitParts() {
+    const current = { calculator: currentCalculator, paneCount: settings.paneCount };
+    if (!(mergeMode && frozenFirstResult)) return [current];
+    const history = frozenFirstResult.inputsHistory
+        ? frozenFirstResult.inputsHistory
+        : (frozenFirstResult.inputs ? [frozenFirstResult.inputs] : []);
+    if (!mergeLiveCommitted) return [...history, current];
+    return history.length ? history : [current];
+}
+
+function suggestUnitCountFromParts(parts) {
+    const doors = (parts || []).filter((part) => isDoorUnitCalc(part.calculator));
+    if (doors.length) {
+        const leaves = doors.reduce((sum, part) => sum + doorLeafUnits(part.calculator), 0);
+        const windows = parts.filter((part) => isWindowUnitCalc(part.calculator)).length;
+        return Math.max(1, Math.min(99, leaves + windows));
+    }
+    const panes = (parts || [])
+        .filter((part) => isWindowUnitCalc(part.calculator))
+        .reduce((sum, part) => sum + windowPaneUnits(part), 0);
+    return Math.max(1, Math.min(99, panes || 1));
+}
+
+function suggestTransferUnitCount() {
+    return suggestUnitCountFromParts(collectTransferUnitParts());
+}
+
 // Open transfer modal
 function transferResults() {
     const resultsDiv = document.getElementById('results');
@@ -5755,7 +5806,7 @@ function transferResults() {
     const countInput = document.getElementById('transferItemCount');
     if (countInput) countInput.value = 1;
     const unitInput = document.getElementById('transferUnitCount');
-    if (unitInput) unitInput.value = 1;
+    if (unitInput) unitInput.value = suggestTransferUnitCount();
 
     const jobInput = document.getElementById('transferJobNumber');
     if (jobInput && !jobInput.dataset.transferPrefillBound) {
@@ -12619,6 +12670,7 @@ function acceptScanToQueue() {
         showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
         return;
     }
+    results.unitCount = readScanUnitCount();
 
     if (!scanBatchJobNumber) scanBatchJobNumber = jobNumber;
 
@@ -13605,6 +13657,9 @@ function showScanReview(parsed, canvas) {
 
     const card = document.getElementById('scanReviewCard');
     if (card) card.style.display = '';
+    const unitEl = document.getElementById('scanUnitCount');
+    if (unitEl) unitEl.dataset.userEdited = '0';
+    bindScanUnitCountEdit();
     const scrollTarget = document.getElementById('scanPdfPreview') || card;
     if (scrollTarget) scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
     calculateFromScanReview();
@@ -13656,6 +13711,7 @@ function applyScanResult() {
             return;
         }
     }
+    results.unitCount = readScanUnitCount();
 
     const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
     dualWriteMitatState(jobNumber);
@@ -13692,6 +13748,35 @@ function closeScanReview() {
 
 function isScanDoorWindowMode() {
     return !!document.getElementById('scanDoorWindowMode')?.checked;
+}
+
+function suggestScanUnitCount() {
+    const calc = document.getElementById('scanCalculator')?.value || '';
+    const paneCount = Math.max(1, Math.min(12, parseInt(document.getElementById('scanPaneCount')?.value, 10) || 1));
+    if (isScanDoorWindowMode()) {
+        return suggestUnitCountFromParts([
+            { calculator: calc, paneCount },
+            { calculator: windowCalculatorForDoor(calc), paneCount: 1 }
+        ]);
+    }
+    return suggestUnitCountFromParts([{ calculator: calc, paneCount }]);
+}
+
+function bindScanUnitCountEdit() {
+    const el = document.getElementById('scanUnitCount');
+    if (!el || el.dataset.unitEditBound === '1') return;
+    el.dataset.unitEditBound = '1';
+    el.addEventListener('input', () => { el.dataset.userEdited = '1'; });
+}
+
+function refreshScanUnitSuggestion() {
+    const el = document.getElementById('scanUnitCount');
+    if (!el || el.dataset.userEdited === '1') return;
+    el.value = suggestScanUnitCount();
+}
+
+function readScanUnitCount() {
+    return Math.max(1, Math.min(99, parseInt(document.getElementById('scanUnitCount')?.value, 10) || 1));
 }
 
 function windowCalculatorForDoor(doorCalc) {
@@ -13857,6 +13942,7 @@ function buildDoorWindowScanResults(lasilistaSize, color) {
 function calculateFromScanReview() {
     const card = document.getElementById('scanReviewCard');
     if (!card || card.style.display === 'none') return;
+    refreshScanUnitSuggestion();
 
     if (isScanDoorWindowMode()) {
         const door = readScanDoorSettings();

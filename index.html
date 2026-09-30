@@ -456,6 +456,9 @@
                         <label for="scanQuantity" class="form-label mb-0 small">Määrä</label>
                         <input type="number" class="form-control form-control-sm" id="scanQuantity" min="1" max="99" value="1" style="max-width:70px;text-align:center;">
                         <span class="small text-muted">kpl</span>
+                        <label for="scanUnitCount" class="form-label mb-0 small ms-2">Yksiköt</label>
+                        <input type="number" class="form-control form-control-sm" id="scanUnitCount" min="1" max="99" value="1" style="max-width:70px;text-align:center;">
+                        <span class="small text-muted">yksik.</span>
                     </div>
                     <div class="d-flex gap-2 flex-wrap justify-content-end">
                         <button type="button" class="btn btn-outline-secondary" onclick="closeScanReview()">Peruuta</button>
@@ -4288,7 +4291,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
-    <script src="app.js?v=20260923R1"></script>
+    <script src="app.js?v=20260930R2"></script>
     <div id="mitatFullscreenRoot" class="mitat-fullscreen-root" hidden aria-hidden="true"></div>
 </body>
 </html>
