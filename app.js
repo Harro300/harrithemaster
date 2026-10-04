@@ -2716,7 +2716,10 @@ function calculateUmpioviResults(mainWidth, sideWidth, kickHeight, calculatorTyp
             results.potkupelti.push(`${kickHeight + innerHeightAdjust} x ${width + innerWidthAdjust}`);
 
             // Outer kickplate (Umpiovi-specific formula pair)
-            const outerWidth = applyKickHeightOuterWidthAdjust(width + outerWidthAdjust, kickHeight);
+            let outerWidth = width + outerWidthAdjust;
+            if (kickHeight > 310) {
+                outerWidth -= 5;
+            }
             results.potkupelti.push(`${kickHeight + outerHeightAdjust} x ${outerWidth}`);
         });
     }
@@ -2808,7 +2811,10 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     const mainInnerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    const mainOuterWidth = applyKickHeightOuterWidthAdjust(mainWidth + jf.potku_kaynti_ulko_leveys, kickHeight);
+    let mainOuterWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
+    if (kickHeight > 310) {
+        mainOuterWidth -= 5;
+    }
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi (Kick plates - Side door)
@@ -2829,9 +2835,12 @@ function calculateJanisolPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         : sideWidth + jf.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    const sideOuterWidth = applyKickHeightOuterWidthAdjust(settings.umpivasikkaEnabled
+    let sideOuterWidth = settings.umpivasikkaEnabled
         ? sideWidth + (jf.umpiovi_potku_lisa_ulko_leveys ?? jf.umpiovi_potku_ulko_leveys ?? 165)
-        : sideWidth + jf.potku_lisa_ulko_leveys, kickHeight);
+        : sideWidth + jf.potku_lisa_ulko_leveys;
+    if (kickHeight > 310) {
+        sideOuterWidth -= 5;
+    }
         results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
     }
     
@@ -2906,7 +2915,10 @@ function calculateJanisolKayntiovi(mainWidth, kickHeight, paneHeights) {
         const innerWidth = mainWidth + jf.potku_kaynti_sisa_leveys;
         results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
         
-        const outerWidth = applyKickHeightOuterWidthAdjust(mainWidth + jf.potku_kaynti_ulko_leveys, kickHeight);
+        let outerWidth = mainWidth + jf.potku_kaynti_ulko_leveys;
+        if (kickHeight > 310) {
+            outerWidth -= 5;
+        }
         results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
     
@@ -3002,7 +3014,10 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
     const mainInnerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
     results.potkupelti.push(`${mainInnerHeight} x ${mainInnerWidth}`);
     
-    const mainOuterWidth = applyKickHeightOuterWidthAdjust(mainWidth + ef.potku_kaynti_ulko_leveys, kickHeight);
+    let mainOuterWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
+    if (kickHeight > 310) {
+        mainOuterWidth -= 5;
+    }
     results.potkupelti.push(`${mainOuterHeight} x ${mainOuterWidth}`);
     
     // Potkupellit - Lisäovi
@@ -3023,9 +3038,12 @@ function calculateEconomyPariovi(mainWidth, sideWidth, kickHeight, paneHeights) 
         : sideWidth + ef.potku_lisa_sisa_leveys;
     results.potkupelti.push(`${sideInnerHeight} x ${sideInnerWidth}`);
     
-    const sideOuterWidth = applyKickHeightOuterWidthAdjust(settings.umpivasikkaEnabled
+    let sideOuterWidth = settings.umpivasikkaEnabled
         ? sideWidth + (ef.umpiovi_potku_lisa_ulko_leveys ?? ef.umpiovi_potku_ulko_leveys ?? 160)
-        : sideWidth + ef.potku_lisa_ulko_leveys, kickHeight);
+        : sideWidth + ef.potku_lisa_ulko_leveys;
+    if (kickHeight > 310) {
+        sideOuterWidth -= 5;
+    }
         results.potkupelti.push(`${sideOuterHeight} x ${sideOuterWidth}`);
     }
     
@@ -3100,7 +3118,10 @@ function calculateEconomyKayntiovi(mainWidth, kickHeight, paneHeights) {
         const innerWidth = mainWidth + ef.potku_kaynti_sisa_leveys;
         results.potkupelti.push(`${innerHeight} x ${innerWidth}`);
         
-        const outerWidth = applyKickHeightOuterWidthAdjust(mainWidth + ef.potku_kaynti_ulko_leveys, kickHeight);
+        let outerWidth = mainWidth + ef.potku_kaynti_ulko_leveys;
+        if (kickHeight > 310) {
+            outerWidth -= 5;
+        }
         results.potkupelti.push(`${outerHeight} x ${outerWidth}`);
     }
     
@@ -4503,10 +4524,6 @@ function getDefaultFormulas() {
             tiiviste_umpiovi_potku_ulko_korkeus: -20,
             tiiviste_umpiovi_potku_lisa_sisa_korkeus: -65,
             tiiviste_umpiovi_potku_lisa_ulko_korkeus: -20
-        },
-        poikkeamat: {
-            ulkopelti_x: 5,
-            ulkopelti_y: 310
         }
     };
 }
@@ -4629,13 +4646,6 @@ function loadFormulasToPanel() {
             if (input) input.value = formulas[calcKey][key];
         });
     });
-
-    if (formulas.poikkeamat) {
-        Object.keys(formulas.poikkeamat).forEach(key => {
-            const input = document.getElementById(`poikkeamat_${key}`);
-            if (input) input.value = formulas.poikkeamat[key];
-        });
-    }
     
     // Load available formula sets
     loadFormulaSetsList();
@@ -5351,10 +5361,6 @@ function collectFormulasFromPanel() {
             tiiviste_umpiovi_potku_ulko_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_ulko_korkeus').value),
             tiiviste_umpiovi_potku_lisa_sisa_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_lisa_sisa_korkeus').value),
             tiiviste_umpiovi_potku_lisa_ulko_korkeus: parseFloat(document.getElementById('pystypaneli_economy_pariovi_tiiviste_umpiovi_potku_lisa_ulko_korkeus').value)
-        },
-        poikkeamat: {
-            ulkopelti_x: poikkeamaNumber(parseFloat(document.getElementById('poikkeamat_ulkopelti_x').value), 5),
-            ulkopelti_y: poikkeamaNumber(parseFloat(document.getElementById('poikkeamat_ulkopelti_y').value), 310)
         }
     };
 }
@@ -6146,18 +6152,7 @@ function isKatseluMode() {
     return tuotantoDisplayMode !== 'tuotanto';
 }
 
-function initTuotantoDisplayOptionsMenu() {
-    const btn = document.getElementById('tuotantoDisplayOptionsBtn');
-    if (!btn || btn.dataset.displayMenuInit === '1') return;
-    btn.dataset.displayMenuInit = '1';
-    btn.addEventListener('hidden.bs.dropdown', () => {
-        const submenu = document.getElementById('nayttoModeSubmenu');
-        if (submenu) submenu.classList.add('d-none');
-    });
-}
-
 function applyTuotantoDisplayModeUi() {
-    initTuotantoDisplayOptionsMenu();
     const katselu = isKatseluMode();
     const view = document.getElementById('mittatView');
     if (view) {
@@ -6168,34 +6163,15 @@ function applyTuotantoDisplayModeUi() {
     if (toolbar) {
         toolbar.style.display = katselu ? 'none' : '';
     }
-    const katseluBtn = document.getElementById('btnDisplayModeKatselu');
-    const tuotantoBtn = document.getElementById('btnDisplayModeTuotanto');
-    if (katseluBtn) {
-        katseluBtn.classList.toggle('naytto-mode-current', katselu);
-        katseluBtn.classList.toggle('btn-secondary', katselu);
-        katseluBtn.classList.toggle('btn-outline-secondary', !katselu);
-        katseluBtn.textContent = katselu ? '✓ Katselu mode' : 'Katselu mode';
-    }
-    if (tuotantoBtn) {
-        tuotantoBtn.classList.toggle('naytto-mode-current', !katselu);
-        tuotantoBtn.classList.toggle('btn-secondary', !katselu);
-        tuotantoBtn.classList.toggle('btn-outline-secondary', katselu);
-        tuotantoBtn.textContent = !katselu ? '✓ Tuotanto mode' : 'Tuotanto mode';
-    }
-}
-
-function toggleNayttoModeSubmenu(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    const submenu = document.getElementById('nayttoModeSubmenu');
-    if (submenu) submenu.classList.toggle('d-none');
+    const ui = document.querySelector('#mittatView .tuotanto-display-options-menu .ovi-ui');
+    if (ui) ui.dataset.teema = document.body.classList.contains('dark-mode') ? 'tumma' : 'vaalea';
+    const tila = katselu ? 'katselu' : 'tuotanto';
+    document.querySelectorAll('#mittatView input[name="tuotantoTila"]').forEach((input) => {
+        input.checked = input.value === tila;
+    });
 }
 
 function closeTuotantoDisplayOptionsMenu() {
-    const submenu = document.getElementById('nayttoModeSubmenu');
-    if (submenu) submenu.classList.add('d-none');
     const menuBtn = document.getElementById('tuotantoDisplayOptionsBtn');
     if (menuBtn && window.bootstrap && bootstrap.Dropdown) {
         const dropdown = bootstrap.Dropdown.getInstance(menuBtn);
@@ -6203,24 +6179,17 @@ function closeTuotantoDisplayOptionsMenu() {
     }
 }
 
-function toggleTuotantoContentView(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
+function setTuotantoNakyma(value) {
+    if (value === 'sisalto') {
+        isTuotantoContentView = true;
+        isLapivientiView = false;
+    } else if (value === 'lapivienti') {
+        isLapivientiView = true;
+        isTuotantoContentView = false;
+    } else {
+        isTuotantoContentView = false;
+        isLapivientiView = false;
     }
-    isTuotantoContentView = !isTuotantoContentView;
-    if (isTuotantoContentView) isLapivientiView = false;
-    closeTuotantoDisplayOptionsMenu();
-    loadMittatView();
-}
-
-function toggleLapivientiView(event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    isLapivientiView = !isLapivientiView;
-    if (isLapivientiView) isTuotantoContentView = false;
     closeTuotantoDisplayOptionsMenu();
     loadMittatView();
 }
@@ -6635,7 +6604,8 @@ function buildTuotantoContentSummary(jobNumber) {
         paneliovi: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 }
     };
     const colors = new Set();
-    const metersBySize = {};
+    const sahatutBySize = {};
+    const sahaamattomatBySize = {};
 
     visibleItems.forEach(({ key, item }) => {
         const type = classifyProductionItem(item);
@@ -6658,6 +6628,7 @@ function buildTuotantoContentSummary(jobNumber) {
             const displayTitle = getLasilistaSectionTitle(section.title, item);
             const size = parseSizeFromSectionTitle(displayTitle) || String(item?.lasilistaSize || '').trim();
             if (!size) return;
+            const metersBySize = checkedMitat[key] ? sahatutBySize : sahaamattomatBySize;
             (section.items || []).forEach((row) => {
                 const parsed = parseLasilistaRow(row?.label || '');
                 if (!parsed) return;
@@ -6724,42 +6695,49 @@ function buildTuotantoContentSummary(jobNumber) {
     }
     html += '</div>';
 
-    const sizes = Object.keys(metersBySize).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }));
+    const renderLasilistaGroup = (title, metersBySize) => {
+        const sizes = Object.keys(metersBySize).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }));
+        let groupHtml = `<div class="tuotanto-content-subrow">${title}</div>`;
+        if (sizes.length === 0) {
+            groupHtml += '<p class="text-muted small mb-0">Ei lasilistoja.</p>';
+        } else {
+            groupHtml += '<ul class="tuotanto-content-sublist">';
+            sizes.forEach((size) => {
+                groupHtml += `<li>${escapeHtmlText(size)} ${formatLasilistaMeters(metersBySize[size])} m</li>`;
+            });
+            groupHtml += '</ul>';
+        }
+        return groupHtml;
+    };
+    const hasLasilistaMeters = Object.keys(sahatutBySize).length > 0 || Object.keys(sahaamattomatBySize).length > 0;
     html += '<div class="tuotanto-content-block">';
     html += '<div class="tuotanto-content-row">Lasilista</div>';
-    if (sizes.length === 0) {
+    if (!hasLasilistaMeters) {
         html += '<p class="text-muted small mb-0">Ei lasilistoja.</p>';
     } else {
-        html += '<ul class="tuotanto-content-sublist">';
-        sizes.forEach((size) => {
-            html += `<li>${escapeHtmlText(size)} ${formatLasilistaMeters(metersBySize[size])} m</li>`;
-        });
-        html += '</ul>';
+        html += renderLasilistaGroup('Sahatut', sahatutBySize);
+        html += renderLasilistaGroup('Sahaamattomat', sahaamattomatBySize);
     }
     html += '</div></div>';
     return html;
 }
 
 function applyTuotantoContentViewUi() {
-    const contentBtn = document.getElementById('btnTuotantoContentView');
-    if (contentBtn) {
-        contentBtn.classList.toggle('naytto-mode-current', isTuotantoContentView);
-        contentBtn.classList.toggle('btn-secondary', isTuotantoContentView);
-        contentBtn.classList.toggle('btn-outline-secondary', !isTuotantoContentView);
-        contentBtn.textContent = isTuotantoContentView ? '✓ Tuotanto sivun sisältö' : 'Tuotanto sivun sisältö';
-    }
-    const lapivientiBtn = document.getElementById('btnLapivientiView');
-    if (lapivientiBtn) {
-        lapivientiBtn.classList.toggle('naytto-mode-current', isLapivientiView);
-        lapivientiBtn.classList.toggle('btn-secondary', isLapivientiView);
-        lapivientiBtn.classList.toggle('btn-outline-secondary', !isLapivientiView);
-        lapivientiBtn.textContent = isLapivientiView ? '✓ Läpivienti' : 'Läpivienti';
-    }
+    const nakyma = isLapivientiView ? 'lapivienti' : (isTuotantoContentView ? 'sisalto' : 'lista');
+    document.querySelectorAll('#mittatView input[name="tuotantoNakyma"]').forEach((input) => {
+        input.checked = input.value === nakyma;
+    });
     const overlay = isTuotantoContentView || isLapivientiView;
+    const view = document.getElementById('mittatView');
+    if (view) view.classList.toggle('mittat-nakyma-overlay', overlay);
+    const kokoonpanijatBtn = document.getElementById('kokoonpanijatBtn');
+    const toolbar = document.getElementById('tuotantoToolbarActions');
     const searchRow = document.getElementById('mitatSearchRow');
     const splitHost = document.getElementById('mitatSplitLayoutHost');
     const summary = document.getElementById('tuotantoContentSummary');
     const lapivienti = document.getElementById('lapivientiView');
+    if (kokoonpanijatBtn) kokoonpanijatBtn.style.display = overlay ? 'none' : '';
+    if (toolbar) toolbar.style.display = (overlay || isKatseluMode()) ? 'none' : '';
     if (searchRow) searchRow.style.display = overlay ? 'none' : '';
     if (splitHost) splitHost.style.display = overlay ? 'none' : '';
     if (summary) {
@@ -7175,7 +7153,7 @@ function appendTekijaBadgesToSidebar(parent, jobNumber) {
 function renderKokoonpanijatBar() {
     const chips = document.getElementById('kokoonpanijatActiveRow');
     if (!chips) return;
-    if (isKatseluMode()) {
+    if (isKatseluMode() || isTuotantoContentView || isLapivientiView) {
         chips.innerHTML = '';
         chips.hidden = true;
         return;
@@ -11968,17 +11946,8 @@ function toggleScanner(enabled) {
     }
 }
 
-function poikkeamaNumber(value, fallback) {
-    if (value == null || value === '') return fallback;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
-}
-
 function applyKickHeightOuterWidthAdjust(width, kickHeight) {
-    const p = getActiveFormulas()?.poikkeamat || {};
-    const x = poikkeamaNumber(p.ulkopelti_x, 5);
-    const y = poikkeamaNumber(p.ulkopelti_y, 310);
-    return kickHeight > y ? width - x : width;
+    return kickHeight > 310 ? width - 5 : width;
 }
 
 function calcPystypaneliStartEnd(X, Y, alotus = -5) {

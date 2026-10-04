@@ -158,27 +158,183 @@ body {
 }
 
 .tuotanto-display-options-menu {
-    min-width: 200px;
+    min-width: 240px;
     z-index: 1080;
+    padding: 12px;
+    border: 1px solid rgba(22, 24, 28, 0.1);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgba(23, 24, 27, 0.12);
 }
 
-.tuotanto-display-options-menu .btn.w-100 {
-    transform: none;
+body.dark-mode .tuotanto-display-options-menu {
+    background: #16171a;
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
 
-.tuotanto-display-options-menu .btn.w-100:hover {
-    transform: none;
+.ovi-ui {
+    font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    letter-spacing: -0.006em;
+}
+.ovi-ui[data-teema="vaalea"] {
+    --teksti: #17181b;
+    --teksti-2: rgba(23, 24, 27, 0.6);
+    --aksentti-reuna: rgba(154, 125, 76, 0.4);
+    color: var(--teksti);
+    color-scheme: light;
+}
+.ovi-ui[data-teema="tumma"] {
+    --teksti: #eceae6;
+    --teksti-2: rgba(236, 234, 230, 0.56);
+    --aksentti-heikko: rgba(210, 191, 152, 0.14);
+    color: var(--teksti);
+    color-scheme: dark;
 }
 
-.tuotanto-display-options-menu .btn:not(:disabled),
-.tuotanto-display-options-menu .btn:not(:disabled):hover,
-.tuotanto-display-options-menu .btn:not(:disabled):focus {
-    color: #1a1a1a;
+.ovi-ui .toiminnot { display: flex; flex-direction: column; gap: 8px; }
+.ovi-ui .toiminnot-rivi { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+.ovi-ui .julkisivu-napit,
+.ovi-ui .tyokalut { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.ovi-ui .nappi-paa,
+.ovi-ui .nappi-haamu,
+.ovi-ui .jono-nappi {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font: inherit;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.ovi-ui .nappi-paa svg,
+.ovi-ui .nappi-haamu svg,
+.ovi-ui .jono-nappi svg {
+    width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor;
+    stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.ovi-ui button:disabled,
+.ovi-ui .jono-nappi:disabled { opacity: 0.4; cursor: default; }
+
+.ovi-ui[data-teema="vaalea"] .nappi-paa {
+    padding: 12px 14px; font-size: 0.92rem; font-weight: 600; color: #f6f1e7;
+    border: 1px solid #0f1012; border-radius: 11px;
+    background: linear-gradient(180deg, #2c2d31 0%, #17181b 100%);
+    box-shadow: 0 10px 26px rgba(23, 24, 27, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.ovi-ui[data-teema="vaalea"] .nappi-paa svg { color: #d9c49b; }
+.ovi-ui[data-teema="vaalea"] .nappi-paa:hover:not(:disabled) { filter: brightness(1.15); }
+.ovi-ui[data-teema="vaalea"] .nappi-haamu {
+    padding: 9px 10px; font-size: 0.8rem; font-weight: 600; color: var(--teksti-2);
+    border: 1px solid rgba(22, 24, 28, 0.12); border-radius: 11px; background: rgba(255, 255, 255, 0.6);
+}
+.ovi-ui[data-teema="vaalea"] .nappi-haamu:hover:not(:disabled) {
+    color: var(--teksti); border-color: rgba(22, 24, 28, 0.24); background: #fff;
+}
+.ovi-ui[data-teema="vaalea"] .nappi-paa:active:not(:disabled),
+.ovi-ui[data-teema="vaalea"] .nappi-haamu:active:not(:disabled) { transform: translateY(1px); }
+.ovi-ui[data-teema="vaalea"] .nappi-paa:focus-visible,
+.ovi-ui[data-teema="vaalea"] .nappi-haamu:focus-visible { outline: 2px solid var(--aksentti-reuna); outline-offset: 2px; }
+.ovi-ui[data-teema="vaalea"] .nappi-pieni { padding: 8px 12px; font-size: 0.8rem; border-radius: 10px; }
+
+.ovi-ui[data-teema="vaalea"] .tyyppi-valinta {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px;
+    border: 1px solid rgba(22, 24, 28, 0.1); border-radius: 11px; background: rgba(22, 24, 28, 0.035);
+}
+.ovi-ui[data-teema="vaalea"] .tyyppi-nappi span {
+    padding: 7px 10px; border-radius: 8px; background: transparent; color: var(--teksti-2);
+    box-shadow: none;
+}
+.ovi-ui[data-teema="vaalea"] .tyyppi-nappi input:checked + span {
+    background: #fff; color: var(--teksti);
+    box-shadow: inset 0 0 0 1px var(--aksentti-reuna), 0 1px 3px rgba(40, 34, 22, 0.1), 0 4px 12px rgba(154, 125, 76, 0.1);
 }
 
-.tuotanto-display-options-menu .btn:disabled {
-    color: #6c757d;
+.ovi-ui[data-teema="tumma"] .nappi-paa,
+.ovi-ui[data-teema="tumma"] .jono-nappi.ensisijainen {
+    color: #16171a; font-weight: 600; border: none; border-radius: 11px;
+    background: linear-gradient(180deg, #f1ebdf 0%, #ddd3c0 100%);
+    box-shadow: 0 8px 24px rgba(210, 191, 152, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
+.ovi-ui[data-teema="tumma"] .nappi-paa { padding: 12px 14px; font-size: 0.92rem; }
+.ovi-ui[data-teema="tumma"] .nappi-paa:hover:not(:disabled),
+.ovi-ui[data-teema="tumma"] .jono-nappi.ensisijainen:hover:not(:disabled) { filter: brightness(1.05); }
+.ovi-ui[data-teema="tumma"] .nappi-paa:active:not(:disabled) { transform: translateY(1px); }
+.ovi-ui[data-teema="tumma"] .nappi-paa:focus-visible { outline: 2px solid rgba(210, 191, 152, 0.6); outline-offset: 2px; }
+
+.ovi-ui[data-teema="tumma"] .jono-nappi {
+    padding: 7px 12px; font-size: 0.8rem; font-weight: 500; letter-spacing: 0; color: var(--teksti-2);
+    border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 9px; background: rgba(255, 255, 255, 0.04);
+}
+.ovi-ui[data-teema="tumma"] .jono-nappi:hover:not(:disabled) { color: var(--teksti); border-color: rgba(255, 255, 255, 0.2); }
+.ovi-ui[data-teema="tumma"] .jono-nappi:focus-visible { outline: 2px solid rgba(210, 191, 152, 0.5); outline-offset: 1px; }
+
+.ovi-ui .tyyppi-nappi,
+.ovi-ui .segmentti label { position: relative; display: block; margin: 0; cursor: pointer; }
+.ovi-ui .tyyppi-nappi input,
+.ovi-ui .segmentti input {
+    position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; padding: 0; border: 0;
+}
+.ovi-ui .tyyppi-nappi span,
+.ovi-ui .segmentti span {
+    display: block; text-align: center; font-size: 0.9rem; font-weight: 500; color: var(--teksti-2);
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.ovi-ui .tyyppi-nappi:hover span,
+.ovi-ui .segmentti label:hover span { color: var(--teksti); }
+
+.ovi-ui[data-teema="tumma"] .tyyppi-valinta {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 11px; background: rgba(255, 255, 255, 0.03);
+}
+.ovi-ui[data-teema="tumma"] .tyyppi-nappi span { padding: 8px 10px; border-radius: 8px; }
+.ovi-ui[data-teema="tumma"] .tyyppi-nappi input:checked + span {
+    background: var(--aksentti-heikko); color: #f3e9d6; box-shadow: inset 0 0 0 1px rgba(210, 191, 152, 0.28);
+}
+.ovi-ui[data-teema="tumma"] .segmentti {
+    display: flex; gap: 2px; padding: 3px; border-radius: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(14, 15, 18, 0.84);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+.ovi-ui[data-teema="tumma"] .segmentti span { padding: 7px 12px; border-radius: 8px; font-size: 0.8rem; white-space: nowrap; }
+.ovi-ui[data-teema="tumma"] .segmentti input:checked + span {
+    background: var(--aksentti-heikko); color: #f3e9d6; box-shadow: inset 0 0 0 1px rgba(210, 191, 152, 0.26);
+}
+.ovi-ui .tyyppi-nappi input:focus-visible + span,
+.ovi-ui .segmentti input:focus-visible + span { outline: 2px solid rgba(210, 191, 152, 0.5); outline-offset: 1px; }
+.ovi-ui[data-teema="vaalea"] .tyyppi-nappi input:focus-visible + span { outline-color: var(--aksentti-reuna); }
+
+.ovi-ui .ikoni {
+    display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 11px;
+    color: var(--teksti-2); cursor: pointer; transition: color 0.15s ease, border-color 0.15s ease;
+}
+.ovi-ui .ikoni svg {
+    width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6;
+    stroke-linecap: round; stroke-linejoin: round;
+}
+.ovi-ui[data-teema="vaalea"] .ikoni { border: 1px solid rgba(22, 24, 28, 0.12); background: rgba(255, 255, 255, 0.6); }
+.ovi-ui[data-teema="vaalea"] .ikoni:hover:not(:disabled) { color: var(--teksti); border-color: rgba(22, 24, 28, 0.24); background: #fff; }
+.ovi-ui[data-teema="tumma"] .ikoni {
+    border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(14, 15, 18, 0.84);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+.ovi-ui[data-teema="tumma"] .ikoni:hover:not(:disabled) { color: var(--teksti); border-color: rgba(255, 255, 255, 0.2); }
+.ovi-ui .ikoni:focus-visible { outline: 2px solid rgba(210, 191, 152, 0.5); outline-offset: 1px; }
+.ovi-ui .pelkka {
+    width: 32px; height: 32px; border: none; background: transparent; box-shadow: none;
+}
+
+.ovi-ui .naytto-ryhma + .naytto-ryhma { margin-top: 14px; }
+.ovi-ui .naytto-otsikko {
+    margin: 0 2px 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--teksti-2);
+}
+.ovi-ui .tyyppi-valinta.naytto-pysty { grid-template-columns: 1fr; }
 
 #mittatView > .card:first-child {
     position: relative;
@@ -190,16 +346,8 @@ body {
     transform: none;
 }
 
-.naytto-mode-submenu {
-    padding: 0;
-}
-
-.tuotanto-display-options-menu .dropdown-item.naytto-mode-current,
-.tuotanto-display-options-menu .naytto-mode-current {
-    font-weight: 700;
-}
-
-.mittat-mode-katselu #tuotantoToolbarActions {
+.mittat-mode-katselu #tuotantoToolbarActions,
+.mittat-nakyma-overlay #tuotantoToolbarActions {
     display: none !important;
 }
 
@@ -235,6 +383,13 @@ body {
 
 .tuotanto-content-row--total {
     font-size: 1.05rem;
+}
+
+.tuotanto-content-subrow {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin: 10px 0 2px;
 }
 
 .tuotanto-content-sublist {
