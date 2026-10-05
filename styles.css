@@ -361,18 +361,85 @@ body.dark-mode .tuotanto-display-options-menu {
 }
 
 .tuotanto-content-summary {
-    padding: 8px 4px 16px;
+    padding: 4px 0 20px;
 }
 
 .tuotanto-content-heading {
     color: var(--accent-color);
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin: 0 0 16px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 18px;
 }
 
 .tuotanto-content-block {
-    margin-bottom: 18px;
+    margin-bottom: 12px;
+}
+
+.tuotanto-content-block:last-child {
+    margin-bottom: 0;
+}
+
+.tuotanto-content-block details {
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.tuotanto-content-block summary.tuotanto-content-row {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    padding: 14px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+}
+
+.tuotanto-content-block summary.tuotanto-content-row::-webkit-details-marker {
+    display: none;
+}
+
+.tuotanto-content-block summary.tuotanto-content-row::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    margin-bottom: 3px;
+    border-right: 1.5px solid var(--text-muted);
+    border-bottom: 1.5px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 0.2s ease, margin 0.2s ease;
+}
+
+.tuotanto-content-block details[open] > summary.tuotanto-content-row::after {
+    margin-bottom: 0;
+    margin-top: 3px;
+    transform: rotate(225deg);
+}
+
+.tuotanto-content-panel > .tuotanto-content-subrow:first-child {
+    margin-top: 0;
+}
+
+.tuotanto-content-block summary.tuotanto-content-row:hover {
+    background: var(--bg-tertiary);
+}
+
+.tuotanto-content-block summary.tuotanto-content-row:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
+
+.tuotanto-content-panel {
+    padding: 14px 18px 16px;
+    border-top: 1px solid var(--border-color);
 }
 
 .tuotanto-content-row {
@@ -2713,10 +2780,14 @@ body.dark-mode .gradus-logo-dark {
     color: var(--text-primary);
 }
 
+.scanner-dropzone-pick {
+    margin-top: 0.85rem;
+}
+
 .scanner-dropzone-sub {
     font-size: 0.85rem;
     color: var(--text-secondary);
-    margin-top: 0.25rem;
+    margin-top: 0.65rem;
 }
 
 .scanner-status {

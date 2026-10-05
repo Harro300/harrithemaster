@@ -6564,7 +6564,7 @@ function formatLasilistaMeters(mm) {
     return rounded.toLocaleString('fi-FI', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
-function buildTuotantoContentSummary(jobNumber) {
+function buildTuotantoContentSummary(jobNumber, openSections) {
     const visibleItems = collectVisibleProductionItems(jobNumber);
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
@@ -6631,12 +6631,16 @@ function buildTuotantoContentSummary(jobNumber) {
         });
     });
 
+    const sectionOpen = (id) => (openSections instanceof Set && openSections.has(id)) ? ' open' : '';
+
     let html = '<div class="tuotanto-content-summary-inner">';
     if (!jobNumber) {
         html += '<h3 class="tuotanto-content-heading">Tuotantosivun sisältö</h3>';
     }
     html += '<div class="tuotanto-content-block">';
-    html += '<div class="tuotanto-content-row tuotanto-content-row--total">Tuotteita</div>';
+    html += `<details data-section="tuotteet"${sectionOpen('tuotteet')}>`;
+    html += '<summary class="tuotanto-content-row tuotanto-content-row--total">Tuotteita</summary>';
+    html += '<div class="tuotanto-content-panel">';
     html += '<table class="tuotanto-content-grid">';
     html += '<thead><tr>';
     html += '<th scope="col"></th>';
@@ -6673,11 +6677,13 @@ function buildTuotantoContentSummary(jobNumber) {
             ? `<td>${stageCount}</td>`
             : '<td class="is-empty">–</td>';
     });
-    html += '</tr></tfoot></table></div>';
+    html += '</tr></tfoot></table></div></details></div>';
 
     const colorList = Array.from(colors).sort((a, b) => a.localeCompare(b, 'fi'));
     html += '<div class="tuotanto-content-block">';
-    html += '<div class="tuotanto-content-row">Värit</div>';
+    html += `<details data-section="varit"${sectionOpen('varit')}>`;
+    html += '<summary class="tuotanto-content-row">Värit</summary>';
+    html += '<div class="tuotanto-content-panel">';
     if (colorList.length === 0) {
         html += '<p class="text-muted small mb-0">Ei merkittyjä lasilistavärejä.</p>';
     } else {
@@ -6687,7 +6693,7 @@ function buildTuotantoContentSummary(jobNumber) {
         });
         html += '</ul>';
     }
-    html += '</div>';
+    html += '</div></details></div>';
 
     const renderLasilistaGroup = (title, metersBySize) => {
         const sizes = Object.keys(metersBySize).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }));
@@ -6705,14 +6711,16 @@ function buildTuotantoContentSummary(jobNumber) {
     };
     const hasLasilistaMeters = Object.keys(sahatutBySize).length > 0 || Object.keys(sahaamattomatBySize).length > 0;
     html += '<div class="tuotanto-content-block">';
-    html += '<div class="tuotanto-content-row">Lasilista</div>';
+    html += `<details data-section="lasilista"${sectionOpen('lasilista')}>`;
+    html += '<summary class="tuotanto-content-row">Lasilista</summary>';
+    html += '<div class="tuotanto-content-panel">';
     if (!hasLasilistaMeters) {
         html += '<p class="text-muted small mb-0">Ei lasilistoja.</p>';
     } else {
         html += renderLasilistaGroup('Sahatut', sahatutBySize);
         html += renderLasilistaGroup('Sahaamattomat', sahaamattomatBySize);
     }
-    html += '</div></div>';
+    html += '</div></details></div></div>';
     return html;
 }
 
@@ -6735,8 +6743,17 @@ function applyTuotantoContentViewUi() {
     if (searchRow) searchRow.style.display = overlay ? 'none' : '';
     if (splitHost) splitHost.style.display = overlay ? 'none' : '';
     if (summary) {
-        summary.hidden = !isTuotantoContentView;
-        summary.innerHTML = isTuotantoContentView ? buildTuotantoContentSummary() : '';
+        if (isTuotantoContentView) {
+            const open = new Set();
+            summary.querySelectorAll('details[data-section][open]').forEach((el) => {
+                if (el.dataset.section) open.add(el.dataset.section);
+            });
+            summary.hidden = false;
+            summary.innerHTML = buildTuotantoContentSummary(undefined, open);
+        } else {
+            summary.hidden = true;
+            summary.innerHTML = '';
+        }
     }
     if (lapivienti) {
         lapivienti.hidden = !isLapivientiView;
