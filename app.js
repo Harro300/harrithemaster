@@ -176,7 +176,8 @@ function getMitatStateFromLocalStorage() {
         mittatNotes: JSON.parse(localStorage.getItem('mittatNotes') || '{}'),
         packedTimestamps: JSON.parse(localStorage.getItem('packedTimestamps') || '{}'),
         jobBlocks: JSON.parse(localStorage.getItem('jobBlocks') || '{}'),
-        itemBlocks: JSON.parse(localStorage.getItem('itemBlocks') || '{}')
+        itemBlocks: JSON.parse(localStorage.getItem('itemBlocks') || '{}'),
+        jobShipDates: JSON.parse(localStorage.getItem('jobShipDates') || '{}')
     };
 }
 
@@ -193,6 +194,7 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('packedTimestamps', JSON.stringify(state.packedTimestamps || {}));
     localStorage.setItem('jobBlocks', JSON.stringify(state.jobBlocks || {}));
     localStorage.setItem('itemBlocks', JSON.stringify(state.itemBlocks || {}));
+    localStorage.setItem('jobShipDates', JSON.stringify(state.jobShipDates || {}));
 }
 
 function mergePrefixedJobChecks(target, jobNumber, itemMap) {
@@ -215,7 +217,8 @@ function applyActiveJobPayloadsToLocalStorage(payloads) {
         mittatNotes: {},
         packedTimestamps: {},
         jobBlocks: {},
-        itemBlocks: {}
+        itemBlocks: {},
+        jobShipDates: {}
     };
     (payloads || []).forEach((payload) => {
         if (!payload || !payload.jobNumber) return;
@@ -239,6 +242,8 @@ function applyActiveJobPayloadsToLocalStorage(payloads) {
         if (Array.isArray(payload.jobBlocks)) {
             state.jobBlocks[jobNumber] = payload.jobBlocks;
         }
+        const shipDate = normalizeShipDate(payload.shipDate);
+        if (shipDate) state.jobShipDates[jobNumber] = shipDate;
         mergePrefixedJobChecks(state.itemBlocks, jobNumber, payload.itemBlocks);
         Object.entries(payload.packedTimestamps || {}).forEach(([pkg, ts]) => {
             if (ts) state.packedTimestamps[`${jobNumber}-${pkg}`] = ts;
@@ -471,7 +476,7 @@ function buildTuotantoJobPayload(jobNumber) {
 
     const itemBlocks = mapJobItemValues(state.itemBlocks, jobNumber, itemNames);
 
-    return {
+    const payload = {
         jobNumber: String(jobNumber),
         status: 'active',
         items: JSON.parse(JSON.stringify(items)),
@@ -489,6 +494,9 @@ function buildTuotantoJobPayload(jobNumber) {
         itemBlocks,
         packedTimestamps
     };
+    const shipDate = normalizeShipDate(state.jobShipDates && state.jobShipDates[jobNumber]);
+    if (shipDate) payload.shipDate = shipDate;
+    return payload;
 }
 
 function isMitatDataClearedAgainstKnownJobs() {
@@ -7337,10 +7345,22 @@ function parseItemUnitCount(item) {
     return n;
 }
 
-function formatItemUnitSuffix(item) {
+function formatProductionAddedLabel(timestamp) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return '';
+    const pad = (value) => String(value).padStart(2, '0');
+    const day = pad(date.getDate());
+    const month = pad(date.getMonth() + 1);
+    const year = pad(date.getFullYear() % 100);
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `lisätty tuotantosivulle ${day}.${month}.${year} / ${hours}.${minutes}`;
+}
+
+function formatItemUnitPhrase(item) {
     const n = parseItemUnitCount(item);
     if (n == null) return '';
-    return ` <span class="mitat-item-unit">${n}</span>`;
+    return `${n} yksikköä`;
 }
 
 // Load and display Mitat view
@@ -7357,6 +7377,7 @@ function loadMittatView() {
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const hiddenMitatItems = JSON.parse(localStorage.getItem('hiddenMitatItems') || '{}');
     const jobBlocksAll = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    const jobShipDatesAll = JSON.parse(localStorage.getItem('jobShipDates') || '{}');
     const itemBlocksAll = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
     let hiddenItemsCount = 0;
     Object.keys(mittatData).forEach((jobNumber) => {
@@ -7446,6 +7467,13 @@ function loadMittatView() {
     };
 
     const jobNumbers = Object.keys(mittatData).sort((a, b) => {
+        const aShip = getJobEffectiveShipDate(a, jobShipDatesAll, jobBlocksAll);
+        const bShip = getJobEffectiveShipDate(b, jobShipDatesAll, jobBlocksAll);
+        if (aShip !== bShip) {
+            if (!aShip) return 1;
+            if (!bShip) return -1;
+            return aShip < bShip ? -1 : 1;
+        }
         const aGreen = jobHasGreenTekija(a);
         const bGreen = jobHasGreenTekija(b);
         if (aGreen !== bGreen) return aGreen ? -1 : 1;
@@ -7488,44 +7516,55 @@ function loadMittatView() {
         if (isFullyPacked) return;
         if (!jobHasSelectedTekija(jobNumber)) return;
 
+        const safeJobAttr = sanitizeForAttribute(jobNumber);
+        const jobOwnShipLabel = formatShipDateLabel(jobShipDatesAll[jobNumber]);
+        const jobBlockList = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
+        const hasJobBlocks = jobBlockList.length > 0;
+        const isBlockSelectedForJob = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
+
         html += `<div class="mitat-job-section" data-job-number="${encodeURIComponent(jobNumber)}">`;
         html += `<div class="mitat-job-header" onclick="toggleJobDetails('${jobId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${jobId}" aria-label="Avaa/sulje työ ${jobNumber}">`;
         html += `<div class="d-flex align-items-center gap-2 flex-wrap">`;
+        html += `<div class="mitat-job-heading">`;
         const jobTitleClass = [
             'mitat-job-title',
             isShowingHiddenItems && jobHasHiddenItems ? 'mitat-job-title-blink' : '',
             jobHasGreenTekija(jobNumber) ? 'mitat-job-title--green' : ''
         ].filter(Boolean).join(' ');
-        const safeJobAttr = sanitizeForAttribute(jobNumber);
-        const jobBlockList = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
-        const hasJobBlocks = jobBlockList.length > 0;
         html += `<h4 class="${jobTitleClass}">`;
         html += `<span>Työ </span>`;
-        if (katselu) {
-            html += `<span class="mitat-job-number-text">${escapeHtmlText(jobNumber)}</span>`;
-        } else {
-            html += `<div class="dropdown d-inline-block mitat-item-actions">`;
-            html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
-            html += `<ul class="dropdown-menu p-2 mitat-job-actions-menu" onclick="event.stopPropagation();">`;
-            html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showJobDetails('${safeJobAttr}', this)">Tiedot</button></li>`;
-            const viewFilter = getMitatJobViewFilter(jobNumber);
-            const showAllView = !viewFilter.unmarked && !viewFilter.lasilistat && !viewFilter.done && !viewFilter.packed;
-            html += `<li class="mt-1">`;
-            html += `<button class="btn btn-sm btn-outline-secondary w-100 mitat-job-view-toggle" type="button" aria-expanded="false" onclick="toggleMitatJobViewMenu(event, this)">Näkymä</button>`;
-            html += `<ul class="mitat-job-view-submenu list-unstyled mb-0 mt-1" hidden>`;
-            html += buildMitatJobViewFilterRow(safeJobAttr, 'all', 'Näytä kaikki', showAllView);
-            html += buildMitatJobViewFilterRow(safeJobAttr, 'unmarked', 'Näytä merkkaamattomat', viewFilter.unmarked);
-            html += buildMitatJobViewFilterRow(safeJobAttr, 'lasilistat', 'Näytä sahatut lasilistat', viewFilter.lasilistat);
-            html += buildMitatJobViewFilterRow(safeJobAttr, 'done', 'Näytä tehdyt', viewFilter.done);
-            html += buildMitatJobViewFilterRow(safeJobAttr, 'packed', 'Näytä pakatut', viewFilter.packed);
-            html += `</ul></li>`;
-            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="renameMitatJob('${safeJobAttr}', this)">Muokkaa työnumeroa</button></li>`;
-            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
-            html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openValitseTekijaModal('${safeJobAttr}', this)">Valitse tekijä</button></li>`;
-            html += `</ul>`;
-            html += `</div>`;
+        html += `<div class="dropdown d-inline-block mitat-item-actions">`;
+        html += `<button type="button" class="mitat-job-number-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Työn ${escapeHtmlText(jobNumber)} toiminnot" title="Työn toiminnot">${escapeHtmlText(jobNumber)}</button>`;
+        html += `<ul class="dropdown-menu p-2 mitat-job-actions-menu" onclick="event.stopPropagation();">`;
+        html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showJobDetails('${safeJobAttr}', this)">Tiedot</button></li>`;
+        const shipMenuLabel = jobOwnShipLabel || 'Lähetyspvm';
+        html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openShipDateModal('${safeJobAttr}', '', this)">${escapeHtmlText(shipMenuLabel)}</button></li>`;
+        const viewFilter = getMitatJobViewFilter(jobNumber);
+        const showAllView = !viewFilter.unmarked && !viewFilter.lasilistat && !viewFilter.done && !viewFilter.packed;
+        html += `<li class="mt-1">`;
+        html += `<button class="btn btn-sm btn-outline-secondary w-100 mitat-job-view-toggle" type="button" aria-expanded="false" onclick="toggleMitatJobViewMenu(event, this)">Näkymä</button>`;
+        html += `<ul class="mitat-job-view-submenu list-unstyled mb-0 mt-1" hidden>`;
+        html += buildMitatJobViewFilterRow(safeJobAttr, 'all', 'Näytä kaikki', showAllView);
+        html += buildMitatJobViewFilterRow(safeJobAttr, 'unmarked', 'Näytä merkkaamattomat', viewFilter.unmarked);
+        html += buildMitatJobViewFilterRow(safeJobAttr, 'lasilistat', 'Näytä sahatut lasilistat', viewFilter.lasilistat);
+        html += buildMitatJobViewFilterRow(safeJobAttr, 'done', 'Näytä tehdyt', viewFilter.done);
+        html += buildMitatJobViewFilterRow(safeJobAttr, 'packed', 'Näytä pakatut', viewFilter.packed);
+        html += `</ul></li>`;
+        html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="renameMitatJob('${safeJobAttr}', this)">Muokkaa työnumeroa</button></li>`;
+        html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="startJobBlocksFlow('${safeJobAttr}')">Jaa tuotteet lohkoihin</button></li>`;
+        if (hasJobBlocks) {
+            const jobBlockBtnClass = isBlockSelectedForJob ? 'btn btn-sm btn-success w-100' : 'btn btn-sm btn-outline-secondary w-100';
+            const jobBlockBtnText = isBlockSelectedForJob ? '✅ Vie lohkoon -tila päällä' : 'Vie lohkoon';
+            html += `<li class="mt-1"><button class="${jobBlockBtnClass}" type="button" onclick="startBlockAssignForJob('${safeJobAttr}')">${jobBlockBtnText}</button></li>`;
         }
+        html += `<li class="mt-1"><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openValitseTekijaModal('${safeJobAttr}', this)">Valitse tekijä</button></li>`;
+        html += `</ul>`;
+        html += `</div>`;
         html += `</h4>`;
+        if (jobOwnShipLabel) {
+            html += `<div class="mitat-job-ship-date">${escapeHtmlText(jobOwnShipLabel)}</div>`;
+        }
+        html += `</div>`;
         html += buildTekijaBadgesHtml(jobNumber);
         html += `<button class="btn-note ${jobNoteClass}" onclick="event.stopPropagation(); openMittatNote('job', '${jobNumber}', '', this)" title="Muistiinpano">📝</button>`;
         const progressCircumference = 2 * Math.PI * 15.5;
@@ -7538,6 +7577,9 @@ function loadMittatView() {
         html += `</svg>`;
         html += `<span class="mitat-job-progress-text" id="${jobId}-progress-text">${doneCount}/${totalCount}</span>`;
         html += `</div>`;
+        if (isBlockSelectedForJob) {
+            html += `<button type="button" class="btn btn-sm mitat-job-block-exit-btn" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">Poistu lohko tilasta</button>`;
+        }
         const viewFilterLabel = formatMitatJobViewFilterLabel(getMitatJobViewFilter(jobNumber));
         if (viewFilterLabel) {
             html += `<span class="mitat-job-view-status">${escapeHtmlText(viewFilterLabel)} · ${visibleItemNames.length}</span>`;
@@ -7614,12 +7656,6 @@ function loadMittatView() {
             html += `<li class="mt-1"><button type="button" class="${jobPaneeliBtnClass} w-100" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPaneeliPdfForJob('${sanitizeForAttribute(jobNumber)}')">${jobPaneeliBtnText}</button></li>`;
             html += `</ul>`;
             html += `</div>`;
-            if (hasJobBlocks) {
-                const isBlockSelectedForJob = isBlockAssignMode && selectedBlockJobNumber === jobNumber;
-                const jobBlockBtnClass = isBlockSelectedForJob ? 'btn btn-success' : 'btn btn-outline-secondary';
-                const jobBlockBtnText = isBlockSelectedForJob ? '✅ Vie lohkoon -tila päällä' : 'Vie lohkoon';
-                html += `<button class="${jobBlockBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">${jobBlockBtnText}</button>`;
-            }
             html += `</div>`;
         }
 
@@ -7634,9 +7670,25 @@ function loadMittatView() {
         itemGroups.forEach((group) => {
             const showBlockHeader = hasJobBlocks && group.name;
             if (showBlockHeader) {
+                const blockShipLabel = group.shipDate ? formatShipDateLabel(group.shipDate) : '';
                 html += `<div class="mitat-block-group">`;
                 html += `<div class="mitat-block-header">`;
-                html += `<span>${escapeHtmlText(group.name)}</span>`;
+                html += `<div class="mitat-block-heading">`;
+                if (group.id) {
+                    const blockMenuLabel = blockShipLabel || 'Lähetyspvm';
+                    html += `<div class="dropdown d-inline-block">`;
+                    html += `<button type="button" class="mitat-block-name-btn" data-bs-toggle="dropdown" onclick="event.stopPropagation();" aria-haspopup="true" aria-expanded="false" aria-label="Lohkon ${escapeHtmlText(group.name)} toiminnot" title="Lohkon toiminnot">${escapeHtmlText(group.name)}</button>`;
+                    html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
+                    html += `<li><button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="openShipDateModal('${safeJobAttr}', '${sanitizeForAttribute(group.id)}', this)">${escapeHtmlText(blockMenuLabel)}</button></li>`;
+                    html += `</ul>`;
+                    html += `</div>`;
+                } else {
+                    html += `<span class="mitat-block-name">${escapeHtmlText(group.name)}</span>`;
+                }
+                if (blockShipLabel) {
+                    html += `<span class="mitat-block-ship-date">${escapeHtmlText(blockShipLabel)}</span>`;
+                }
+                html += `</div>`;
                 if (group.id && !katselu) {
                     html += `<button type="button" class="mitat-block-delete-btn" title="Poista lohko" aria-label="Poista lohko ${escapeHtmlText(group.name)}" onclick="event.stopPropagation(); deleteJobBlock('${safeJobAttr}', '${sanitizeForAttribute(group.id)}')">×</button>`;
                 }
@@ -7644,7 +7696,7 @@ function loadMittatView() {
             }
             group.items.forEach((itemName) => {
             const item = mittatData[jobNumber][itemName];
-            const date = new Date(item.timestamp).toLocaleString('fi-FI');
+            const addedAtLabel = formatProductionAddedLabel(item.timestamp);
             const uniqueId = `mitat-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
             const checkKey = `${jobNumber}-${itemName}`;
             const isHidden = !!hiddenMitatItems[checkKey];
@@ -7681,7 +7733,7 @@ function loadMittatView() {
             html += `<div class="mitat-item-header-main">`;
             html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
             const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
-            html += `<h5 class="${itemTitleClass}">- ${itemName}${formatItemUnitSuffix(item)}</h5>`;
+            html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
             const safeItemAttr = sanitizeForAttribute(itemName);
             if (!katselu) {
                 html += `<div class="dropdown mitat-item-actions">`;
@@ -7795,7 +7847,7 @@ function loadMittatView() {
                 const titleAttr = isPaneelitChecked ? ' title="Paneelit jo merkitty"' : '';
                 html += `<button class="${btnClass}"${disabledAttr}${titleAttr} onclick="event.stopPropagation(); togglePaneeliPdfItem('${sanitizeForAttribute(jobNumber)}', '${sanitizeForAttribute(itemName)}')">${btnText}</button>`;
             }
-            if (!katselu && isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
+            if (isBlockAssignMode && selectedBlockJobNumber === jobNumber) {
                 const blockKey = `${jobNumber}||${itemName}`;
                 const blockChecked = !!selectedBlockItems[blockKey];
                 const btnClass = blockChecked ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-primary';
@@ -7813,10 +7865,14 @@ function loadMittatView() {
             html += `<span class="mitat-toggle-icon" id="${uniqueId}-icon">▼</span>`;
             html += `</div>`;
             html += `</div>`;
-            html += `<div class="mitat-item-header-secondary">`;
-            html += `<small class="text-muted">${date}</small>`;
-            html += `<div></div>`;
-            html += `</div>`;
+            const itemColor = String(item?.lasilistaColor || '').trim();
+            const unitPhrase = formatItemUnitPhrase(item);
+            const itemMetaParts = [];
+            if (itemColor) itemMetaParts.push(itemColor);
+            if (unitPhrase) itemMetaParts.push(unitPhrase);
+            if (itemMetaParts.length) {
+                html += `<div class="mitat-item-header-secondary">${escapeHtmlText(itemMetaParts.join(' / '))}</div>`;
+            }
             html += `</div>`;
             
             // Render results (hidden by default)
@@ -7837,6 +7893,9 @@ function loadMittatView() {
                 html += `</div>`;
                 html += `</div>`;
             });
+            if (addedAtLabel) {
+                html += `<p class="mitat-added-at">${addedAtLabel}</p>`;
+            }
             if (!katselu) {
                 html += `<div class="d-flex justify-content-end align-items-center gap-2 mt-2">`;
                 html += `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); copyMittaResults('${jobNumber}', '${itemName}', event)">📋 Kopioi</button>`;
@@ -7938,6 +7997,8 @@ function setupMitatSplitLayout() {
             title.classList.add('mitat-job-title--green');
         }
         textWrap.appendChild(title);
+        const shipDateEl = section.querySelector('.mitat-job-ship-date');
+        if (shipDateEl) textWrap.appendChild(shipDateEl.cloneNode(true));
         appendTekijaBadgesToSidebar(textWrap, jobNumber);
         button.appendChild(textWrap);
 
@@ -8881,6 +8942,7 @@ let isBlockAssignMode = false;
 let selectedBlockJobNumber = null;
 let selectedBlockItems = {};
 let pendingJobBlocksJobNumber = null;
+let pendingShipDateTarget = null;
 let isShowingHiddenItems = false;
 let mitatSearchQuery = '';
 let mitatSearchWasActive = false;
@@ -9154,6 +9216,126 @@ function formatFinnishDate(date) {
     return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
 }
 
+function normalizeShipDate(value) {
+    const text = String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+    const [year, month, day] = text.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+    return text;
+}
+
+function formatShipDateLabel(value) {
+    const iso = normalizeShipDate(value);
+    if (!iso) return '';
+    const [year, month, day] = iso.split('-').map(Number);
+    return `Lähetyspvm ${formatFinnishDate(new Date(year, month - 1, day))}`;
+}
+
+function getJobOwnShipDate(jobNumber, jobShipDates) {
+    const map = jobShipDates || JSON.parse(localStorage.getItem('jobShipDates') || '{}');
+    return normalizeShipDate(map[jobNumber]);
+}
+
+function getEarliestBlockShipDate(blocks) {
+    let earliest = '';
+    (blocks || []).forEach((block) => {
+        const date = normalizeShipDate(block && block.shipDate);
+        if (date && (!earliest || date < earliest)) earliest = date;
+    });
+    return earliest;
+}
+
+function getJobEffectiveShipDate(jobNumber, jobShipDates, jobBlocksAll) {
+    const own = getJobOwnShipDate(jobNumber, jobShipDates);
+    if (own) return own;
+    const blocks = jobBlocksAll && Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
+    return getEarliestBlockShipDate(blocks);
+}
+
+function deleteJobShipDate(jobNumber) {
+    const dates = JSON.parse(localStorage.getItem('jobShipDates') || '{}');
+    if (!Object.prototype.hasOwnProperty.call(dates, jobNumber)) return;
+    delete dates[jobNumber];
+    localStorage.setItem('jobShipDates', JSON.stringify(dates));
+}
+
+function openShipDateModal(jobNumber, blockId, btn) {
+    const menu = btn?.closest('.dropdown-menu');
+    const dropdownToggle = menu?.previousElementSibling;
+    if (dropdownToggle && window.bootstrap?.Dropdown) {
+        bootstrap.Dropdown.getInstance(dropdownToggle)?.hide();
+    }
+
+    const blockKey = String(blockId || '');
+    pendingShipDateTarget = { jobNumber, blockId: blockKey };
+    const titleEl = document.getElementById('shipDateTitle');
+    const input = document.getElementById('shipDateInput');
+    const clearBtn = document.getElementById('shipDateClearBtn');
+    let current = '';
+    if (blockKey) {
+        const block = getJobBlocks(jobNumber).find((entry) => entry.id === blockKey);
+        current = normalizeShipDate(block && block.shipDate);
+        if (titleEl) titleEl.textContent = `Lähetyspvm — ${block?.name || 'lohko'}`;
+    } else {
+        current = getJobOwnShipDate(jobNumber);
+        if (titleEl) titleEl.textContent = `Lähetyspvm — työ ${jobNumber}`;
+    }
+    if (input) input.value = current;
+    if (clearBtn) clearBtn.hidden = !current;
+
+    const modalEl = document.getElementById('shipDateModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function confirmShipDate() {
+    if (!pendingShipDateTarget) return;
+    const input = document.getElementById('shipDateInput');
+    const iso = normalizeShipDate(input && input.value);
+    if (!iso) {
+        showToast('Valitse päivämäärä.', 'warning');
+        return;
+    }
+    saveShipDate(pendingShipDateTarget, iso);
+}
+
+function clearShipDate() {
+    if (!pendingShipDateTarget) return;
+    saveShipDate(pendingShipDateTarget, '');
+}
+
+function saveShipDate(target, iso) {
+    const jobNumber = target.jobNumber;
+    const blockId = target.blockId;
+    if (blockId) {
+        const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+        const blocks = Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
+        const block = blocks.find((entry) => entry.id === blockId);
+        if (!block) {
+            showToast('Lohkoa ei löytynyt.', 'warning');
+            return;
+        }
+        if (iso) block.shipDate = iso;
+        else delete block.shipDate;
+        jobBlocks[jobNumber] = blocks;
+        localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
+    } else {
+        const dates = JSON.parse(localStorage.getItem('jobShipDates') || '{}');
+        if (iso) dates[jobNumber] = iso;
+        else delete dates[jobNumber];
+        localStorage.setItem('jobShipDates', JSON.stringify(dates));
+    }
+
+    dualWriteMitatState(jobNumber);
+    const modalEl = document.getElementById('shipDateModal');
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+    pendingShipDateTarget = null;
+    loadMittatView();
+    showToast(iso ? 'Lähetyspäivä tallennettu' : 'Lähetyspäivä poistettu', iso ? 'success' : 'info');
+}
+
 function getJobBlocks(jobNumber) {
     const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     return Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
@@ -9166,6 +9348,7 @@ function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, item
     const groups = jobBlockList.map((block) => ({
         id: block.id,
         name: block.name,
+        shipDate: normalizeShipDate(block.shipDate),
         items: []
     }));
     const byId = {};
@@ -9182,9 +9365,20 @@ function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, item
         }
     });
     if (unassigned.length > 0) {
-        groups.push({ id: null, name: 'Ei lohkoa', items: unassigned });
+        groups.push({ id: null, name: 'Ei lohkoa', shipDate: '', items: unassigned });
     }
-    return groups;
+    return sortBlockGroupsByShipDate(groups);
+}
+
+function sortBlockGroupsByShipDate(groups) {
+    const dated = [];
+    const undated = [];
+    groups.forEach((group) => {
+        if (normalizeShipDate(group.shipDate)) dated.push(group);
+        else undated.push(group);
+    });
+    dated.sort((a, b) => (a.shipDate < b.shipDate ? -1 : a.shipDate > b.shipDate ? 1 : 0));
+    return dated.concat(undated);
 }
 
 function persistMitatBlockState(jobNumber) {
@@ -9403,10 +9597,17 @@ function confirmJobBlocksCreate() {
         return;
     }
 
-    const blocks = entries.map((entry) => ({
-        id: existingIds.has(entry.id) ? entry.id : createJobBlockId(),
-        name: entry.name
-    }));
+    const existingById = {};
+    existing.forEach((block) => {
+        if (block && block.id) existingById[block.id] = block;
+    });
+    const blocks = entries.map((entry) => {
+        const id = existingIds.has(entry.id) ? entry.id : createJobBlockId();
+        const block = { id, name: entry.name };
+        const previousDate = normalizeShipDate(existingById[entry.id] && existingById[entry.id].shipDate);
+        if (previousDate && id === entry.id) block.shipDate = previousDate;
+        return block;
+    });
     const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     jobBlocks[jobNumber] = blocks;
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
@@ -10650,6 +10851,12 @@ async function renameMitatJob(jobNumber, btn) {
         delete jobBlocks[jobNumber];
         localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     }
+    const jobShipDates = JSON.parse(localStorage.getItem('jobShipDates') || '{}');
+    if (jobNumber in jobShipDates) {
+        jobShipDates[trimmed] = jobShipDates[jobNumber];
+        delete jobShipDates[jobNumber];
+        localStorage.setItem('jobShipDates', JSON.stringify(jobShipDates));
+    }
     remapJobTekijat(jobNumber, trimmed);
     remapLapivientiJob(jobNumber, trimmed, itemNames);
 
@@ -11652,6 +11859,7 @@ function deleteJobMitat(jobNumber) {
     delete mittatNotes[`job-${jobNumber}`];
     delete mittatData[jobNumber];
     delete jobBlocks[jobNumber];
+    deleteJobShipDate(jobNumber);
     deleteJobTekijat(jobNumber);
     deleteLapivientiForJob(jobNumber);
 
@@ -11869,6 +12077,7 @@ function deleteMitta(jobNumber, itemName) {
                 delete jobBlocks[jobNumber];
                 localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
             }
+            deleteJobShipDate(jobNumber);
         }
 
         dualWriteMitatState(jobNumber);

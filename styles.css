@@ -1903,6 +1903,17 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     box-shadow: 0 2px 10px var(--card-shadow);
 }
 
+.mitat-job-block-exit-btn,
+.mitat-job-block-exit-btn:hover,
+.mitat-job-block-exit-btn:focus,
+.mitat-job-block-exit-btn:active {
+    background-color: #ffc107;
+    border-color: #e0ac00;
+    color: #1a1a1a;
+    padding: 5px 10px;
+    font-size: 0.75rem;
+}
+
 .mitat-job-header {
     display: flex;
     justify-content: space-between;
@@ -1940,6 +1951,21 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 .mitat-job-number-btn:hover,
 .mitat-job-number-btn:focus-visible {
     color: var(--accent-hover);
+}
+
+.mitat-job-heading {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.mitat-job-ship-date,
+.mitat-block-ship-date {
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-secondary);
 }
 
 .mitat-job-title .dropdown-menu {
@@ -2145,6 +2171,36 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     margin-bottom: 4px;
 }
 
+.mitat-block-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+.mitat-block-name-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 700;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.mitat-block-name-btn:hover,
+.mitat-block-name-btn:focus-visible {
+    color: var(--accent-hover);
+}
+
+.mitat-block-header .dropdown-menu {
+    min-width: 220px;
+    z-index: 1050;
+}
+
 .mitat-block-delete-btn {
     border: none;
     background: transparent;
@@ -2193,10 +2249,10 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 }
 
 .mitat-item-header-secondary {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     width: 100%;
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: var(--text-secondary);
 }
 
 .mitat-item-title {
@@ -2360,6 +2416,13 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-result-section:last-child {
     margin-bottom: 6px;
+}
+
+.mitat-added-at {
+    margin: 2px 0 8px;
+    padding-left: 6px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
 .mitat-result-section h6 {
