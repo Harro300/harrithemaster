@@ -29,6 +29,10 @@ let tuotantoJobCopyDone = false;
 let paketitIndexUnsubscribe = null;
 let kokoonpanijatUnsubscribe = null;
 let kokoonpanijatLoaded = false;
+let maaliVarastoUnsubscribe = null;
+let maaliVarastoLoaded = false;
+let maaliVarastoApplyingRemote = false;
+let maaliVarastoSyncQueued = false;
 let paketitIndexJobs = [];
 let paketitIndexLoaded = false;
 let paketitIndexCopyDone = false;
@@ -46,7 +50,9 @@ let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
 let isTuotantoContentView = false;
 let isLapivientiView = false;
+let isMateriaaliVarastoView = false;
 let selectedLapivientiWeek = null;
+let selectedMaaliVarastoWeek = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -1529,6 +1535,36 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe kokoonpanijat-kuuntelijan luonnissa:', error);
     }
+
+    try {
+        maaliVarastoUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'maaliVarasto'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    maaliVarastoLoaded = true;
+                    if (maaliVarastoLocalHasData()) {
+                        void syncMaaliVarastoToFirestore();
+                    }
+                    return;
+                }
+                const incoming = maaliVarastoPayloadFromRemote(docSnapshot.data() || {});
+                const same = maaliVarastoStateKey(incoming) === maaliVarastoStateKey(buildMaaliVarastoPayload());
+                if (!same) applyMaaliVarastoPayload(incoming);
+                maaliVarastoLoaded = true;
+                if (!same) {
+                    const mittatView = document.getElementById('mittatView');
+                    if (mittatView && !mittatView.classList.contains('d-none')) {
+                        loadMittatView();
+                    }
+                }
+            },
+            (error) => {
+                console.error('❌ Maalivarasto-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe maalivarasto-kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -1562,6 +1598,12 @@ function stopRealtimeListeners() {
         kokoonpanijatUnsubscribe = null;
     }
     kokoonpanijatLoaded = false;
+
+    if (maaliVarastoUnsubscribe) {
+        maaliVarastoUnsubscribe();
+        maaliVarastoUnsubscribe = null;
+    }
+    maaliVarastoLoaded = false;
     
     console.log('✅ Kuuntelijat lopetettu');
 }
@@ -1993,6 +2035,7 @@ async function logout() {
     paketitIndexJobs = [];
     paketitJobCache.clear();
     kokoonpanijatLoaded = false;
+    maaliVarastoLoaded = false;
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -6139,6 +6182,7 @@ function confirmTransferToMitat() {
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
     dualWriteMitatState(jobNumber);
     syncMitatInputsToFirestore(jobNumber);
+    noteMissingPaint(jobNumber, lasilistaColor);
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
@@ -6182,16 +6226,9 @@ function closeTuotantoDisplayOptionsMenu() {
 }
 
 function setTuotantoNakyma(value) {
-    if (value === 'sisalto') {
-        isTuotantoContentView = true;
-        isLapivientiView = false;
-    } else if (value === 'lapivienti') {
-        isLapivientiView = true;
-        isTuotantoContentView = false;
-    } else {
-        isTuotantoContentView = false;
-        isLapivientiView = false;
-    }
+    isTuotantoContentView = value === 'sisalto';
+    isLapivientiView = value === 'lapivienti';
+    isMateriaaliVarastoView = value === 'materiaali';
     closeTuotantoDisplayOptionsMenu();
     loadMittatView();
 }
@@ -6572,7 +6609,696 @@ function formatLasilistaMeters(mm) {
     return rounded.toLocaleString('fi-FI', { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
-function buildTuotantoContentSummary(jobNumber, openSections) {
+const MAALI_VARASTO_KEY = 'maaliVarasto';
+
+function collapsePaintName(name) {
+    return String(name || '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('fi');
+}
+
+function paintNameKey(name) {
+    return collapsePaintName(name).toLocaleLowerCase('fi');
+}
+
+function paintMatchesQuery(name, query) {
+    const needle = paintNameKey(query).replace(/\s+/g, '');
+    if (!needle) return true;
+    return paintNameKey(name).replace(/\s+/g, '').includes(needle);
+}
+
+function formatPaintBoxCount(count) {
+    return count === 1 ? '1 laatikko' : `${count} laatikkoa`;
+}
+
+function formatPaintDelta(delta) {
+    const amount = Math.abs(Math.trunc(Number(delta) || 0));
+    const label = amount === 1 ? '1 laatikko' : `${amount} laatikkoa`;
+    return `${Number(delta) < 0 ? '−' : '+'}${label}`;
+}
+
+function paintCodeRank(name) {
+    const code = collapsePaintName(name);
+    const ral = code.match(/^RAL\s*(\d+)/);
+    if (ral) {
+        const num = parseInt(ral[1], 10);
+        if (num >= 1 && num <= 9999) return { group: 0, num };
+    }
+    const rr = code.match(/^RR\s*(\d+)/);
+    if (rr) {
+        const num = parseInt(rr[1], 10);
+        if (num >= 1 && num <= 99) return { group: 1, num };
+    }
+    return { group: 2, num: 0 };
+}
+
+function comparePaintStock(a, b) {
+    const rankA = paintCodeRank(a.name);
+    const rankB = paintCodeRank(b.name);
+    if (rankA.group !== rankB.group) return rankA.group - rankB.group;
+    if (rankA.num !== rankB.num) return rankA.num - rankB.num;
+    return a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true });
+}
+
+function sortPaintStock(items) {
+    return (items || []).slice().sort(comparePaintStock);
+}
+
+function loadMaaliVarasto() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(MAALI_VARASTO_KEY) || 'null');
+        const source = Array.isArray(raw?.items) ? raw.items : [];
+        const items = [];
+        source.forEach((item) => {
+            const name = collapsePaintName(item?.name);
+            const count = Math.floor(Number(item?.count));
+            if (!name || !Number.isFinite(count) || count <= 0) return;
+            const key = paintNameKey(name);
+            const existing = items.find((row) => paintNameKey(row.name) === key);
+            if (existing) existing.count += count;
+            else items.push({ name, count });
+        });
+        items.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+        return items;
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveMaaliVarasto(items) {
+    const clean = [];
+    (items || []).forEach((item) => {
+        const name = collapsePaintName(item?.name);
+        const count = Math.floor(Number(item?.count));
+        if (!name || !Number.isFinite(count) || count <= 0) return;
+        const key = paintNameKey(name);
+        const existing = clean.find((row) => paintNameKey(row.name) === key);
+        if (existing) existing.count += count;
+        else clean.push({ name, count });
+    });
+    clean.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+    localStorage.setItem(MAALI_VARASTO_KEY, JSON.stringify({ items: clean }));
+    queueMaaliVarastoSync();
+    return clean;
+}
+
+const MAALI_VARASTO_EVENTS_KEY = 'maaliVarastoEvents';
+
+function loadMaaliVarastoEvents() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(MAALI_VARASTO_EVENTS_KEY) || '[]');
+        if (!Array.isArray(raw)) return [];
+        return raw.map((event) => {
+            const name = collapsePaintName(event?.name);
+            const delta = Math.trunc(Number(event?.delta));
+            if (!name || !Number.isFinite(delta) || delta === 0) return null;
+            const at = Number(event?.at);
+            return {
+                id: String(event?.id || `${at || Date.now()}`),
+                name,
+                delta,
+                dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
+                at: Number.isFinite(at) && at > 0 ? at : Date.now(),
+                balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
+                acked: delta > 0 ? true : !!event?.acked
+            };
+        }).filter(Boolean);
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveMaaliVarastoEvents(events) {
+    localStorage.setItem(MAALI_VARASTO_EVENTS_KEY, JSON.stringify(events || []));
+    queueMaaliVarastoSync();
+}
+
+function recordMaaliVarastoEvent(name, delta, balanceAfter) {
+    const amount = Math.trunc(Number(delta));
+    const paintName = collapsePaintName(name);
+    if (!paintName || !Number.isFinite(amount) || amount === 0) return;
+    const events = loadMaaliVarastoEvents();
+    const at = Date.now();
+    events.push({
+        id: `${at}-${Math.random().toString(36).slice(2, 8)}`,
+        name: paintName,
+        delta: amount,
+        dayKey: lapivientiDayKey(),
+        at,
+        balanceAfter: Math.max(0, Math.floor(Number(balanceAfter) || 0)),
+        acked: amount > 0
+    });
+    saveMaaliVarastoEvents(events);
+}
+
+function collectOpenPaintOrders() {
+    const stock = loadMaaliVarasto();
+    const grouped = new Map();
+    loadMaaliVarastoEvents().forEach((event) => {
+        if (event.acked || event.delta >= 0) return;
+        const key = paintNameKey(event.name);
+        const row = grouped.get(key) || { name: event.name, qty: 0, at: 0 };
+        row.qty += Math.abs(event.delta);
+        if (event.at >= row.at) {
+            row.at = event.at;
+            row.name = event.name;
+        }
+        grouped.set(key, row);
+    });
+    return [...grouped.values()].map((row) => {
+        const item = stock.find((entry) => paintNameKey(entry.name) === paintNameKey(row.name));
+        return {
+            name: row.name,
+            qty: row.qty,
+            balance: item ? item.count : 0,
+            at: row.at
+        };
+    }).sort((a, b) => b.at - a.at);
+}
+
+function acknowledgeMaaliOrder(name) {
+    const key = paintNameKey(name);
+    const events = loadMaaliVarastoEvents();
+    let changed = false;
+    events.forEach((event) => {
+        if (event.delta >= 0 || event.acked || paintNameKey(event.name) !== key) return;
+        event.acked = true;
+        changed = true;
+    });
+    if (changed) saveMaaliVarastoEvents(events);
+}
+
+const MAALI_VARASTO_HUOMIOT_KEY = 'maaliVarastoHuomiot';
+
+function loadMaaliHuomiot() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(MAALI_VARASTO_HUOMIOT_KEY) || '[]');
+        if (!Array.isArray(raw)) return [];
+        return raw.map((notice) => {
+            const jobNumber = String(notice?.jobNumber || '').trim();
+            const color = collapsePaintName(notice?.color);
+            if (!jobNumber || !color) return null;
+            const at = Number(notice?.at);
+            return { jobNumber, color, at: Number.isFinite(at) && at > 0 ? at : Date.now() };
+        }).filter(Boolean);
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveMaaliHuomiot(notices) {
+    localStorage.setItem(MAALI_VARASTO_HUOMIOT_KEY, JSON.stringify(notices || []));
+    queueMaaliVarastoSync();
+}
+
+function buildMaaliVarastoPayload() {
+    return {
+        items: loadMaaliVarasto(),
+        events: loadMaaliVarastoEvents(),
+        huomiot: loadMaaliHuomiot()
+    };
+}
+
+function maaliVarastoPayloadFromRemote(data) {
+    const items = [];
+    (Array.isArray(data?.items) ? data.items : []).forEach((item) => {
+        const name = collapsePaintName(item?.name);
+        const count = Math.floor(Number(item?.count));
+        if (!name || !Number.isFinite(count) || count <= 0) return;
+        const key = paintNameKey(name);
+        const existing = items.find((row) => paintNameKey(row.name) === key);
+        if (existing) existing.count += count;
+        else items.push({ name, count });
+    });
+    items.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+
+    const events = (Array.isArray(data?.events) ? data.events : []).map((event) => {
+        const name = collapsePaintName(event?.name);
+        const delta = Math.trunc(Number(event?.delta));
+        if (!name || !Number.isFinite(delta) || delta === 0) return null;
+        const at = Number(event?.at);
+        return {
+            id: String(event?.id || `${at || Date.now()}`),
+            name,
+            delta,
+            dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
+            at: Number.isFinite(at) && at > 0 ? at : Date.now(),
+            balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
+            acked: delta > 0 ? true : !!event?.acked
+        };
+    }).filter(Boolean);
+
+    const huomiot = (Array.isArray(data?.huomiot) ? data.huomiot : []).map((notice) => {
+        const jobNumber = String(notice?.jobNumber || '').trim();
+        const color = collapsePaintName(notice?.color);
+        if (!jobNumber || !color) return null;
+        const at = Number(notice?.at);
+        return { jobNumber, color, at: Number.isFinite(at) && at > 0 ? at : Date.now() };
+    }).filter(Boolean);
+
+    return { items, events, huomiot };
+}
+
+function maaliVarastoStateKey(state) {
+    const items = (state?.items || []).map((item) => `${item.name}\t${item.count}`);
+    const events = (state?.events || []).map((event) => [
+        event.id,
+        event.name,
+        event.delta,
+        event.dayKey,
+        event.at,
+        event.balanceAfter,
+        event.acked ? 1 : 0
+    ].join('\t'));
+    const huomiot = (state?.huomiot || []).map((notice) => [
+        notice.jobNumber,
+        notice.color,
+        notice.at
+    ].join('\t'));
+    return JSON.stringify({ items, events, huomiot });
+}
+
+function maaliVarastoLocalHasData() {
+    const state = buildMaaliVarastoPayload();
+    return state.items.length > 0 || state.events.length > 0 || state.huomiot.length > 0;
+}
+
+function applyMaaliVarastoPayload(state) {
+    maaliVarastoApplyingRemote = true;
+    try {
+        localStorage.setItem(MAALI_VARASTO_KEY, JSON.stringify({ items: state.items || [] }));
+        localStorage.setItem(MAALI_VARASTO_EVENTS_KEY, JSON.stringify(state.events || []));
+        localStorage.setItem(MAALI_VARASTO_HUOMIOT_KEY, JSON.stringify(state.huomiot || []));
+    } finally {
+        maaliVarastoApplyingRemote = false;
+    }
+}
+
+function queueMaaliVarastoSync() {
+    if (maaliVarastoApplyingRemote || maaliVarastoSyncQueued) return;
+    maaliVarastoSyncQueued = true;
+    queueMicrotask(() => {
+        maaliVarastoSyncQueued = false;
+        void syncMaaliVarastoToFirestore();
+    });
+}
+
+async function syncMaaliVarastoToFirestore() {
+    if (maaliVarastoApplyingRemote || !maaliVarastoLoaded) return;
+    if (!window.firebase || !window.firebase.db || !currentUser) return;
+    try {
+        const { db, doc, setDoc, serverTimestamp } = window.firebase;
+        const payload = buildMaaliVarastoPayload();
+        payload.updatedBy = currentUser.email;
+        payload.updatedAt = serverTimestamp();
+        await setDoc(doc(db, 'mitatState', 'maaliVarasto'), payload);
+    } catch (error) {
+        console.error('❌ Maalivarasto-synkka epäonnistui:', error);
+    }
+}
+
+function paintColorInStock(color) {
+    const key = paintNameKey(color);
+    if (!key) return false;
+    return loadMaaliVarasto().some((item) => paintNameKey(item.name) === key);
+}
+
+function jobHasPaintColor(jobNumber, color) {
+    const key = paintNameKey(color);
+    if (!key) return false;
+    let data = {};
+    try {
+        data = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    } catch (error) {
+        return false;
+    }
+    const items = data[jobNumber];
+    if (!items || typeof items !== 'object') return false;
+    return Object.values(items).some((item) => paintNameKey(item?.lasilistaColor) === key);
+}
+
+function noteMissingPaint(jobNumber, color) {
+    const job = String(jobNumber || '').trim();
+    const name = collapsePaintName(color);
+    if (!job || !name || paintColorInStock(name)) return;
+    const notices = loadMaaliHuomiot();
+    const key = paintNameKey(name);
+    if (notices.some((notice) => notice.jobNumber === job && paintNameKey(notice.color) === key)) return;
+    notices.push({ jobNumber: job, color: name, at: Date.now() });
+    saveMaaliHuomiot(notices);
+}
+
+function pruneMaaliHuomiot() {
+    const notices = loadMaaliHuomiot();
+    const next = notices.filter((notice) => {
+        if (paintColorInStock(notice.color)) return false;
+        if (!mitatStateLoaded) return true;
+        return jobHasPaintColor(notice.jobNumber, notice.color);
+    });
+    if (next.length !== notices.length) saveMaaliHuomiot(next);
+    return next.sort((a, b) => b.at - a.at);
+}
+
+function buildMaaliHuomiotInnerHtml() {
+    const notices = pruneMaaliHuomiot();
+    if (notices.length === 0) {
+        return '<p class="maali-varasto-empty">Ei huomioita.</p>';
+    }
+    let html = '<ul class="maali-tilaus-list">';
+    notices.forEach((notice) => {
+        html += '<li class="maali-tilaus-row">';
+        html += `<span class="maali-tilaus-text">${escapeHtmlText(notice.jobNumber)}  ${escapeHtmlText(notice.color)}</span>`;
+        html += '</li>';
+    });
+    html += '</ul>';
+    return html;
+}
+
+function resolveMaaliVarastoWeek() {
+    return selectedMaaliVarastoWeek || currentIsoWeekKey();
+}
+
+function collectMaaliVarastoWeekKeys(extraWeekKey) {
+    const weeks = new Set();
+    loadMaaliVarastoEvents().forEach((event) => {
+        const key = dayKeyToIsoWeekKey(event.dayKey);
+        if (key) weeks.add(key);
+    });
+    if (extraWeekKey) weeks.add(extraWeekKey);
+    return [...weeks].sort().reverse();
+}
+
+function maaliVarastoWeekRows(weekKey) {
+    return loadMaaliVarastoEvents()
+        .filter((event) => dayKeyToIsoWeekKey(event.dayKey) === weekKey)
+        .sort((a, b) => {
+            const day = dayKeySortValue(a.dayKey) - dayKeySortValue(b.dayKey);
+            if (day !== 0) return day;
+            return a.at - b.at;
+        });
+}
+
+function parsePaintLine(line) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return null;
+    if (/^\d+\s*kpl\s*$/i.test(trimmed)) return { invalid: true };
+    const withCount = trimmed.match(/^(.*\S)\s+(\d+)\s*kpl\s*$/i);
+    if (withCount) {
+        const name = collapsePaintName(withCount[1]);
+        const count = parseInt(withCount[2], 10);
+        if (!name || !Number.isFinite(count) || count <= 0) return { invalid: true };
+        return { name, count };
+    }
+    return { name: collapsePaintName(trimmed), count: 1 };
+}
+
+function parsePaintBatch(text) {
+    const additions = [];
+    let skipped = 0;
+    String(text || '').split(/\r?\n/).forEach((line) => {
+        if (!String(line || '').trim()) return;
+        const parsed = parsePaintLine(line);
+        if (!parsed || parsed.invalid || !parsed.name) {
+            skipped += 1;
+            return;
+        }
+        const key = paintNameKey(parsed.name);
+        const existing = additions.find((row) => paintNameKey(row.name) === key);
+        if (existing) existing.count += parsed.count;
+        else additions.push({ name: parsed.name, count: parsed.count });
+    });
+    return { additions, skipped };
+}
+
+function mergePaintAdditions(items, additions) {
+    const next = (items || []).map((item) => ({ name: item.name, count: item.count }));
+    (additions || []).forEach((add) => {
+        const key = paintNameKey(add.name);
+        const existing = next.find((row) => paintNameKey(row.name) === key);
+        if (existing) existing.count += add.count;
+        else next.push({ name: add.name, count: add.count });
+    });
+    next.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+    return next;
+}
+
+function buildMaaliVarastoListHtml(items, query, showAll) {
+    const stock = items || [];
+    if (stock.length === 0) {
+        return '<p class="maali-varasto-empty">Varastossa ei ole maaleja.</p>';
+    }
+    const q = String(query || '').trim();
+    if (!q && !showAll) return '';
+    const visible = sortPaintStock(stock.filter((item) => paintMatchesQuery(item.name, q)));
+    if (visible.length === 0) {
+        return '<p class="maali-varasto-empty">Ei maaleja haulle.</p>';
+    }
+    let html = '<ul class="maali-varasto-list">';
+    visible.forEach((item) => {
+        const name = escapeHtmlText(item.name);
+        html += '<li class="maali-varasto-row">';
+        html += `<span class="maali-varasto-name">${name}</span>`;
+        html += `<span class="maali-varasto-count">${formatPaintBoxCount(item.count)}</span>`;
+        html += '<span class="maali-varasto-stepper">';
+        html += `<button type="button" class="maali-varasto-step" data-maali-action="dec" data-maali-name="${name}" aria-label="Vähennä yksi laatikko, ${name}">−</button>`;
+        html += `<button type="button" class="maali-varasto-step" data-maali-action="inc" data-maali-name="${name}" aria-label="Lisää yksi laatikko, ${name}">+</button>`;
+        html += '</span></li>';
+    });
+    html += '</ul>';
+    return html;
+}
+
+function buildMaaliTilauksetInnerHtml() {
+    const orders = collectOpenPaintOrders();
+    if (orders.length === 0) {
+        return '<p class="maali-varasto-empty">Ei avoimia tilauksia.</p>';
+    }
+    let html = '<ul class="maali-tilaus-list">';
+    orders.forEach((order) => {
+        const name = escapeHtmlText(order.name);
+        const zero = order.balance === 0 ? ' is-zero' : '';
+        html += `<li class="maali-tilaus-row${zero}">`;
+        html += `<span class="maali-tilaus-text">${name}  ${formatPaintDelta(-order.qty)}, varastossa ${order.balance}</span>`;
+        html += `<button type="button" class="maali-tilaus-ack" data-maali-ack="${name}">Kuittaa</button>`;
+        html += '</li>';
+    });
+    html += '</ul>';
+    return html;
+}
+
+function buildMaaliViikkoHtml() {
+    const weekKey = resolveMaaliVarastoWeek();
+    const weeks = collectMaaliVarastoWeekKeys(weekKey);
+    const rows = maaliVarastoWeekRows(weekKey);
+    let html = '<div class="maali-viikko-header">';
+    html += '<div class="maali-section-label">Viikkonäkymä</div>';
+    html += '<div class="maali-viikko-controls">';
+    html += '<button type="button" class="maali-viikko-btn" data-maali-week="-1" aria-label="Edellinen viikko">‹</button>';
+    html += '<select id="maaliVarastoWeekSelect" class="maali-viikko-select" aria-label="Viikko">';
+    weeks.forEach((week) => {
+        const selected = week === weekKey ? ' selected' : '';
+        html += `<option value="${escapeHtmlText(week)}"${selected}>${escapeHtmlText(formatIsoWeekLabel(week))}</option>`;
+    });
+    html += '</select>';
+    html += '<button type="button" class="maali-viikko-btn" data-maali-week="1" aria-label="Seuraava viikko">›</button>';
+    html += '</div></div>';
+    html += '<table class="maali-viikko-table"><thead><tr>';
+    html += '<th scope="col">väri</th>';
+    html += '<th scope="col">päivä</th>';
+    html += '<th scope="col">muutos</th>';
+    html += '</tr></thead><tbody>';
+    if (rows.length === 0) {
+        html += '<tr><td colspan="3" class="maali-viikko-empty">Ei muutoksia tällä viikolla.</td></tr>';
+    } else {
+        rows.forEach((row) => {
+            html += '<tr>';
+            html += `<td>${escapeHtmlText(row.name)}</td>`;
+            html += `<td>${escapeHtmlText(dayKeyToFinnishDate(row.dayKey))}</td>`;
+            html += `<td class="maali-viikko-num">${formatPaintDelta(row.delta)}</td>`;
+            html += '</tr>';
+        });
+    }
+    html += '</tbody></table>';
+    html += '<button type="button" class="btn btn-outline-secondary btn-sm maali-viikko-copy" id="maaliVarastoWeekCopy">Kopioi</button>';
+    return html;
+}
+
+function buildMaaliVarastoHtml(query, draft, showAll) {
+    const q = query == null ? '' : String(query);
+    const text = draft == null ? '' : String(draft);
+    const expanded = !!showAll;
+    let html = '<div class="maali-varasto">';
+    html += '<div class="tuotanto-content-subrow">Maalivarasto</div>';
+    html += '<div class="maali-huomio">';
+    html += '<div class="maali-section-label">Huomio</div>';
+    html += `<div id="maaliVarastoHuomiot">${buildMaaliHuomiotInnerHtml()}</div>`;
+    html += '</div>';
+    html += '<div class="maali-tilaukset">';
+    html += '<div class="maali-section-label">Tilaukset</div>';
+    html += `<div id="maaliVarastoOrders">${buildMaaliTilauksetInnerHtml()}</div>`;
+    html += '</div>';
+    html += '<div class="maali-haku">';
+    html += '<label class="maali-varasto-label" for="maaliVarastoSearch">Hae maalia</label>';
+    html += `<input type="search" id="maaliVarastoSearch" class="maali-varasto-search" placeholder="Hae maalia, esim. RAL 7024" value="${escapeHtmlText(q)}" autocomplete="off" spellcheck="false">`;
+    html += `<button type="button" id="maaliVarastoShowAll" class="maali-varasto-show-all${expanded ? ' is-open' : ''}" aria-expanded="${expanded ? 'true' : 'false'}">Näytä kaikki</button>`;
+    html += `<div id="maaliVarastoResults">${buildMaaliVarastoListHtml(loadMaaliVarasto(), q, expanded)}</div>`;
+    html += '</div>';
+    html += '<div class="maali-varasto-add">';
+    html += '<label class="maali-varasto-label" for="maaliVarastoAdd">Lisää maaleja</label>';
+    html += '<p class="maali-varasto-hint">Yksi väri riville. Useampi laatikko merkitään 2kpl.</p>';
+    html += `<textarea id="maaliVarastoAdd" class="maali-varasto-input" rows="4" spellcheck="false" placeholder="RAL 7024 2kpl&#10;RAL 9010&#10;RR 23 4kpl">${escapeHtmlText(text)}</textarea>`;
+    html += '<div class="maali-varasto-add-actions">';
+    html += '<button type="button" class="btn btn-primary btn-sm maali-varasto-add-btn" id="maaliVarastoAddBtn">Lisää varastoon</button>';
+    html += '</div></div>';
+    html += `<div class="maali-viikko" id="maaliVarastoWeek">${buildMaaliViikkoHtml()}</div>`;
+    html += '</div>';
+    return html;
+}
+
+function refreshMaaliVarastoResults(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    if (!scope) return;
+    const results = scope.querySelector('#maaliVarastoResults');
+    if (!results) return;
+    const search = scope.querySelector('#maaliVarastoSearch');
+    const showAll = scope.querySelector('#maaliVarastoShowAll');
+    const expanded = !!(showAll && showAll.getAttribute('aria-expanded') === 'true');
+    results.innerHTML = buildMaaliVarastoListHtml(loadMaaliVarasto(), search ? search.value : '', expanded);
+}
+
+function refreshMaaliHuomiot(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const notices = scope && scope.querySelector('#maaliVarastoHuomiot');
+    if (notices) notices.innerHTML = buildMaaliHuomiotInnerHtml();
+}
+
+function refreshMaaliTilaukset(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const orders = scope && scope.querySelector('#maaliVarastoOrders');
+    if (orders) orders.innerHTML = buildMaaliTilauksetInnerHtml();
+}
+
+function refreshMaaliViikko(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const week = scope && scope.querySelector('#maaliVarastoWeek');
+    if (week) week.innerHTML = buildMaaliViikkoHtml();
+}
+
+function refreshMaaliVarastoPanels(root) {
+    refreshMaaliVarastoResults(root);
+    refreshMaaliHuomiot(root);
+    refreshMaaliTilaukset(root);
+    refreshMaaliViikko(root);
+}
+
+function adjustMaaliCount(name, delta) {
+    const items = loadMaaliVarasto();
+    const key = paintNameKey(name);
+    const existing = items.find((row) => paintNameKey(row.name) === key);
+    if (!existing) return;
+    const next = existing.count + delta;
+    if (next < 0) return;
+    existing.count = next;
+    saveMaaliVarasto(items);
+    recordMaaliVarastoEvent(existing.name, delta, Math.max(0, next));
+    if (delta > 0) pruneMaaliHuomiot();
+}
+
+function addMaalitFromInput(summary) {
+    const area = summary.querySelector('#maaliVarastoAdd');
+    if (!area) return;
+    const { additions, skipped } = parsePaintBatch(area.value);
+    if (additions.length === 0) {
+        showToast(skipped > 0 ? 'Riveistä puuttui värin nimi.' : 'Kirjoita vähintään yksi väri.', 'warning');
+        return;
+    }
+    const saved = saveMaaliVarasto(mergePaintAdditions(loadMaaliVarasto(), additions));
+    additions.forEach((add) => {
+        const item = saved.find((row) => paintNameKey(row.name) === paintNameKey(add.name));
+        recordMaaliVarastoEvent(item ? item.name : add.name, add.count, item ? item.count : add.count);
+    });
+    pruneMaaliHuomiot();
+    area.value = '';
+    refreshMaaliVarastoPanels(summary);
+    showToast(skipped > 0 ? 'Lisätty varastoon. Osa riveistä ohitettiin.' : 'Lisätty varastoon.', 'success');
+}
+
+async function copyMaaliVarastoWeek(btn) {
+    const rows = maaliVarastoWeekRows(resolveMaaliVarastoWeek());
+    const lines = ['väri\tpäivä\tmuutos'];
+    rows.forEach((row) => {
+        lines.push([
+            row.name,
+            dayKeyToFinnishDate(row.dayKey),
+            formatPaintDelta(row.delta)
+        ].map(lapivientiTsvCell).join('\t'));
+    });
+    try {
+        await copyPakettiTextToClipboard(lines.join('\n'));
+        flashPakettiCopyButton(btn);
+    } catch (error) {
+        showToast('Kopiointi epäonnistui.', 'error');
+    }
+}
+
+function bindMaaliVarastoOnce() {
+    const summary = document.getElementById('materiaaliVarastoView');
+    if (!summary || summary.dataset.maaliBound === '1') return;
+    summary.dataset.maaliBound = '1';
+    summary.addEventListener('input', (event) => {
+        if (event.target && event.target.id === 'maaliVarastoSearch') {
+            refreshMaaliVarastoResults(summary);
+        }
+    });
+    summary.addEventListener('change', (event) => {
+        if (!event.target || event.target.id !== 'maaliVarastoWeekSelect') return;
+        const parsed = parseIsoWeekKey(event.target.value);
+        if (!parsed) return;
+        selectedMaaliVarastoWeek = `${parsed.year}-W${String(parsed.week).padStart(2, '0')}`;
+        refreshMaaliViikko(summary);
+    });
+    summary.addEventListener('click', (event) => {
+        const step = event.target.closest ? event.target.closest('[data-maali-action]') : null;
+        if (step && summary.contains(step)) {
+            const delta = step.dataset.maaliAction === 'inc' ? 1 : -1;
+            adjustMaaliCount(step.dataset.maaliName, delta);
+            refreshMaaliVarastoPanels(summary);
+            return;
+        }
+        const showAllBtn = event.target.closest ? event.target.closest('#maaliVarastoShowAll') : null;
+        if (showAllBtn && summary.contains(showAllBtn)) {
+            const open = showAllBtn.getAttribute('aria-expanded') === 'true';
+            showAllBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+            showAllBtn.classList.toggle('is-open', !open);
+            refreshMaaliVarastoResults(summary);
+            return;
+        }
+        const ackBtn = event.target.closest ? event.target.closest('[data-maali-ack]') : null;
+        if (ackBtn && summary.contains(ackBtn)) {
+            acknowledgeMaaliOrder(ackBtn.dataset.maaliAck);
+            refreshMaaliTilaukset(summary);
+            return;
+        }
+        const weekBtn = event.target.closest ? event.target.closest('[data-maali-week]') : null;
+        if (weekBtn && summary.contains(weekBtn)) {
+            const delta = Number(weekBtn.dataset.maaliWeek);
+            if (Number.isFinite(delta) && delta !== 0) {
+                selectedMaaliVarastoWeek = shiftIsoWeekKey(resolveMaaliVarastoWeek(), delta);
+                refreshMaaliViikko(summary);
+            }
+            return;
+        }
+        const copyBtn = event.target.closest ? event.target.closest('#maaliVarastoWeekCopy') : null;
+        if (copyBtn && summary.contains(copyBtn)) {
+            copyMaaliVarastoWeek(copyBtn);
+            return;
+        }
+        const addBtn = event.target.closest ? event.target.closest('#maaliVarastoAddBtn') : null;
+        if (addBtn && summary.contains(addBtn)) {
+            addMaalitFromInput(summary);
+        }
+    });
+}
+
+function buildTuotantoContentSummary(jobNumber, openSections, options) {
     const visibleItems = collectVisibleProductionItems(jobNumber);
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
@@ -6687,21 +7413,15 @@ function buildTuotantoContentSummary(jobNumber, openSections) {
     });
     html += '</tr></tfoot></table></div></details></div>';
 
+    const productionColors = !!(options && options.productionColors);
     const colorList = Array.from(colors).sort((a, b) => a.localeCompare(b, 'fi'));
     html += '<div class="tuotanto-content-block">';
     html += `<details data-section="varit"${sectionOpen('varit')}>`;
-    html += '<summary class="tuotanto-content-row">Värit</summary>';
-    html += '<div class="tuotanto-content-panel">';
-    if (colorList.length === 0) {
-        html += '<p class="text-muted small mb-0">Ei merkittyjä lasilistavärejä.</p>';
-    } else {
-        html += '<ul class="tuotanto-content-sublist">';
-        colorList.forEach((color) => {
-            html += `<li>${escapeHtmlText(color)}</li>`;
-        });
-        html += '</ul>';
-    }
-    html += '</div></details></div>';
+    html += `<summary class="tuotanto-content-row">${productionColors ? 'Tuotannossa olevien tuotteiden värit' : 'Värit'}</summary>`;
+    const colorListHtml = colorList.length === 0
+        ? '<p class="text-muted small mb-0">Ei merkittyjä lasilistavärejä.</p>'
+        : `<ul class="tuotanto-content-sublist">${colorList.map((color) => `<li>${escapeHtmlText(color)}</li>`).join('')}</ul>`;
+    html += `<div class="tuotanto-content-panel">${colorListHtml}</div></details></div>`;
 
     const renderLasilistaGroup = (title, metersBySize) => {
         const sizes = Object.keys(metersBySize).sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }));
@@ -6733,11 +7453,13 @@ function buildTuotantoContentSummary(jobNumber, openSections) {
 }
 
 function applyTuotantoContentViewUi() {
-    const nakyma = isLapivientiView ? 'lapivienti' : (isTuotantoContentView ? 'sisalto' : 'lista');
+    const nakyma = isMateriaaliVarastoView
+        ? 'materiaali'
+        : (isLapivientiView ? 'lapivienti' : (isTuotantoContentView ? 'sisalto' : 'lista'));
     document.querySelectorAll('#mittatView input[name="tuotantoNakyma"]').forEach((input) => {
         input.checked = input.value === nakyma;
     });
-    const overlay = isTuotantoContentView || isLapivientiView;
+    const overlay = isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView;
     const view = document.getElementById('mittatView');
     if (view) view.classList.toggle('mittat-nakyma-overlay', overlay);
     const kokoonpanijatBtn = document.getElementById('kokoonpanijatBtn');
@@ -6746,6 +7468,7 @@ function applyTuotantoContentViewUi() {
     const splitHost = document.getElementById('mitatSplitLayoutHost');
     const summary = document.getElementById('tuotantoContentSummary');
     const lapivienti = document.getElementById('lapivientiView');
+    const materiaali = document.getElementById('materiaaliVarastoView');
     if (kokoonpanijatBtn) kokoonpanijatBtn.style.display = overlay ? 'none' : '';
     if (toolbar) toolbar.style.display = (overlay || isKatseluMode()) ? 'none' : '';
     if (searchRow) searchRow.style.display = overlay ? 'none' : '';
@@ -6757,7 +7480,7 @@ function applyTuotantoContentViewUi() {
                 if (el.dataset.section) open.add(el.dataset.section);
             });
             summary.hidden = false;
-            summary.innerHTML = buildTuotantoContentSummary(undefined, open);
+            summary.innerHTML = buildTuotantoContentSummary(undefined, open, { productionColors: true });
         } else {
             summary.hidden = true;
             summary.innerHTML = '';
@@ -6766,6 +7489,23 @@ function applyTuotantoContentViewUi() {
     if (lapivienti) {
         lapivienti.hidden = !isLapivientiView;
         lapivienti.innerHTML = isLapivientiView ? buildLapivientiTableHtml() : '';
+    }
+    if (materiaali) {
+        if (isMateriaaliVarastoView) {
+            const paintSearch = materiaali.querySelector('#maaliVarastoSearch');
+            const paintAdd = materiaali.querySelector('#maaliVarastoAdd');
+            const paintShowAll = materiaali.querySelector('#maaliVarastoShowAll');
+            materiaali.hidden = false;
+            materiaali.innerHTML = buildMaaliVarastoHtml(
+                paintSearch ? paintSearch.value : '',
+                paintAdd ? paintAdd.value : '',
+                !!(paintShowAll && paintShowAll.getAttribute('aria-expanded') === 'true')
+            );
+            bindMaaliVarastoOnce();
+        } else {
+            materiaali.hidden = true;
+            materiaali.innerHTML = '';
+        }
     }
 }
 
@@ -7172,7 +7912,7 @@ function appendTekijaBadgesToSidebar(parent, jobNumber) {
 function renderKokoonpanijatBar() {
     const chips = document.getElementById('kokoonpanijatActiveRow');
     if (!chips) return;
-    if (isKatseluMode() || isTuotantoContentView || isLapivientiView) {
+    if (isKatseluMode() || isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView) {
         chips.innerHTML = '';
         chips.hidden = true;
         return;
@@ -7431,7 +8171,7 @@ function loadMittatView() {
 
     renderKokoonpanijatBar();
     applyTuotantoContentViewUi();
-    if (isTuotantoContentView || isLapivientiView) return;
+    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView) return;
     
     // Check if empty
     if (Object.keys(mittatData).length === 0) {
@@ -11467,6 +12207,10 @@ async function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context
         dualWriteMitatState(jobNumber);
         syncMitatInputsToFirestore(jobNumber);
         void bumpPaketitIndexRev(jobNumber);
+        if (context !== 'paketit') {
+            noteMissingPaint(jobNumber, item.lasilistaColor);
+            pruneMaaliHuomiot();
+        }
     }
 
     if (context === 'paketit') {
