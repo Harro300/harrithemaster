@@ -33,6 +33,10 @@ let maaliVarastoUnsubscribe = null;
 let maaliVarastoLoaded = false;
 let maaliVarastoApplyingRemote = false;
 let maaliVarastoSyncQueued = false;
+let lasilistaVarastoUnsubscribe = null;
+let lasilistaVarastoLoaded = false;
+let lasilistaVarastoApplyingRemote = false;
+let lasilistaVarastoSyncQueued = false;
 let paketitIndexJobs = [];
 let paketitIndexLoaded = false;
 let paketitIndexCopyDone = false;
@@ -1565,6 +1569,36 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe maalivarasto-kuuntelijan luonnissa:', error);
     }
+
+    try {
+        lasilistaVarastoUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'lasilistaVarasto'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    lasilistaVarastoLoaded = true;
+                    if (lasilistaVarastoLocalHasData()) {
+                        void syncLasilistaVarastoToFirestore();
+                    }
+                    return;
+                }
+                const incoming = lasilistaVarastoPayloadFromRemote(docSnapshot.data() || {});
+                const same = lasilistaVarastoStateKey(incoming) === lasilistaVarastoStateKey(buildLasilistaVarastoPayload());
+                if (!same) applyLasilistaVarastoPayload(incoming);
+                lasilistaVarastoLoaded = true;
+                if (!same) {
+                    const mittatView = document.getElementById('mittatView');
+                    if (mittatView && !mittatView.classList.contains('d-none')) {
+                        loadMittatView();
+                    }
+                }
+            },
+            (error) => {
+                console.error('❌ Lasilista varasto -kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe lasilista varasto -kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -1604,6 +1638,12 @@ function stopRealtimeListeners() {
         maaliVarastoUnsubscribe = null;
     }
     maaliVarastoLoaded = false;
+
+    if (lasilistaVarastoUnsubscribe) {
+        lasilistaVarastoUnsubscribe();
+        lasilistaVarastoUnsubscribe = null;
+    }
+    lasilistaVarastoLoaded = false;
     
     console.log('✅ Kuuntelijat lopetettu');
 }
@@ -2036,6 +2076,7 @@ async function logout() {
     paketitJobCache.clear();
     kokoonpanijatLoaded = false;
     maaliVarastoLoaded = false;
+    lasilistaVarastoLoaded = false;
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -7121,12 +7162,14 @@ function buildMaaliViikkoHtml() {
     return html;
 }
 
-function buildMaaliVarastoHtml(query, draft, showAll) {
+function buildMaaliVarastoHtml(query, draft, showAll, open) {
     const q = query == null ? '' : String(query);
     const text = draft == null ? '' : String(draft);
     const expanded = !!showAll;
-    let html = '<div class="maali-varasto">';
-    html += '<div class="tuotanto-content-subrow">Maalivarasto</div>';
+    let html = '<div class="tuotanto-content-block">';
+    html += `<details data-section="maali"${open ? ' open' : ''}>`;
+    html += '<summary class="tuotanto-content-row">Maalivarasto</summary>';
+    html += '<div class="tuotanto-content-panel maali-varasto">';
     html += '<div class="maali-huomio">';
     html += '<div class="maali-section-label">Huomio</div>';
     html += `<div id="maaliVarastoHuomiot">${buildMaaliHuomiotInnerHtml()}</div>`;
@@ -7149,7 +7192,7 @@ function buildMaaliVarastoHtml(query, draft, showAll) {
     html += '<button type="button" class="btn btn-primary btn-sm maali-varasto-add-btn" id="maaliVarastoAddBtn">Lisää varastoon</button>';
     html += '</div></div>';
     html += `<div class="maali-viikko" id="maaliVarastoWeek">${buildMaaliViikkoHtml()}</div>`;
-    html += '</div>';
+    html += '</div></details></div>';
     return html;
 }
 
@@ -7298,6 +7341,476 @@ function bindMaaliVarastoOnce() {
     });
 }
 
+const LASILISTA_VARASTO_KEY = 'lasilistaVarasto';
+
+function normalizeLasilistaType(type) {
+    const match = String(type || '').trim().match(/^(\d+)\s*x\s*(\d+)$/i);
+    if (!match) return '';
+    return `${parseInt(match[1], 10)}x${parseInt(match[2], 10)}`;
+}
+
+function sortLasilistaStock(items) {
+    return (items || []).slice().sort((a, b) => a.type.localeCompare(b.type, 'fi', { numeric: true }));
+}
+
+function roundLasilistaStockMeters(meters) {
+    const amount = Number(meters);
+    if (!Number.isFinite(amount)) return null;
+    const rounded = Math.round(amount * 100) / 100;
+    return rounded === 0 ? null : rounded;
+}
+
+function collectLasilistaStockItems(source) {
+    const items = [];
+    (source || []).forEach((item) => {
+        const type = normalizeLasilistaType(item?.type);
+        const meters = roundLasilistaStockMeters(item?.meters);
+        if (!type || meters == null) return;
+        const existing = items.find((row) => row.type === type);
+        if (existing) {
+            existing.meters = roundLasilistaStockMeters(existing.meters + meters);
+            if (existing.meters == null) {
+                const index = items.indexOf(existing);
+                if (index >= 0) items.splice(index, 1);
+            }
+        } else {
+            items.push({ type, meters });
+        }
+    });
+    return sortLasilistaStock(items);
+}
+
+const LASILISTA_WASTE_DEFAULT = 2.5;
+
+function readLasilistaVarastoRaw() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(LASILISTA_VARASTO_KEY) || 'null');
+        return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function parseLasilistaWasteInput(value) {
+    const parsed = parseLasilistaCapacityInput(String(value == null ? '' : value).replace(/%/g, ''));
+    if (parsed == null || parsed < 0 || parsed > 100) return null;
+    return Math.round(parsed * 10) / 10;
+}
+
+function loadLasilistaWastePercent() {
+    const raw = readLasilistaVarastoRaw();
+    if (!Object.prototype.hasOwnProperty.call(raw, 'wastePercent')) return LASILISTA_WASTE_DEFAULT;
+    const parsed = parseLasilistaWasteInput(raw.wastePercent);
+    return parsed == null ? LASILISTA_WASTE_DEFAULT : parsed;
+}
+
+function loadLasilistaVarasto() {
+    try {
+        const source = readLasilistaVarastoRaw().items;
+        return collectLasilistaStockItems(Array.isArray(source) ? source : []);
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveLasilistaVarasto(items) {
+    const sorted = collectLasilistaStockItems(items);
+    const raw = readLasilistaVarastoRaw();
+    const payload = { items: sorted };
+    if (Object.prototype.hasOwnProperty.call(raw, 'wastePercent')) {
+        const percent = parseLasilistaWasteInput(raw.wastePercent);
+        payload.wastePercent = percent == null ? LASILISTA_WASTE_DEFAULT : percent;
+    }
+    localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify(payload));
+    queueLasilistaVarastoSync();
+    return sorted;
+}
+
+function saveLasilistaWastePercent(percent) {
+    const raw = readLasilistaVarastoRaw();
+    const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
+    localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify({ items, wastePercent: percent }));
+    queueLasilistaVarastoSync();
+}
+
+function buildLasilistaVarastoPayload() {
+    return {
+        items: loadLasilistaVarasto(),
+        wastePercent: loadLasilistaWastePercent()
+    };
+}
+
+function lasilistaVarastoPayloadFromRemote(data) {
+    const items = collectLasilistaStockItems(Array.isArray(data?.items) ? data.items : []);
+    const percent = parseLasilistaWasteInput(data?.wastePercent);
+    return {
+        items,
+        wastePercent: percent == null ? LASILISTA_WASTE_DEFAULT : percent
+    };
+}
+
+function lasilistaVarastoStateKey(state) {
+    return JSON.stringify({
+        items: (state?.items || []).map((item) => ({ type: item.type, meters: item.meters })),
+        wastePercent: state?.wastePercent
+    });
+}
+
+function lasilistaVarastoLocalHasData() {
+    const raw = readLasilistaVarastoRaw();
+    const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
+    return items.length > 0 || Object.prototype.hasOwnProperty.call(raw, 'wastePercent');
+}
+
+function applyLasilistaVarastoPayload(state) {
+    lasilistaVarastoApplyingRemote = true;
+    try {
+        localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify({
+            items: state.items || [],
+            wastePercent: state.wastePercent
+        }));
+    } finally {
+        lasilistaVarastoApplyingRemote = false;
+    }
+}
+
+function queueLasilistaVarastoSync() {
+    if (lasilistaVarastoApplyingRemote || lasilistaVarastoSyncQueued) return;
+    lasilistaVarastoSyncQueued = true;
+    queueMicrotask(() => {
+        lasilistaVarastoSyncQueued = false;
+        void syncLasilistaVarastoToFirestore();
+    });
+}
+
+async function syncLasilistaVarastoToFirestore() {
+    if (lasilistaVarastoApplyingRemote || !lasilistaVarastoLoaded) return;
+    if (!window.firebase || !window.firebase.db || !currentUser) return;
+    try {
+        const { db, doc, setDoc, serverTimestamp } = window.firebase;
+        const payload = buildLasilistaVarastoPayload();
+        payload.updatedBy = currentUser.email;
+        payload.updatedAt = serverTimestamp();
+        await setDoc(doc(db, 'mitatState', 'lasilistaVarasto'), payload);
+    } catch (error) {
+        console.error('❌ Lasilista varasto -synkka epäonnistui:', error);
+    }
+}
+
+function parseLasilistaLine(line) {
+    const trimmed = String(line || '').trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^(\d+)\s*x\s*(\d+)\s+(\d+)\s*m?\s*$/i);
+    if (!match) return { invalid: true };
+    const type = `${parseInt(match[1], 10)}x${parseInt(match[2], 10)}`;
+    const meters = parseInt(match[3], 10);
+    if (!type || !Number.isFinite(meters) || meters <= 0) return { invalid: true };
+    return { type, meters };
+}
+
+function parseLasilistaBatch(text) {
+    const additions = [];
+    let skipped = 0;
+    String(text || '').split(/\r?\n/).forEach((line) => {
+        if (!String(line || '').trim()) return;
+        const parsed = parseLasilistaLine(line);
+        if (!parsed || parsed.invalid || !parsed.type) {
+            skipped += 1;
+            return;
+        }
+        const existing = additions.find((row) => row.type === parsed.type);
+        if (existing) existing.meters += parsed.meters;
+        else additions.push({ type: parsed.type, meters: parsed.meters });
+    });
+    return { additions, skipped };
+}
+
+function mergeLasilistaAdditions(items, additions) {
+    const next = (items || []).map((item) => ({ type: item.type, meters: item.meters }));
+    (additions || []).forEach((add) => {
+        const existing = next.find((row) => row.type === add.type);
+        if (existing) existing.meters += add.meters;
+        else next.push({ type: add.type, meters: add.meters });
+    });
+    return sortLasilistaStock(next);
+}
+
+function collectProductionLasilistaMetersBySize(jobNumber) {
+    const sahatutBySize = {};
+    const sahaamattomatBySize = {};
+    const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
+    collectVisibleProductionItems(jobNumber).forEach(({ key, item }) => {
+        (item?.data || []).forEach((section) => {
+            if (!isLasilistaSectionTitle(section.title)) return;
+            const displayTitle = getLasilistaSectionTitle(section.title, item);
+            const size = parseSizeFromSectionTitle(displayTitle) || String(item?.lasilistaSize || '').trim();
+            if (!size) return;
+            const metersBySize = checkedMitat[key] ? sahatutBySize : sahaamattomatBySize;
+            (section.items || []).forEach((row) => {
+                const parsed = parseLasilistaRow(row?.label || '');
+                if (!parsed) return;
+                metersBySize[size] = (metersBySize[size] || 0) + (parsed.length * parsed.count);
+            });
+        });
+    });
+    return { sahatutBySize, sahaamattomatBySize };
+}
+
+function collectSahaamattomatMetersByType() {
+    const mmByType = {};
+    const { sahaamattomatBySize } = collectProductionLasilistaMetersBySize();
+    Object.keys(sahaamattomatBySize).forEach((size) => {
+        const type = normalizeLasilistaType(size);
+        const mm = Number(sahaamattomatBySize[size]);
+        if (!type || !Number.isFinite(mm) || mm <= 0) return;
+        mmByType[type] = (mmByType[type] || 0) + mm;
+    });
+    return mmByType;
+}
+
+function displayedLasilistaMeters(mm) {
+    const meters = Number(mm) / 1000;
+    if (!Number.isFinite(meters) || meters <= 0) return 0;
+    return Math.round(meters * 100) / 100;
+}
+
+function formatLasilistaTableMeters(meters) {
+    const amount = Number(meters);
+    const rounded = Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+    return `${rounded.toLocaleString('fi-FI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}m`;
+}
+
+function formatLasilistaStockCompact(meters) {
+    return formatLasilistaTableMeters(meters);
+}
+
+function formatLasilistaCapacityInput(meters) {
+    const amount = Number(meters);
+    const rounded = Number.isFinite(amount) ? Math.round(amount * 10) / 10 : 0;
+    return String(rounded).replace('.', ',');
+}
+
+function parseLasilistaCapacityInput(value) {
+    const trimmed = String(value || '').trim().replace(/m\s*$/i, '').replace(/\s/g, '').replace(',', '.');
+    if (!trimmed || !/^-?\d+(\.\d+)?$/.test(trimmed)) return null;
+    const amount = Number(trimmed);
+    if (!Number.isFinite(amount)) return null;
+    return Math.round(amount * 100) / 100;
+}
+
+function commitLasilistaCapacity(input, summary) {
+    const type = normalizeLasilistaType(input.dataset.lasilistaType);
+    const stock = loadLasilistaVarasto();
+    const existing = type ? stock.find((row) => row.type === type) : null;
+    const current = existing ? existing.meters : 0;
+    const parsed = parseLasilistaCapacityInput(input.value);
+    if (!type || parsed == null) {
+        input.value = formatLasilistaTableMeters(current);
+        showToast('Kirjoita metrimäärä, esimerkiksi 500.', 'warning');
+        return;
+    }
+    if (parsed === current) {
+        input.value = formatLasilistaTableMeters(current);
+        return;
+    }
+    if (existing) existing.meters = parsed;
+    else stock.push({ type, meters: parsed });
+    saveLasilistaVarasto(stock);
+    refreshLasilistaVarastoList(summary);
+}
+
+function collectItemLasilistaMetersByType(item) {
+    const mmByType = {};
+    (item?.data || []).forEach((section) => {
+        if (!isLasilistaSectionTitle(section.title)) return;
+        const displayTitle = getLasilistaSectionTitle(section.title, item);
+        const size = parseSizeFromSectionTitle(displayTitle) || String(item?.lasilistaSize || '').trim();
+        const type = normalizeLasilistaType(size);
+        if (!type) return;
+        (section.items || []).forEach((row) => {
+            const parsed = parseLasilistaRow(row?.label || '');
+            if (!parsed) return;
+            mmByType[type] = (mmByType[type] || 0) + (parsed.length * parsed.count);
+        });
+    });
+    return mmByType;
+}
+
+function itemFromLasilistaCheckKey(checkKey) {
+    const jobNumber = jobNumberFromCheckKey(checkKey);
+    if (!jobNumber) return null;
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const itemName = String(checkKey || '').slice(jobNumber.length + 1);
+    return mittatData[jobNumber]?.[itemName] || null;
+}
+
+function applyLasilistaCheckpointToVarasto(checkKey, checked) {
+    const item = itemFromLasilistaCheckKey(checkKey);
+    if (!itemHasLasilistat(item)) return;
+    const mmByType = collectItemLasilistaMetersByType(item);
+    const sign = checked ? -1 : 1;
+    const stock = loadLasilistaVarasto();
+    const factor = 1 + loadLasilistaWastePercent() / 100;
+    let changed = false;
+    Object.keys(mmByType).forEach((type) => {
+        const delta = displayedLasilistaMeters(Number(mmByType[type]) * factor) * sign;
+        if (!delta) return;
+        changed = true;
+        const existing = stock.find((row) => row.type === type);
+        if (existing) existing.meters += delta;
+        else stock.push({ type, meters: delta });
+    });
+    if (changed) saveLasilistaVarasto(stock);
+}
+
+function buildLasilistaVarastoListHtml(items) {
+    const stock = items || [];
+    const uncutMm = collectSahaamattomatMetersByType();
+    const rows = stock.map((item) => ({ type: item.type, meters: item.meters }));
+    Object.keys(uncutMm).forEach((type) => {
+        if (!rows.some((row) => row.type === type)) rows.push({ type, meters: 0 });
+    });
+    const visible = sortLasilistaStock(rows);
+    if (visible.length === 0) {
+        return '<p class="maali-varasto-empty">Varastossa ei ole lasilistoja.</p>';
+    }
+    let html = '<table class="lasilista-varasto-table">';
+    html += '<thead><tr>';
+    html += '<th scope="col"><span class="visually-hidden">tyyppi</span></th>';
+    html += '<th scope="col">varaston kapasiteetti</th>';
+    html += '<th scope="col">tuotannossa sahaamatta</th>';
+    html += '<th scope="col">ylimäärä kapasiteetti</th>';
+    html += '</tr></thead><tbody>';
+    const wastePercent = loadLasilistaWastePercent();
+    visible.forEach((item) => {
+        const uncut = displayedLasilistaMeters(uncutMm[item.type] || 0);
+        const wasteMeters = Math.round((uncut * wastePercent / 100) * 100) / 100;
+        const spare = Math.round((item.meters - uncut - wasteMeters) * 100) / 100;
+        const short = spare < 0;
+        const type = escapeHtmlText(item.type);
+        const uncutLabel = `${formatLasilistaTableMeters(uncut)}${formatLasilistaWasteSuffix(uncut, wastePercent)}`;
+        html += `<tr${short ? ' class="is-zero"' : ''}>`;
+        html += `<th scope="row">${type}</th>`;
+        html += '<td class="lasilista-varasto-capacity-cell">';
+        html += `<input type="text" class="lasilista-varasto-capacity" inputmode="decimal" data-lasilista-type="${type}" value="${formatLasilistaTableMeters(item.meters)}" aria-label="${type} varaston kapasiteetti, metriä" autocomplete="off" spellcheck="false">`;
+        html += '</td>';
+        html += `<td>${uncutLabel}</td>`;
+        html += `<td>${formatLasilistaStockCompact(spare)}</td>`;
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    return html;
+}
+
+function formatLasilistaWasteSuffix(uncutMeters, percent) {
+    if (!(Number(percent) > 0)) return '';
+    const waste = Math.round((Number(uncutMeters) * Number(percent) / 100) * 100) / 100;
+    return ` (+ ${formatLasilistaCapacityInput(percent)}% = ${formatLasilistaStockCompact(waste)})`;
+}
+
+function buildLasilistaVarastoHtml(draft, open, wasteDraft) {
+    const text = draft == null ? '' : String(draft);
+    const wasteText = wasteDraft == null
+        ? formatLasilistaCapacityInput(loadLasilistaWastePercent())
+        : String(wasteDraft);
+    let html = '<div class="tuotanto-content-block">';
+    html += `<details data-section="lasilista-varasto"${open ? ' open' : ''}>`;
+    html += '<summary class="tuotanto-content-row">Lasilista varasto</summary>';
+    html += '<div class="tuotanto-content-panel">';
+    html += `<div id="lasilistaVarastoResults">${buildLasilistaVarastoListHtml(loadLasilistaVarasto())}</div>`;
+    html += '<div class="maali-varasto-add">';
+    html += '<label class="maali-varasto-label" for="lasilistaVarastoAdd">Lisää lasilistoja</label>';
+    html += '<p class="maali-varasto-hint">Yksi tyyppi riville. Metrit merkitään 250m.</p>';
+    html += `<textarea id="lasilistaVarastoAdd" class="maali-varasto-input" rows="4" spellcheck="false" placeholder="12x20 250m&#10;15x20 180m">${escapeHtmlText(text)}</textarea>`;
+    html += '<div class="maali-varasto-add-actions">';
+    html += '<button type="button" class="btn btn-primary btn-sm maali-varasto-add-btn" id="lasilistaVarastoAddBtn">Lisää varastoon</button>';
+    html += '</div></div>';
+    html += '<div class="lasilista-hukka">';
+    html += '<label class="lasilista-hukka-label" for="lasilistaHukka">hukkamäärä</label>';
+    html += `<input type="text" id="lasilistaHukka" class="lasilista-hukka-input" inputmode="decimal" value="${escapeHtmlText(wasteText)}" aria-label="Hukkamäärä prosentteina" autocomplete="off" spellcheck="false">`;
+    html += '<span class="lasilista-hukka-unit">%</span>';
+    html += '</div></div></details></div>';
+    return html;
+}
+
+function refreshLasilistaVarastoList(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    if (!scope) return;
+    const results = scope.querySelector('#lasilistaVarastoResults');
+    if (!results) return;
+    results.innerHTML = buildLasilistaVarastoListHtml(loadLasilistaVarasto());
+}
+
+function addLasilistatFromInput(summary) {
+    const area = summary.querySelector('#lasilistaVarastoAdd');
+    if (!area) return;
+    const { additions, skipped } = parseLasilistaBatch(area.value);
+    if (additions.length === 0) {
+        showToast(skipped > 0 ? 'Riveistä puuttui tyyppi tai metrit.' : 'Kirjoita vähintään yksi lasilista.', 'warning');
+        return;
+    }
+    saveLasilistaVarasto(mergeLasilistaAdditions(loadLasilistaVarasto(), additions));
+    area.value = '';
+    refreshLasilistaVarastoList(summary);
+    showToast(skipped > 0 ? 'Lisätty varastoon. Osa riveistä ohitettiin.' : 'Lisätty varastoon.', 'success');
+}
+
+function bindLasilistaVarastoOnce() {
+    const summary = document.getElementById('materiaaliVarastoView');
+    if (!summary || summary.dataset.lasilistaBound === '1') return;
+    summary.dataset.lasilistaBound = '1';
+    summary.addEventListener('click', (event) => {
+        const addBtn = event.target.closest ? event.target.closest('#lasilistaVarastoAddBtn') : null;
+        if (addBtn && summary.contains(addBtn)) {
+            addLasilistatFromInput(summary);
+        }
+    });
+    summary.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!target || target.id !== 'lasilistaHukka' || !summary.contains(target)) return;
+        previewLasilistaWaste(target, summary);
+    });
+    summary.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!target || !summary.contains(target)) return;
+        if (target.id === 'lasilistaHukka') {
+            commitLasilistaWaste(target, summary);
+            return;
+        }
+        const input = target.closest ? target.closest('.lasilista-varasto-capacity') : null;
+        if (input && summary.contains(input)) commitLasilistaCapacity(input, summary);
+    });
+    summary.addEventListener('keydown', (event) => {
+        const target = event.target;
+        if (!target || !summary.contains(target) || event.key !== 'Enter') return;
+        const capacity = target.closest ? target.closest('.lasilista-varasto-capacity') : null;
+        if (target.id !== 'lasilistaHukka' && !capacity) return;
+        event.preventDefault();
+        target.blur();
+    });
+}
+
+function previewLasilistaWaste(input, summary) {
+    const parsed = parseLasilistaWasteInput(input.value);
+    if (parsed == null || parsed === loadLasilistaWastePercent()) return;
+    saveLasilistaWastePercent(parsed);
+    refreshLasilistaVarastoList(summary);
+}
+
+function commitLasilistaWaste(input, summary) {
+    const current = loadLasilistaWastePercent();
+    const parsed = parseLasilistaWasteInput(input.value);
+    if (parsed == null) {
+        input.value = formatLasilistaCapacityInput(current);
+        showToast('Kirjoita hukkaprosentti väliltä 0–100.', 'warning');
+        return;
+    }
+    input.value = formatLasilistaCapacityInput(parsed);
+    if (parsed === current) return;
+    saveLasilistaWastePercent(parsed);
+    refreshLasilistaVarastoList(summary);
+}
+
 function buildTuotantoContentSummary(jobNumber, openSections, options) {
     const visibleItems = collectVisibleProductionItems(jobNumber);
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
@@ -7332,8 +7845,7 @@ function buildTuotantoContentSummary(jobNumber, openSections, options) {
         paneliovi: { tehty: 0, lasilistat: 0, kulmalistat: 0, paneelit: 0 }
     };
     const colors = new Set();
-    const sahatutBySize = {};
-    const sahaamattomatBySize = {};
+    const { sahatutBySize, sahaamattomatBySize } = collectProductionLasilistaMetersBySize(jobNumber);
 
     visibleItems.forEach(({ key, item }) => {
         const type = classifyProductionItem(item);
@@ -7351,18 +7863,6 @@ function buildTuotantoContentSummary(jobNumber, openSections, options) {
         }
         const color = String(item?.lasilistaColor || '').trim();
         if (color) colors.add(color);
-        (item?.data || []).forEach((section) => {
-            if (!isLasilistaSectionTitle(section.title)) return;
-            const displayTitle = getLasilistaSectionTitle(section.title, item);
-            const size = parseSizeFromSectionTitle(displayTitle) || String(item?.lasilistaSize || '').trim();
-            if (!size) return;
-            const metersBySize = checkedMitat[key] ? sahatutBySize : sahaamattomatBySize;
-            (section.items || []).forEach((row) => {
-                const parsed = parseLasilistaRow(row?.label || '');
-                if (!parsed) return;
-                metersBySize[size] = (metersBySize[size] || 0) + (parsed.length * parsed.count);
-            });
-        });
     });
 
     const sectionOpen = (id) => (openSections instanceof Set && openSections.has(id)) ? ' open' : '';
@@ -7495,13 +7995,23 @@ function applyTuotantoContentViewUi() {
             const paintSearch = materiaali.querySelector('#maaliVarastoSearch');
             const paintAdd = materiaali.querySelector('#maaliVarastoAdd');
             const paintShowAll = materiaali.querySelector('#maaliVarastoShowAll');
+            const lasilistaAdd = materiaali.querySelector('#lasilistaVarastoAdd');
+            const lasilistaWaste = materiaali.querySelector('#lasilistaHukka');
+            const paintOpen = !!materiaali.querySelector('details[data-section="maali"][open]');
+            const lasilistaOpen = !!materiaali.querySelector('details[data-section="lasilista-varasto"][open]');
             materiaali.hidden = false;
             materiaali.innerHTML = buildMaaliVarastoHtml(
                 paintSearch ? paintSearch.value : '',
                 paintAdd ? paintAdd.value : '',
-                !!(paintShowAll && paintShowAll.getAttribute('aria-expanded') === 'true')
+                !!(paintShowAll && paintShowAll.getAttribute('aria-expanded') === 'true'),
+                paintOpen
+            ) + buildLasilistaVarastoHtml(
+                lasilistaAdd ? lasilistaAdd.value : '',
+                lasilistaOpen,
+                lasilistaWaste ? lasilistaWaste.value : null
             );
             bindMaaliVarastoOnce();
+            bindLasilistaVarastoOnce();
         } else {
             materiaali.hidden = true;
             materiaali.innerHTML = '';
@@ -10793,7 +11303,9 @@ async function downloadLasilistaSummaryPdf(jobNumber) {
 
         const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
         selectedItemNames.forEach((itemName) => {
-            checkedMitat[`${jobNumber}-${itemName}`] = true;
+            const checkKey = `${jobNumber}-${itemName}`;
+            if (!checkedMitat[checkKey]) applyLasilistaCheckpointToVarasto(checkKey, true);
+            checkedMitat[checkKey] = true;
         });
         localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
         dualWriteMitatState(jobNumber);
@@ -12410,6 +12922,7 @@ function toggleMittatCheck(checkKey, checkboxElement) {
     const isChecked = !checkedMitat[checkKey];
     checkedMitat[checkKey] = isChecked;
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
+    applyLasilistaCheckpointToVarasto(checkKey, isChecked);
     dualWriteMitatState(jobNumberFromCheckKey(checkKey));
     
     // Update checkbox UI in-place so open panels don't collapse

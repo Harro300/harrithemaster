@@ -597,14 +597,6 @@ body.dark-mode .tuotanto-display-options-menu {
     padding: 4px 0 20px;
 }
 
-.maali-varasto .tuotanto-content-subrow {
-    margin: 0 0 14px;
-    font-size: 1.2rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--text-primary);
-}
-
 .maali-section-label {
     margin: 0 0 8px;
     font-size: 0.95rem;
@@ -650,7 +642,8 @@ body.dark-mode .tuotanto-display-options-menu {
     border-bottom: none;
 }
 
-.maali-tilaus-row.is-zero {
+.maali-tilaus-row.is-zero,
+.maali-varasto-row.is-zero {
     background: rgba(220, 53, 69, 0.08);
 }
 
@@ -661,16 +654,129 @@ body.dark-mode .tuotanto-display-options-menu {
     color: var(--text-primary);
 }
 
-.maali-tilaus-row.is-zero .maali-tilaus-text {
+.maali-tilaus-row.is-zero .maali-tilaus-text,
+.maali-varasto-row.is-zero .maali-varasto-name {
     font-weight: 600;
     color: #c06a74;
 }
 
-body.dark-mode .maali-tilaus-row.is-zero {
+body.dark-mode .maali-tilaus-row.is-zero,
+body.dark-mode .maali-varasto-row.is-zero {
     background: rgba(220, 53, 69, 0.16);
 }
 
-body.dark-mode .maali-tilaus-row.is-zero .maali-tilaus-text {
+body.dark-mode .maali-tilaus-row.is-zero .maali-tilaus-text,
+body.dark-mode .maali-varasto-row.is-zero .maali-varasto-name {
+    color: #e7a8ae;
+}
+
+.lasilista-varasto-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 4px;
+    font-size: 0.92rem;
+}
+
+.lasilista-varasto-table th,
+.lasilista-varasto-table td {
+    border: 1px solid var(--border-color);
+    padding: 0.45rem 0.7rem;
+    vertical-align: middle;
+}
+
+.lasilista-varasto-table thead th {
+    font-weight: 600;
+    font-size: 0.82rem;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    text-align: left;
+}
+
+.lasilista-varasto-table tbody th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.lasilista-varasto-table td {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.lasilista-varasto-capacity-cell {
+    text-align: right;
+}
+
+.lasilista-varasto-capacity {
+    width: 9em;
+    max-width: 100%;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    padding: 2px 6px;
+}
+
+.lasilista-varasto-capacity:hover {
+    border-color: var(--border-light);
+    background: var(--bg-primary);
+}
+
+.lasilista-varasto-capacity:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+    border-color: transparent;
+    background: var(--bg-primary);
+}
+
+.lasilista-hukka {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.lasilista-hukka-label,
+.lasilista-hukka-unit {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.lasilista-hukka-input {
+    width: 4.5em;
+    box-sizing: border-box;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    padding: 4px 6px;
+}
+
+.lasilista-hukka-input:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 1px;
+    border-color: transparent;
+}
+
+.lasilista-varasto-table tr.is-zero th,
+.lasilista-varasto-table tr.is-zero td {
+    background: rgba(220, 53, 69, 0.08);
+    color: #c06a74;
+}
+
+body.dark-mode .lasilista-varasto-table tr.is-zero th,
+body.dark-mode .lasilista-varasto-table tr.is-zero td {
+    background: rgba(220, 53, 69, 0.16);
     color: #e7a8ae;
 }
 

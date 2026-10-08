@@ -28,10 +28,10 @@ service cloud.firestore {
     }
 
     // Mitat state - reaaliaikainen Mitat-sivu
-    // Dokumentit: inputs, paketitIndex, kokoonpanijat, maaliVarasto,
+    // Dokumentit: inputs, paketitIndex, kokoonpanijat, maaliVarasto, lasilistaVarasto,
     // job_{encodeURIComponent(työnumero)} (status active | packed).
     // global on vanha blob-vara; sovellus ei lue/kirjoita sitä.
-    // maaliVarastolla ei ole status-kenttää, joten active-kysely ei poimi sitä.
+    // maaliVarastolla ja lasilistaVarastolla ei ole status-kenttää, joten active-kysely ei poimi niitä.
     match /mitatState/{document=**} {
       allow read, write: if request.auth != null;
     }
