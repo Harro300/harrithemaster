@@ -6759,7 +6759,8 @@ function loadMaaliVarastoEvents() {
                 dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
                 at: Number.isFinite(at) && at > 0 ? at : Date.now(),
                 balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
-                acked: delta > 0 ? true : !!event?.acked
+                acked: delta > 0 ? true : !!event?.acked,
+                orderOnly: delta < 0 && !!event?.orderOnly
             };
         }).filter(Boolean);
     } catch (error) {
@@ -6772,7 +6773,7 @@ function saveMaaliVarastoEvents(events) {
     queueMaaliVarastoSync();
 }
 
-function recordMaaliVarastoEvent(name, delta, balanceAfter) {
+function recordMaaliVarastoEvent(name, delta, balanceAfter, options) {
     const amount = Math.trunc(Number(delta));
     const paintName = collapsePaintName(name);
     if (!paintName || !Number.isFinite(amount) || amount === 0) return;
@@ -6785,7 +6786,8 @@ function recordMaaliVarastoEvent(name, delta, balanceAfter) {
         dayKey: lapivientiDayKey(),
         at,
         balanceAfter: Math.max(0, Math.floor(Number(balanceAfter) || 0)),
-        acked: amount > 0
+        acked: amount > 0,
+        orderOnly: amount < 0 && !!(options && options.orderOnly)
     });
     saveMaaliVarastoEvents(events);
 }
@@ -6817,14 +6819,26 @@ function collectOpenPaintOrders() {
 
 function acknowledgeMaaliOrder(name) {
     const key = paintNameKey(name);
+    if (!key) return;
     const events = loadMaaliVarastoEvents();
-    let changed = false;
+    let qty = 0;
+    let paintName = collapsePaintName(name);
     events.forEach((event) => {
         if (event.delta >= 0 || event.acked || paintNameKey(event.name) !== key) return;
         event.acked = true;
-        changed = true;
+        qty += Math.abs(event.delta);
+        paintName = event.name;
     });
-    if (changed) saveMaaliVarastoEvents(events);
+    if (qty <= 0) return;
+    saveMaaliVarastoEvents(events);
+    const items = loadMaaliVarasto();
+    const existing = items.find((row) => paintNameKey(row.name) === key);
+    if (existing) existing.count += qty;
+    else items.push({ name: paintName, count: qty });
+    const saved = saveMaaliVarasto(items);
+    const item = saved.find((row) => paintNameKey(row.name) === key);
+    recordMaaliVarastoEvent(item ? item.name : paintName, qty, item ? item.count : qty);
+    pruneMaaliHuomiot();
 }
 
 const MAALI_VARASTO_HUOMIOT_KEY = 'maaliVarastoHuomiot';
@@ -6883,7 +6897,8 @@ function maaliVarastoPayloadFromRemote(data) {
             dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
             at: Number.isFinite(at) && at > 0 ? at : Date.now(),
             balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
-            acked: delta > 0 ? true : !!event?.acked
+            acked: delta > 0 ? true : !!event?.acked,
+            orderOnly: delta < 0 && !!event?.orderOnly
         };
     }).filter(Boolean);
 
@@ -6907,7 +6922,8 @@ function maaliVarastoStateKey(state) {
         event.dayKey,
         event.at,
         event.balanceAfter,
-        event.acked ? 1 : 0
+        event.acked ? 1 : 0,
+        event.orderOnly ? 1 : 0
     ].join('\t'));
     const huomiot = (state?.huomiot || []).map((notice) => [
         notice.jobNumber,
@@ -6985,6 +7001,10 @@ function noteMissingPaint(jobNumber, color) {
     if (notices.some((notice) => notice.jobNumber === job && paintNameKey(notice.color) === key)) return;
     notices.push({ jobNumber: job, color: name, at: Date.now() });
     saveMaaliHuomiot(notices);
+    const alreadyOrdered = loadMaaliVarastoEvents().some((event) =>
+        !event.acked && event.delta < 0 && paintNameKey(event.name) === key
+    );
+    if (!alreadyOrdered) recordMaaliVarastoEvent(name, -1, 0, { orderOnly: true });
 }
 
 function pruneMaaliHuomiot() {
@@ -6998,15 +7018,31 @@ function pruneMaaliHuomiot() {
     return next.sort((a, b) => b.at - a.at);
 }
 
+function ensureOrdersForMissingPaints(notices) {
+    if (maaliVarastoApplyingRemote) return;
+    const events = loadMaaliVarastoEvents();
+    (notices || []).forEach((notice) => {
+        const key = paintNameKey(notice.color);
+        const covered = events.some((event) => {
+            if (paintNameKey(event.name) !== key || event.delta >= 0) return false;
+            return event.orderOnly || !event.acked;
+        });
+        if (covered) return;
+        recordMaaliVarastoEvent(notice.color, -1, 0, { orderOnly: true });
+        events.push({ name: notice.color, delta: -1, acked: false, orderOnly: true });
+    });
+}
+
 function buildMaaliHuomiotInnerHtml() {
     const notices = pruneMaaliHuomiot();
+    ensureOrdersForMissingPaints(notices);
     if (notices.length === 0) {
         return '<p class="maali-varasto-empty">Ei huomioita.</p>';
     }
     let html = '<ul class="maali-tilaus-list">';
     notices.forEach((notice) => {
         html += '<li class="maali-tilaus-row">';
-        html += `<span class="maali-tilaus-text">${escapeHtmlText(notice.jobNumber)}  ${escapeHtmlText(notice.color)}</span>`;
+        html += `<span class="maali-tilaus-text">työ ${escapeHtmlText(notice.jobNumber)} sisältää värin ${escapeHtmlText(notice.color)}, jota ei löydy varastosta</span>`;
         html += '</li>';
     });
     html += '</ul>';
@@ -7020,6 +7056,7 @@ function resolveMaaliVarastoWeek() {
 function collectMaaliVarastoWeekKeys(extraWeekKey) {
     const weeks = new Set();
     loadMaaliVarastoEvents().forEach((event) => {
+        if (event.orderOnly) return;
         const key = dayKeyToIsoWeekKey(event.dayKey);
         if (key) weeks.add(key);
     });
@@ -7029,7 +7066,7 @@ function collectMaaliVarastoWeekKeys(extraWeekKey) {
 
 function maaliVarastoWeekRows(weekKey) {
     return loadMaaliVarastoEvents()
-        .filter((event) => dayKeyToIsoWeekKey(event.dayKey) === weekKey)
+        .filter((event) => !event.orderOnly && dayKeyToIsoWeekKey(event.dayKey) === weekKey)
         .sort((a, b) => {
             const day = dayKeySortValue(a.dayKey) - dayKeySortValue(b.dayKey);
             if (day !== 0) return day;
@@ -7175,7 +7212,7 @@ function buildMaaliVarastoHtml(query, draft, showAll, open) {
     html += `<div id="maaliVarastoHuomiot">${buildMaaliHuomiotInnerHtml()}</div>`;
     html += '</div>';
     html += '<div class="maali-tilaukset">';
-    html += '<div class="maali-section-label">Tilaukset</div>';
+    html += '<div class="maali-section-label">Tilauslista</div>';
     html += `<div id="maaliVarastoOrders">${buildMaaliTilauksetInnerHtml()}</div>`;
     html += '</div>';
     html += '<div class="maali-haku">';
@@ -7317,7 +7354,7 @@ function bindMaaliVarastoOnce() {
         const ackBtn = event.target.closest ? event.target.closest('[data-maali-ack]') : null;
         if (ackBtn && summary.contains(ackBtn)) {
             acknowledgeMaaliOrder(ackBtn.dataset.maaliAck);
-            refreshMaaliTilaukset(summary);
+            refreshMaaliVarastoPanels(summary);
             return;
         }
         const weekBtn = event.target.closest ? event.target.closest('[data-maali-week]') : null;
@@ -7768,6 +7805,7 @@ function bindLasilistaVarastoOnce() {
     summary.addEventListener('input', (event) => {
         const target = event.target;
         if (!target || target.id !== 'lasilistaHukka' || !summary.contains(target)) return;
+        target.dataset.dirty = '1';
         previewLasilistaWaste(target, summary);
     });
     summary.addEventListener('change', (event) => {
@@ -7799,13 +7837,20 @@ function previewLasilistaWaste(input, summary) {
 
 function commitLasilistaWaste(input, summary) {
     const current = loadLasilistaWastePercent();
+    const formatted = formatLasilistaCapacityInput(current);
+    if (input.dataset.dirty !== '1') {
+        input.value = formatted;
+        return;
+    }
     const parsed = parseLasilistaWasteInput(input.value);
     if (parsed == null) {
-        input.value = formatLasilistaCapacityInput(current);
+        input.value = formatted;
+        delete input.dataset.dirty;
         showToast('Kirjoita hukkaprosentti väliltä 0–100.', 'warning');
         return;
     }
     input.value = formatLasilistaCapacityInput(parsed);
+    delete input.dataset.dirty;
     if (parsed === current) return;
     saveLasilistaWastePercent(parsed);
     refreshLasilistaVarastoList(summary);
@@ -7997,6 +8042,9 @@ function applyTuotantoContentViewUi() {
             const paintShowAll = materiaali.querySelector('#maaliVarastoShowAll');
             const lasilistaAdd = materiaali.querySelector('#lasilistaVarastoAdd');
             const lasilistaWaste = materiaali.querySelector('#lasilistaHukka');
+            const keepWasteDraft = !!(lasilistaWaste
+                && document.activeElement === lasilistaWaste
+                && lasilistaWaste.dataset.dirty === '1');
             const paintOpen = !!materiaali.querySelector('details[data-section="maali"][open]');
             const lasilistaOpen = !!materiaali.querySelector('details[data-section="lasilista-varasto"][open]');
             materiaali.hidden = false;
@@ -8008,8 +8056,17 @@ function applyTuotantoContentViewUi() {
             ) + buildLasilistaVarastoHtml(
                 lasilistaAdd ? lasilistaAdd.value : '',
                 lasilistaOpen,
-                lasilistaWaste ? lasilistaWaste.value : null
+                keepWasteDraft ? lasilistaWaste.value : null
             );
+            if (keepWasteDraft) {
+                const restoredWaste = materiaali.querySelector('#lasilistaHukka');
+                if (restoredWaste) {
+                    restoredWaste.dataset.dirty = '1';
+                    restoredWaste.focus();
+                    const end = restoredWaste.value.length;
+                    restoredWaste.setSelectionRange(end, end);
+                }
+            }
             bindMaaliVarastoOnce();
             bindLasilistaVarastoOnce();
         } else {

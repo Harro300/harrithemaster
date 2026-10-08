@@ -649,8 +649,10 @@ body.dark-mode .tuotanto-display-options-menu {
 
 .maali-tilaus-text {
     min-width: 0;
+    flex: 1;
     font-weight: 600;
     letter-spacing: -0.015em;
+    line-height: 1.4;
     color: var(--text-primary);
 }
 
