@@ -57,6 +57,7 @@ let isLapivientiView = false;
 let isMateriaaliVarastoView = false;
 let selectedLapivientiWeek = null;
 let selectedMaaliVarastoWeek = null;
+let selectedLasilistaVarastoWeek = null;
 
 // Admin email addresses
 const ADMIN_EMAILS = [
@@ -7379,6 +7380,7 @@ function bindMaaliVarastoOnce() {
 }
 
 const LASILISTA_VARASTO_KEY = 'lasilistaVarasto';
+const LASILISTA_VARASTO_EVENTS_KEY = 'lasilistaVarastoEvents';
 
 function normalizeLasilistaType(type) {
     const match = String(type || '').trim().match(/^(\d+)\s*x\s*(\d+)$/i);
@@ -7470,10 +7472,78 @@ function saveLasilistaWastePercent(percent) {
     queueLasilistaVarastoSync();
 }
 
+function parseLasilistaVarastoEvents(source) {
+    return (Array.isArray(source) ? source : []).map((event) => {
+        const kind = event?.kind === 'lisays' ? 'lisays' : (event?.kind === 'sahaus' ? 'sahaus' : '');
+        const type = normalizeLasilistaType(event?.type);
+        const meters = Math.round(Number(event?.meters) * 100) / 100;
+        if (!kind || !type || !Number.isFinite(meters) || meters <= 0) return null;
+        const at = Number(event?.at);
+        return {
+            id: String(event?.id || `${at || Date.now()}`),
+            kind,
+            type,
+            meters,
+            dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
+            at: Number.isFinite(at) && at > 0 ? at : Date.now(),
+            checkKey: String(event?.checkKey || '')
+        };
+    }).filter(Boolean);
+}
+
+function loadLasilistaVarastoEvents() {
+    try {
+        return parseLasilistaVarastoEvents(JSON.parse(localStorage.getItem(LASILISTA_VARASTO_EVENTS_KEY) || '[]'));
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveLasilistaVarastoEvents(events) {
+    localStorage.setItem(LASILISTA_VARASTO_EVENTS_KEY, JSON.stringify(parseLasilistaVarastoEvents(events)));
+    queueLasilistaVarastoSync();
+}
+
+function recordLasilistaVarastoEvents(entries) {
+    if (lasilistaVarastoApplyingRemote) return;
+    const events = loadLasilistaVarastoEvents();
+    const at = Date.now();
+    const dayKey = lapivientiDayKey();
+    let added = 0;
+    (entries || []).forEach((entry) => {
+        const kind = entry?.kind === 'lisays' ? 'lisays' : 'sahaus';
+        const type = normalizeLasilistaType(entry?.type);
+        const meters = Math.round(Number(entry?.meters) * 100) / 100;
+        if (!type || !Number.isFinite(meters) || meters <= 0) return;
+        added += 1;
+        events.push({
+            id: `${at}-${added}-${Math.random().toString(36).slice(2, 8)}`,
+            kind,
+            type,
+            meters,
+            dayKey,
+            at,
+            checkKey: String(entry?.checkKey || '')
+        });
+    });
+    if (added) saveLasilistaVarastoEvents(events);
+}
+
+function removeLasilistaVarastoEventsForCheck(checkKey) {
+    if (lasilistaVarastoApplyingRemote) return;
+    const key = String(checkKey || '');
+    if (!key) return;
+    const events = loadLasilistaVarastoEvents();
+    const next = events.filter((event) => event.checkKey !== key);
+    if (next.length === events.length) return;
+    saveLasilistaVarastoEvents(next);
+}
+
 function buildLasilistaVarastoPayload() {
     return {
         items: loadLasilistaVarasto(),
-        wastePercent: loadLasilistaWastePercent()
+        wastePercent: loadLasilistaWastePercent(),
+        events: loadLasilistaVarastoEvents()
     };
 }
 
@@ -7482,21 +7552,33 @@ function lasilistaVarastoPayloadFromRemote(data) {
     const percent = parseLasilistaWasteInput(data?.wastePercent);
     return {
         items,
-        wastePercent: percent == null ? LASILISTA_WASTE_DEFAULT : percent
+        wastePercent: percent == null ? LASILISTA_WASTE_DEFAULT : percent,
+        events: parseLasilistaVarastoEvents(data?.events)
     };
 }
 
 function lasilistaVarastoStateKey(state) {
     return JSON.stringify({
         items: (state?.items || []).map((item) => ({ type: item.type, meters: item.meters })),
-        wastePercent: state?.wastePercent
+        wastePercent: state?.wastePercent,
+        events: (state?.events || []).map((event) => ({
+            id: event.id,
+            kind: event.kind,
+            type: event.type,
+            meters: event.meters,
+            dayKey: event.dayKey,
+            at: event.at,
+            checkKey: event.checkKey || ''
+        }))
     });
 }
 
 function lasilistaVarastoLocalHasData() {
     const raw = readLasilistaVarastoRaw();
     const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
-    return items.length > 0 || Object.prototype.hasOwnProperty.call(raw, 'wastePercent');
+    return items.length > 0
+        || Object.prototype.hasOwnProperty.call(raw, 'wastePercent')
+        || loadLasilistaVarastoEvents().length > 0;
 }
 
 function applyLasilistaVarastoPayload(state) {
@@ -7506,6 +7588,7 @@ function applyLasilistaVarastoPayload(state) {
             items: state.items || [],
             wastePercent: state.wastePercent
         }));
+        localStorage.setItem(LASILISTA_VARASTO_EVENTS_KEY, JSON.stringify(state.events || []));
     } finally {
         lasilistaVarastoApplyingRemote = false;
     }
@@ -7684,20 +7767,24 @@ function itemFromLasilistaCheckKey(checkKey) {
 function applyLasilistaCheckpointToVarasto(checkKey, checked) {
     const item = itemFromLasilistaCheckKey(checkKey);
     if (!itemHasLasilistat(item)) return;
+    if (!checked) removeLasilistaVarastoEventsForCheck(checkKey);
     const mmByType = collectItemLasilistaMetersByType(item);
     const sign = checked ? -1 : 1;
     const stock = loadLasilistaVarasto();
     const factor = 1 + loadLasilistaWastePercent() / 100;
+    const sawn = [];
     let changed = false;
     Object.keys(mmByType).forEach((type) => {
-        const delta = displayedLasilistaMeters(Number(mmByType[type]) * factor) * sign;
-        if (!delta) return;
+        const meters = displayedLasilistaMeters(Number(mmByType[type]) * factor);
+        if (!meters) return;
         changed = true;
         const existing = stock.find((row) => row.type === type);
-        if (existing) existing.meters += delta;
-        else stock.push({ type, meters: delta });
+        if (existing) existing.meters += meters * sign;
+        else stock.push({ type, meters: meters * sign });
+        if (checked) sawn.push({ kind: 'sahaus', type, meters, checkKey });
     });
     if (changed) saveLasilistaVarasto(stock);
+    if (checked && sawn.length) recordLasilistaVarastoEvents(sawn);
 }
 
 function buildLasilistaVarastoListHtml(items) {
@@ -7766,7 +7853,9 @@ function buildLasilistaVarastoHtml(draft, open, wasteDraft) {
     html += '<label class="lasilista-hukka-label" for="lasilistaHukka">hukkamäärä</label>';
     html += `<input type="text" id="lasilistaHukka" class="lasilista-hukka-input" inputmode="decimal" value="${escapeHtmlText(wasteText)}" aria-label="Hukkamäärä prosentteina" autocomplete="off" spellcheck="false">`;
     html += '<span class="lasilista-hukka-unit">%</span>';
-    html += '</div></div></details></div>';
+    html += '</div>';
+    html += `<div class="maali-viikko" id="lasilistaVarastoWeek">${buildLasilistaViikkoHtml()}</div>`;
+    html += '</div></details></div>';
     return html;
 }
 
@@ -7778,6 +7867,104 @@ function refreshLasilistaVarastoList(root) {
     results.innerHTML = buildLasilistaVarastoListHtml(loadLasilistaVarasto());
 }
 
+function resolveLasilistaVarastoWeek() {
+    return selectedLasilistaVarastoWeek || currentIsoWeekKey();
+}
+
+function collectLasilistaVarastoWeekKeys(extraWeekKey) {
+    const weeks = new Set();
+    loadLasilistaVarastoEvents().forEach((event) => {
+        const key = dayKeyToIsoWeekKey(event.dayKey);
+        if (key) weeks.add(key);
+    });
+    if (extraWeekKey) weeks.add(extraWeekKey);
+    return [...weeks].sort().reverse();
+}
+
+function lasilistaVarastoWeekDays(weekKey) {
+    const byDay = new Map();
+    loadLasilistaVarastoEvents().forEach((event) => {
+        if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
+        const day = byDay.get(event.dayKey) || { dayKey: event.dayKey, sahaus: new Map(), lisays: new Map() };
+        const bucket = event.kind === 'lisays' ? day.lisays : day.sahaus;
+        bucket.set(event.type, (bucket.get(event.type) || 0) + event.meters);
+        byDay.set(event.dayKey, day);
+    });
+    const toRows = (bucket) => [...bucket.entries()]
+        .map(([type, meters]) => ({ type, meters: Math.round(meters * 100) / 100 }))
+        .filter((row) => row.meters > 0)
+        .sort((a, b) => a.type.localeCompare(b.type, 'fi', { numeric: true }));
+    return [...byDay.values()]
+        .map((day) => ({ dayKey: day.dayKey, sahaus: toRows(day.sahaus), lisays: toRows(day.lisays) }))
+        .filter((day) => day.sahaus.length || day.lisays.length)
+        .sort((a, b) => dayKeySortValue(a.dayKey) - dayKeySortValue(b.dayKey));
+}
+
+function formatLasilistaWeekLines(rows, separator) {
+    return (rows || []).map((row) => `${row.type} ${formatLasilistaTableMeters(row.meters)}`).join(separator);
+}
+
+function buildLasilistaViikkoHtml() {
+    const weekKey = resolveLasilistaVarastoWeek();
+    const weeks = collectLasilistaVarastoWeekKeys(weekKey);
+    const days = lasilistaVarastoWeekDays(weekKey);
+    let html = '<div class="maali-viikko-header">';
+    html += '<div class="maali-section-label">Viikkonäkymä</div>';
+    html += '<div class="maali-viikko-controls">';
+    html += '<button type="button" class="maali-viikko-btn" data-lasilista-week="-1" aria-label="Edellinen viikko">‹</button>';
+    html += '<select id="lasilistaVarastoWeekSelect" class="maali-viikko-select" aria-label="Viikko">';
+    weeks.forEach((week) => {
+        const selected = week === weekKey ? ' selected' : '';
+        html += `<option value="${escapeHtmlText(week)}"${selected}>${escapeHtmlText(formatIsoWeekLabel(week))}</option>`;
+    });
+    html += '</select>';
+    html += '<button type="button" class="maali-viikko-btn" data-lasilista-week="1" aria-label="Seuraava viikko">›</button>';
+    html += '</div></div>';
+    html += '<table class="maali-viikko-table"><thead><tr>';
+    html += '<th scope="col">päivä</th>';
+    html += '<th scope="col">sahaus</th>';
+    html += '<th scope="col">lisäys</th>';
+    html += '</tr></thead><tbody>';
+    if (days.length === 0) {
+        html += '<tr><td colspan="3" class="maali-viikko-empty">Ei muutoksia tällä viikolla.</td></tr>';
+    } else {
+        days.forEach((day) => {
+            html += '<tr>';
+            html += `<td>${escapeHtmlText(dayKeyToFinnishDate(day.dayKey))}</td>`;
+            html += `<td class="lasilista-viikko-cell">${escapeHtmlText(formatLasilistaWeekLines(day.sahaus, '\n'))}</td>`;
+            html += `<td class="lasilista-viikko-cell">${escapeHtmlText(formatLasilistaWeekLines(day.lisays, '\n'))}</td>`;
+            html += '</tr>';
+        });
+    }
+    html += '</tbody></table>';
+    html += '<button type="button" class="btn btn-outline-secondary btn-sm maali-viikko-copy" id="lasilistaVarastoWeekCopy">Kopioi</button>';
+    return html;
+}
+
+function refreshLasilistaViikko(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const week = scope && scope.querySelector('#lasilistaVarastoWeek');
+    if (week) week.innerHTML = buildLasilistaViikkoHtml();
+}
+
+async function copyLasilistaVarastoWeek(btn) {
+    const days = lasilistaVarastoWeekDays(resolveLasilistaVarastoWeek());
+    const lines = ['päivä\tsahaus\tlisäys'];
+    days.forEach((day) => {
+        lines.push([
+            dayKeyToFinnishDate(day.dayKey),
+            formatLasilistaWeekLines(day.sahaus, ', '),
+            formatLasilistaWeekLines(day.lisays, ', ')
+        ].map(lapivientiTsvCell).join('\t'));
+    });
+    try {
+        await copyPakettiTextToClipboard(lines.join('\n'));
+        flashPakettiCopyButton(btn);
+    } catch (error) {
+        showToast('Kopiointi epäonnistui.', 'error');
+    }
+}
+
 function addLasilistatFromInput(summary) {
     const area = summary.querySelector('#lasilistaVarastoAdd');
     if (!area) return;
@@ -7787,8 +7974,14 @@ function addLasilistatFromInput(summary) {
         return;
     }
     saveLasilistaVarasto(mergeLasilistaAdditions(loadLasilistaVarasto(), additions));
+    recordLasilistaVarastoEvents(additions.map((add) => ({
+        kind: 'lisays',
+        type: add.type,
+        meters: add.meters
+    })));
     area.value = '';
     refreshLasilistaVarastoList(summary);
+    refreshLasilistaViikko(summary);
     showToast(skipped > 0 ? 'Lisätty varastoon. Osa riveistä ohitettiin.' : 'Lisätty varastoon.', 'success');
 }
 
@@ -7800,6 +7993,19 @@ function bindLasilistaVarastoOnce() {
         const addBtn = event.target.closest ? event.target.closest('#lasilistaVarastoAddBtn') : null;
         if (addBtn && summary.contains(addBtn)) {
             addLasilistatFromInput(summary);
+            return;
+        }
+        const weekBtn = event.target.closest ? event.target.closest('[data-lasilista-week]') : null;
+        if (weekBtn && summary.contains(weekBtn)) {
+            const delta = Number(weekBtn.dataset.lasilistaWeek);
+            if (!delta) return;
+            selectedLasilistaVarastoWeek = shiftIsoWeekKey(resolveLasilistaVarastoWeek(), delta);
+            refreshLasilistaViikko(summary);
+            return;
+        }
+        const copyBtn = event.target.closest ? event.target.closest('#lasilistaVarastoWeekCopy') : null;
+        if (copyBtn && summary.contains(copyBtn)) {
+            void copyLasilistaVarastoWeek(copyBtn);
         }
     });
     summary.addEventListener('input', (event) => {
@@ -7813,6 +8019,13 @@ function bindLasilistaVarastoOnce() {
         if (!target || !summary.contains(target)) return;
         if (target.id === 'lasilistaHukka') {
             commitLasilistaWaste(target, summary);
+            return;
+        }
+        if (target.id === 'lasilistaVarastoWeekSelect') {
+            const parsed = parseIsoWeekKey(target.value);
+            if (!parsed) return;
+            selectedLasilistaVarastoWeek = `${parsed.year}-W${String(parsed.week).padStart(2, '0')}`;
+            refreshLasilistaViikko(summary);
             return;
         }
         const input = target.closest ? target.closest('.lasilista-varasto-capacity') : null;

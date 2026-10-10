@@ -891,6 +891,11 @@ body.dark-mode .lasilista-varasto-table tr.is-zero td {
     white-space: normal;
 }
 
+.maali-viikko-table td.lasilista-viikko-cell {
+    white-space: pre-line;
+    vertical-align: top;
+}
+
 .maali-viikko-copy {
     margin-top: 0.75rem;
 }
