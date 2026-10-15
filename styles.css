@@ -3591,6 +3591,13 @@ body.dark-mode .scan-pdf-preview-canvas {
     background: var(--bg-tertiary);
 }
 
-.lapivienti-copy-btn {
+.lapivienti-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin-top: 0.75rem;
+}
+
+.lapivienti-copy-btn {
+    margin-top: 0;
 }

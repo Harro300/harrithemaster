@@ -37,6 +37,14 @@ let lasilistaVarastoUnsubscribe = null;
 let lasilistaVarastoLoaded = false;
 let lasilistaVarastoApplyingRemote = false;
 let lasilistaVarastoSyncQueued = false;
+let lapivientiUnsubscribe = null;
+let lapivientiLoaded = false;
+let lapivientiApplyingRemote = false;
+let lapivientiCloudReady = false;
+let lapivientiSyncQueued = false;
+let lapivientiSyncing = false;
+let lapivientiSyncAttempts = 0;
+let lapivientiPendingOps = [];
 let paketitIndexJobs = [];
 let paketitIndexLoaded = false;
 let paketitIndexCopyDone = false;
@@ -1600,6 +1608,20 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe lasilista varasto -kuuntelijan luonnissa:', error);
     }
+
+    try {
+        lapivientiUnsubscribe = onSnapshot(
+            doc(db, 'mitatState', 'lapivienti'),
+            (docSnapshot) => {
+                handleLapivientiSnapshot(docSnapshot);
+            },
+            (error) => {
+                console.error('❌ Läpivienti-kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe läpivienti-kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -1645,6 +1667,16 @@ function stopRealtimeListeners() {
         lasilistaVarastoUnsubscribe = null;
     }
     lasilistaVarastoLoaded = false;
+
+    if (lapivientiUnsubscribe) {
+        lapivientiUnsubscribe();
+        lapivientiUnsubscribe = null;
+    }
+    lapivientiLoaded = false;
+    lapivientiCloudReady = false;
+    lapivientiPendingOps = [];
+    lapivientiSyncing = false;
+    lapivientiSyncAttempts = 0;
     
     console.log('✅ Kuuntelijat lopetettu');
 }
@@ -2078,6 +2110,8 @@ async function logout() {
     kokoonpanijatLoaded = false;
     maaliVarastoLoaded = false;
     lasilistaVarastoLoaded = false;
+    lapivientiLoaded = false;
+    lapivientiCloudReady = false;
 
     if (isMitatPanelFullscreen) {
         setMitatPanelFullscreen(false);
@@ -6358,7 +6392,7 @@ function recordLapivientiEvent(checkKey, jobNumber, item) {
     const selected = selectedKokoonpanijaId
         ? getKokoonpanijat().find((user) => user.id === selectedKokoonpanijaId)
         : null;
-    events.push({
+    const event = {
         itemKey: checkKey,
         jobNumber: String(jobNumber),
         userId: selected ? selected.id : null,
@@ -6367,8 +6401,10 @@ function recordLapivientiEvent(checkKey, jobNumber, item) {
         column: lapivientiColumn(item),
         unitCount: parseItemUnitCount(item) || 0,
         at: Date.now()
-    });
+    };
+    events.push(event);
     saveLapivientiEvents(events);
+    enqueueLapivientiOp({ type: 'upsert', event });
 }
 
 function updateLapivientiEventUnitCount(checkKey, unitCount) {
@@ -6379,13 +6415,19 @@ function updateLapivientiEventUnitCount(checkKey, unitCount) {
         event.unitCount = unitCount;
         changed = true;
     });
-    if (changed) saveLapivientiEvents(events);
+    if (changed) {
+        saveLapivientiEvents(events);
+        enqueueLapivientiOp({ type: 'unit', itemKey: checkKey, unitCount });
+    }
 }
 
 function removeLapivientiEvent(checkKey) {
     const events = getLapivientiEvents();
     const next = events.filter((event) => event.itemKey !== checkKey);
-    if (next.length !== events.length) saveLapivientiEvents(next);
+    if (next.length !== events.length) {
+        saveLapivientiEvents(next);
+        enqueueLapivientiOp({ type: 'remove', itemKey: checkKey });
+    }
 }
 
 function remapLapivientiItemKey(oldKey, newKey, newJobNumber) {
@@ -6397,7 +6439,15 @@ function remapLapivientiItemKey(oldKey, newKey, newJobNumber) {
         if (newJobNumber != null) event.jobNumber = String(newJobNumber);
         changed = true;
     });
-    if (changed) saveLapivientiEvents(events);
+    if (changed) {
+        saveLapivientiEvents(events);
+        enqueueLapivientiOp({
+            type: 'remap',
+            oldKey,
+            newKey,
+            jobNumber: newJobNumber != null ? String(newJobNumber) : null
+        });
+    }
 }
 
 function remapLapivientiJob(fromJob, toJob, itemNames) {
@@ -6409,7 +6459,243 @@ function remapLapivientiJob(fromJob, toJob, itemNames) {
 function deleteLapivientiForJob(jobNumber) {
     const events = getLapivientiEvents();
     const next = events.filter((event) => String(event.jobNumber) !== String(jobNumber));
-    if (next.length !== events.length) saveLapivientiEvents(next);
+    if (next.length !== events.length) {
+        saveLapivientiEvents(next);
+        enqueueLapivientiOp({ type: 'deleteJob', jobNumber: String(jobNumber) });
+    }
+}
+
+function normalizeLapivientiEvent(event) {
+    if (!event || typeof event !== 'object') return null;
+    const itemKey = String(event.itemKey || '');
+    const jobNumber = String(event.jobNumber || '');
+    if (!itemKey || !jobNumber) return null;
+    const at = Number(event.at);
+    return {
+        itemKey,
+        jobNumber,
+        userId: event.userId ? String(event.userId) : null,
+        userName: String(event.userName || 'tuntematon'),
+        dayKey: String(event.dayKey || ''),
+        column: event.column === 'ikkuna' ? 'ikkuna' : 'ovi',
+        unitCount: Math.max(0, Math.floor(Number(event.unitCount) || 0)),
+        at: Number.isFinite(at) && at > 0 ? at : 0
+    };
+}
+
+function normalizeLapivientiEvents(raw) {
+    const byKey = new Map();
+    (Array.isArray(raw) ? raw : []).forEach((event) => {
+        const normalized = normalizeLapivientiEvent(event);
+        if (normalized) byKey.set(normalized.itemKey, normalized);
+    });
+    return [...byKey.values()];
+}
+
+function lapivientiEventsKey(events) {
+    return JSON.stringify((events || []).map((event) => [
+        event.itemKey,
+        event.jobNumber,
+        event.userId || '',
+        event.userName,
+        event.dayKey,
+        event.column,
+        event.unitCount,
+        event.at
+    ].join('\t')));
+}
+
+function applyLapivientiOp(events, op) {
+    const list = (events || []).slice();
+    if (!op || !op.type) return list;
+    if (op.type === 'upsert') {
+        const event = normalizeLapivientiEvent(op.event);
+        if (!event) return list;
+        const index = list.findIndex((row) => row.itemKey === event.itemKey);
+        if (index >= 0) list[index] = event;
+        else list.push(event);
+        return list;
+    }
+    if (op.type === 'unit') {
+        const unitCount = Math.max(0, Math.floor(Number(op.unitCount) || 0));
+        return list.map((row) => (row.itemKey === op.itemKey ? { ...row, unitCount } : row));
+    }
+    if (op.type === 'remove') {
+        return list.filter((row) => row.itemKey !== op.itemKey);
+    }
+    if (op.type === 'remap') {
+        return list.map((row) => {
+            if (row.itemKey !== op.oldKey) return row;
+            const next = { ...row, itemKey: String(op.newKey || row.itemKey) };
+            if (op.jobNumber != null) next.jobNumber = String(op.jobNumber);
+            return next;
+        });
+    }
+    if (op.type === 'deleteJob') {
+        return list.filter((row) => String(row.jobNumber) !== String(op.jobNumber));
+    }
+    return list;
+}
+
+function applyLapivientiEventsToLocal(events) {
+    lapivientiApplyingRemote = true;
+    try {
+        localStorage.setItem('lapivientiEvents', JSON.stringify(events));
+    } finally {
+        lapivientiApplyingRemote = false;
+    }
+}
+
+function refreshLapivientiViewIfOpen() {
+    const mittatView = document.getElementById('mittatView');
+    if (mittatView && !mittatView.classList.contains('d-none')) {
+        loadMittatView();
+    }
+}
+
+function handleLapivientiSnapshot(docSnapshot) {
+    const remote = docSnapshot && docSnapshot.exists()
+        ? normalizeLapivientiEvents(docSnapshot.data().events)
+        : [];
+    if (!remote.length) {
+        const wasReady = lapivientiCloudReady;
+        lapivientiCloudReady = false;
+        lapivientiLoaded = true;
+        if (wasReady) refreshLapivientiViewIfOpen();
+        return;
+    }
+    const busy = lapivientiPendingOps.length > 0 || lapivientiSyncing;
+    const localKey = lapivientiEventsKey(normalizeLapivientiEvents(getLapivientiEvents()));
+    const same = lapivientiEventsKey(remote) === localKey;
+    if (!same && !busy) applyLapivientiEventsToLocal(remote);
+    const becameReady = !lapivientiCloudReady;
+    lapivientiCloudReady = true;
+    lapivientiLoaded = true;
+    if (busy) queueLapivientiSync();
+    if (becameReady || (!same && !busy)) refreshLapivientiViewIfOpen();
+}
+
+function enqueueLapivientiOp(op) {
+    if (lapivientiApplyingRemote || !lapivientiCloudReady) return;
+    lapivientiPendingOps.push(op);
+    lapivientiSyncAttempts = 0;
+    queueLapivientiSync();
+}
+
+function queueLapivientiSync() {
+    if (lapivientiApplyingRemote || lapivientiSyncQueued || lapivientiSyncing) return;
+    if (!lapivientiPendingOps.length) return;
+    lapivientiSyncQueued = true;
+    queueMicrotask(() => {
+        lapivientiSyncQueued = false;
+        void syncLapivientiOpsToFirestore();
+    });
+}
+
+async function syncLapivientiOpsToFirestore() {
+    if (lapivientiApplyingRemote || lapivientiSyncing || !lapivientiLoaded || !lapivientiCloudReady) return;
+    if (!window.firebase || !window.firebase.db || !currentUser || !window.firebase.runTransaction) return;
+    if (!lapivientiPendingOps.length) return;
+    const ops = lapivientiPendingOps.splice(0);
+    lapivientiSyncing = true;
+    let remoteEmpty = false;
+    let writtenEvents = null;
+    let flushFollowers = false;
+    try {
+        const { db, doc, runTransaction, serverTimestamp } = window.firebase;
+        const ref = doc(db, 'mitatState', 'lapivienti');
+        await runTransaction(db, async (tx) => {
+            remoteEmpty = false;
+            writtenEvents = null;
+            const snap = await tx.get(ref);
+            const remote = snap.exists() ? normalizeLapivientiEvents(snap.data().events) : [];
+            if (!remote.length) {
+                remoteEmpty = true;
+                return;
+            }
+            let events = remote;
+            ops.forEach((op) => {
+                events = applyLapivientiOp(events, op);
+            });
+            writtenEvents = events;
+            tx.set(ref, {
+                events,
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            });
+        });
+        if (remoteEmpty) {
+            lapivientiPendingOps = ops.concat(lapivientiPendingOps);
+            return;
+        }
+        lapivientiSyncAttempts = 0;
+        flushFollowers = true;
+        if (writtenEvents) {
+            const same = lapivientiEventsKey(writtenEvents) === lapivientiEventsKey(normalizeLapivientiEvents(getLapivientiEvents()));
+            if (!same) {
+                applyLapivientiEventsToLocal(writtenEvents);
+                refreshLapivientiViewIfOpen();
+            }
+        }
+    } catch (error) {
+        lapivientiPendingOps = ops.concat(lapivientiPendingOps);
+        lapivientiSyncAttempts += 1;
+        console.error('❌ Läpivienti-synkka epäonnistui:', error);
+        if (lapivientiSyncAttempts <= 3 && lapivientiCloudReady) {
+            setTimeout(() => queueLapivientiSync(), 500 * lapivientiSyncAttempts);
+        }
+    } finally {
+        lapivientiSyncing = false;
+    }
+    if (flushFollowers && lapivientiPendingOps.length) queueLapivientiSync();
+}
+
+async function exportLapivientiToFirestore() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !lapivientiLoaded || !window.firebase.runTransaction) {
+        showToast('Läpiviennin synkka ei ole vielä valmis.', 'warning');
+        return;
+    }
+    const events = normalizeLapivientiEvents(getLapivientiEvents());
+    if (!events.length) {
+        showToast('Tällä koneella ei ole läpivientejä vietäväksi.', 'warning');
+        return;
+    }
+    try {
+        const { db, doc, runTransaction, serverTimestamp } = window.firebase;
+        const ref = doc(db, 'mitatState', 'lapivienti');
+        let written = 0;
+        let already = false;
+        await runTransaction(db, async (tx) => {
+            already = false;
+            written = 0;
+            const snap = await tx.get(ref);
+            const remote = snap.exists() ? normalizeLapivientiEvents(snap.data().events) : [];
+            if (remote.length) {
+                already = true;
+                return;
+            }
+            const latest = normalizeLapivientiEvents(getLapivientiEvents());
+            if (!latest.length) return;
+            written = latest.length;
+            tx.set(ref, {
+                events: latest,
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            });
+        });
+        if (already) {
+            showToast('Läpivienti on jo jaettu.', 'info');
+            return;
+        }
+        if (!written) {
+            showToast('Tällä koneella ei ole läpivientejä vietäväksi.', 'warning');
+            return;
+        }
+        showToast(`Läpivienti viety (${written} riviä).`, 'success');
+    } catch (error) {
+        console.error('❌ Läpiviennin vienti epäonnistui:', error);
+        showToast('Läpiviennin vienti epäonnistui.', 'error');
+    }
 }
 
 function lapivientiTekijaName(event) {
@@ -6604,8 +6890,12 @@ function buildLapivientiTableHtml() {
     html += `<td class="lapivienti-num">${ikkunaTotal}</td>`;
     html += `<td class="lapivienti-num">${ikkunaYksikotTotal}</td>`;
     html += '</tr></tfoot></table>';
+    html += '<div class="lapivienti-actions">';
     html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="copyLapivientiTable(this)">Kopioi</button>';
-    html += '</div>';
+    if (!lapivientiCloudReady) {
+        html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="exportLapivientiToFirestore()">Vie tämän koneen läpivienti</button>';
+    }
+    html += '</div></div>';
     return html;
 }
 
