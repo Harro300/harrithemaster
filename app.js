@@ -6650,54 +6650,6 @@ async function syncLapivientiOpsToFirestore() {
     if (flushFollowers && lapivientiPendingOps.length) queueLapivientiSync();
 }
 
-async function exportLapivientiToFirestore() {
-    if (!window.firebase || !window.firebase.db || !currentUser || !lapivientiLoaded || !window.firebase.runTransaction) {
-        showToast('Läpiviennin synkka ei ole vielä valmis.', 'warning');
-        return;
-    }
-    const events = normalizeLapivientiEvents(getLapivientiEvents());
-    if (!events.length) {
-        showToast('Tällä koneella ei ole läpivientejä vietäväksi.', 'warning');
-        return;
-    }
-    try {
-        const { db, doc, runTransaction, serverTimestamp } = window.firebase;
-        const ref = doc(db, 'mitatState', 'lapivienti');
-        let written = 0;
-        let already = false;
-        await runTransaction(db, async (tx) => {
-            already = false;
-            written = 0;
-            const snap = await tx.get(ref);
-            const remote = snap.exists() ? normalizeLapivientiEvents(snap.data().events) : [];
-            if (remote.length) {
-                already = true;
-                return;
-            }
-            const latest = normalizeLapivientiEvents(getLapivientiEvents());
-            if (!latest.length) return;
-            written = latest.length;
-            tx.set(ref, {
-                events: latest,
-                updatedBy: currentUser.email,
-                updatedAt: serverTimestamp()
-            });
-        });
-        if (already) {
-            showToast('Läpivienti on jo jaettu.', 'info');
-            return;
-        }
-        if (!written) {
-            showToast('Tällä koneella ei ole läpivientejä vietäväksi.', 'warning');
-            return;
-        }
-        showToast(`Läpivienti viety (${written} riviä).`, 'success');
-    } catch (error) {
-        console.error('❌ Läpiviennin vienti epäonnistui:', error);
-        showToast('Läpiviennin vienti epäonnistui.', 'error');
-    }
-}
-
 function lapivientiTekijaName(event) {
     if (event.userId) {
         const current = getKokoonpanijat().find((user) => user.id === event.userId);
@@ -6892,9 +6844,6 @@ function buildLapivientiTableHtml() {
     html += '</tr></tfoot></table>';
     html += '<div class="lapivienti-actions">';
     html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="copyLapivientiTable(this)">Kopioi</button>';
-    if (!lapivientiCloudReady) {
-        html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="exportLapivientiToFirestore()">Vie tämän koneen läpivienti</button>';
-    }
     html += '</div></div>';
     return html;
 }
