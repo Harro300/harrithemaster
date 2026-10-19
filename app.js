@@ -12433,15 +12433,21 @@ async function downloadPackingList(jobNumber) {
         return;
     }
 
-    const packerNameInput = window.prompt('Anna pakkaajan nimi:');
-    if (packerNameInput === null) {
-        showToast('Pakkausluettelon luonti peruttu.', 'info');
-        return;
-    }
-    const packerName = packerNameInput.trim();
+    const selectedPacker = selectedKokoonpanijaId
+        ? getKokoonpanijat().find((user) => user.id === selectedKokoonpanijaId)
+        : null;
+    let packerName = selectedPacker ? String(selectedPacker.name || '').trim() : '';
     if (!packerName) {
-        showToast('Anna pakkaajan nimi.', 'warning');
-        return;
+        const packerNameInput = window.prompt('Anna pakkaajan nimi:');
+        if (packerNameInput === null) {
+            showToast('Pakkausluettelon luonti peruttu.', 'info');
+            return;
+        }
+        packerName = packerNameInput.trim();
+        if (!packerName) {
+            showToast('Anna pakkaajan nimi.', 'warning');
+            return;
+        }
     }
 
     try {
