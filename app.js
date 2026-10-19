@@ -20,6 +20,7 @@ let firebaseInitialized = false;
 let currentUser = null;
 let isAdmin = false;
 let isCoordinator = false;
+let isWarehouseUser = false;
 let formulaSetsUnsubscribe = null;
 let mitatStateUnsubscribe = null;
 let mitatInputsUnsubscribe = null;
@@ -77,6 +78,9 @@ const ADMIN_EMAILS = [
 const COORDINATOR_EMAILS = [
     'koordinaattori@teras.fi',
     'logistiikka@teras.fi'
+];
+const WAREHOUSE_EMAILS = [
+    'varasto@teras.fi'
 ];
 
 // ========== UTILITY FUNCTIONS ==========
@@ -165,6 +169,10 @@ function checkIsAdmin(email) {
 
 function checkIsCoordinator(email) {
     return COORDINATOR_EMAILS.includes(email);
+}
+
+function checkIsWarehouseUser(email) {
+    return WAREHOUSE_EMAILS.includes(email);
 }
 
 // Wait for Firebase to be ready
@@ -1180,6 +1188,11 @@ function focusJobSection(jobId) {
 }
 
 function applyPendingJobDeepLink() {
+    if (isWarehouseUser) {
+        pendingJobDeepLink = null;
+        clearJobDeepLinkFromUrl();
+        return;
+    }
     if (!pendingJobDeepLink || !mitatStateLoaded) return;
 
     const jobNumber = pendingJobDeepLink;
@@ -1256,7 +1269,12 @@ function enterAuthenticatedApp() {
     updateSyncStatus(true);
     setupRealtimeListeners();
 
-    if (pendingJobDeepLink || isCoordinator) {
+    if (isWarehouseUser) {
+        console.log('🔵 Avataan materiaalivarasto');
+        pendingJobDeepLink = null;
+        clearJobDeepLinkFromUrl();
+        switchView('mitat');
+    } else if (pendingJobDeepLink || isCoordinator) {
         console.log('🔵 Avataan Mitat-näkymä (deep link tai koordinaattori)');
         switchView('mitat');
     } else {
@@ -1305,6 +1323,7 @@ async function initializeFirebaseAuth() {
             currentUser = user;
             isAdmin = checkIsAdmin(user.email);
             isCoordinator = checkIsCoordinator(user.email);
+            isWarehouseUser = checkIsWarehouseUser(user.email);
             updateSyncStatus(true);
             updateAdminAccessUI();
             const loginScreen = document.getElementById('loginScreen');
@@ -1316,6 +1335,7 @@ async function initializeFirebaseAuth() {
             currentUser = null;
             isAdmin = false;
             isCoordinator = false;
+            isWarehouseUser = false;
             updateSyncStatus(false);
             updateAdminAccessUI();
         }
@@ -1951,6 +1971,12 @@ function updateAdminAccessUI() {
     if (laskinTogglePaketit) {
         laskinTogglePaketit.style.display = isCoordinator ? 'none' : '';
     }
+
+    document.querySelectorAll('.view-toggle-container').forEach((el) => {
+        el.style.display = isWarehouseUser ? 'none' : '';
+    });
+    const displayOptionsBtn = document.getElementById('tuotantoDisplayOptionsBtn');
+    if (displayOptionsBtn) displayOptionsBtn.style.display = isWarehouseUser ? 'none' : '';
 }
 
 // Wait for DOM to be ready before attaching login handler
@@ -2011,6 +2037,7 @@ function attachLoginHandler() {
         currentUser = userCredential.user;
         isAdmin = checkIsAdmin(currentUser.email);
         isCoordinator = checkIsCoordinator(currentUser.email);
+        isWarehouseUser = checkIsWarehouseUser(currentUser.email);
         console.log('🔵 Käyttäjä asetettu:', currentUser.email, 'Admin:', isAdmin);
         updateAdminAccessUI();
         enterAuthenticatedApp();
@@ -2057,9 +2084,17 @@ function switchView(view) {
     const mittatView = document.getElementById('mittatView');
     const paketitView = document.getElementById('paketitView');
 
-    if (isCoordinator && view === 'laskin') {
+    if (isWarehouseUser && view !== 'mitat') {
+        showToast('Varasto-käyttäjällä on pääsy vain materiaalivarastoon.', 'warning');
+        view = 'mitat';
+    } else if (isCoordinator && view === 'laskin') {
         showToast('Koordinaattori-käyttäjällä on pääsy vain Mitat-sivulle.', 'warning');
         view = 'mitat';
+    }
+    if (isWarehouseUser) {
+        isTuotantoContentView = false;
+        isLapivientiView = false;
+        isMateriaaliVarastoView = true;
     }
 
     if (view !== 'mitat' && isMitatPanelFullscreen) {
@@ -2131,6 +2166,10 @@ async function logout() {
     currentUser = null;
     isAdmin = false;
     isCoordinator = false;
+    isWarehouseUser = false;
+    isTuotantoContentView = false;
+    isLapivientiView = false;
+    isMateriaaliVarastoView = false;
     currentCalculator = '';
     updateAdminAccessUI();
     
@@ -6302,6 +6341,7 @@ function closeTuotantoDisplayOptionsMenu() {
 }
 
 function setTuotantoNakyma(value) {
+    if (isWarehouseUser && value !== 'materiaali') return;
     isTuotantoContentView = value === 'sisalto';
     isLapivientiView = value === 'lapivienti';
     isMateriaaliVarastoView = value === 'materiaali';
