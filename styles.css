@@ -707,6 +707,30 @@ body.dark-mode .maali-varasto-row.is-zero .maali-varasto-name {
     white-space: nowrap;
 }
 
+.lasilista-tilaus-cell {
+    text-align: left;
+}
+
+.lasilista-tilaus-info {
+    margin-right: 0.6rem;
+}
+
+.lasilista-tilaus-qty {
+    width: 3.2em;
+    margin-right: 0.45rem;
+    padding: 0.15rem 0.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: center;
+}
+
+.lasilista-tulevat {
+    margin: 14px 0 4px;
+}
+
 .lasilista-varasto-capacity-cell {
     text-align: right;
 }

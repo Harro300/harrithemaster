@@ -7660,6 +7660,10 @@ function bindMaaliVarastoOnce() {
 
 const LASILISTA_VARASTO_KEY = 'lasilistaVarasto';
 const LASILISTA_VARASTO_EVENTS_KEY = 'lasilistaVarastoEvents';
+const LASILISTA_VARASTO_INCOMING_KEY = 'lasilistaVarastoIncoming';
+const LASILISTA_BUNDLE_LENGTH_M = 6;
+const LASILISTA_BUNDLE_COUNT = 24;
+const LASILISTA_BUNDLE_METERS = LASILISTA_BUNDLE_LENGTH_M * LASILISTA_BUNDLE_COUNT;
 
 function normalizeLasilistaType(type) {
     const match = String(type || '').trim().match(/^(\d+)\s*x\s*(\d+)$/i);
@@ -7818,11 +7822,68 @@ function removeLasilistaVarastoEventsForCheck(checkKey) {
     saveLasilistaVarastoEvents(next);
 }
 
+function parseLasilistaIncoming(source) {
+    const rows = [];
+    (Array.isArray(source) ? source : []).forEach((row) => {
+        const type = normalizeLasilistaType(row?.type);
+        const bundles = Math.floor(Number(row?.bundles));
+        if (!type || !Number.isFinite(bundles) || bundles <= 0) return;
+        const existing = rows.find((item) => item.type === type);
+        if (existing) existing.bundles += bundles;
+        else rows.push({ type, bundles });
+    });
+    return rows.sort((a, b) => a.type.localeCompare(b.type, 'fi', { numeric: true }));
+}
+
+function loadLasilistaIncoming() {
+    try {
+        return parseLasilistaIncoming(JSON.parse(localStorage.getItem(LASILISTA_VARASTO_INCOMING_KEY) || '[]'));
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveLasilistaIncoming(rows) {
+    localStorage.setItem(LASILISTA_VARASTO_INCOMING_KEY, JSON.stringify(parseLasilistaIncoming(rows)));
+    queueLasilistaVarastoSync();
+}
+
+function orderLasilistaBundle(type, count) {
+    if (lasilistaVarastoApplyingRemote) return false;
+    const normalized = normalizeLasilistaType(type);
+    const bundles = Number(count);
+    if (!normalized || !Number.isInteger(bundles) || bundles <= 0) return false;
+    const rows = loadLasilistaIncoming();
+    const existing = rows.find((row) => row.type === normalized);
+    if (existing) existing.bundles += bundles;
+    else rows.push({ type: normalized, bundles });
+    saveLasilistaIncoming(rows);
+    return true;
+}
+
+function acknowledgeLasilistaIncoming(type) {
+    if (lasilistaVarastoApplyingRemote) return;
+    const normalized = normalizeLasilistaType(type);
+    if (!normalized) return;
+    const rows = loadLasilistaIncoming();
+    const row = rows.find((item) => item.type === normalized);
+    if (!row) return;
+    const meters = row.bundles * LASILISTA_BUNDLE_METERS;
+    saveLasilistaIncoming(rows.filter((item) => item.type !== normalized));
+    const stock = loadLasilistaVarasto();
+    const existing = stock.find((item) => item.type === normalized);
+    if (existing) existing.meters += meters;
+    else stock.push({ type: normalized, meters });
+    saveLasilistaVarasto(stock);
+    recordLasilistaVarastoEvents([{ kind: 'lisays', type: normalized, meters }]);
+}
+
 function buildLasilistaVarastoPayload() {
     return {
         items: loadLasilistaVarasto(),
         wastePercent: loadLasilistaWastePercent(),
-        events: loadLasilistaVarastoEvents()
+        events: loadLasilistaVarastoEvents(),
+        incoming: loadLasilistaIncoming()
     };
 }
 
@@ -7832,7 +7893,8 @@ function lasilistaVarastoPayloadFromRemote(data) {
     return {
         items,
         wastePercent: percent == null ? LASILISTA_WASTE_DEFAULT : percent,
-        events: parseLasilistaVarastoEvents(data?.events)
+        events: parseLasilistaVarastoEvents(data?.events),
+        incoming: parseLasilistaIncoming(data?.incoming)
     };
 }
 
@@ -7848,7 +7910,8 @@ function lasilistaVarastoStateKey(state) {
             dayKey: event.dayKey,
             at: event.at,
             checkKey: event.checkKey || ''
-        }))
+        })),
+        incoming: (state?.incoming || []).map((row) => ({ type: row.type, bundles: row.bundles }))
     });
 }
 
@@ -7857,7 +7920,8 @@ function lasilistaVarastoLocalHasData() {
     const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
     return items.length > 0
         || Object.prototype.hasOwnProperty.call(raw, 'wastePercent')
-        || loadLasilistaVarastoEvents().length > 0;
+        || loadLasilistaVarastoEvents().length > 0
+        || loadLasilistaIncoming().length > 0;
 }
 
 function applyLasilistaVarastoPayload(state) {
@@ -7868,6 +7932,7 @@ function applyLasilistaVarastoPayload(state) {
             wastePercent: state.wastePercent
         }));
         localStorage.setItem(LASILISTA_VARASTO_EVENTS_KEY, JSON.stringify(state.events || []));
+        localStorage.setItem(LASILISTA_VARASTO_INCOMING_KEY, JSON.stringify(state.incoming || []));
     } finally {
         lasilistaVarastoApplyingRemote = false;
     }
@@ -8083,6 +8148,7 @@ function buildLasilistaVarastoListHtml(items) {
     html += '<th scope="col">varaston kapasiteetti</th>';
     html += '<th scope="col">tuotannossa sahaamatta</th>';
     html += '<th scope="col">ylimäärä kapasiteetti</th>';
+    html += '<th scope="col">lasilistan tilaus</th>';
     html += '</tr></thead><tbody>';
     const wastePercent = loadLasilistaWastePercent();
     visible.forEach((item) => {
@@ -8099,6 +8165,11 @@ function buildLasilistaVarastoListHtml(items) {
         html += '</td>';
         html += `<td>${uncutLabel}</td>`;
         html += `<td>${formatLasilistaStockCompact(spare)}</td>`;
+        html += '<td class="lasilista-tilaus-cell">';
+        html += `<span class="lasilista-tilaus-info">${LASILISTA_BUNDLE_LENGTH_M}m x ${LASILISTA_BUNDLE_COUNT} kpl = ${LASILISTA_BUNDLE_METERS}m</span>`;
+        html += `<input type="number" class="lasilista-tilaus-qty" min="1" step="1" value="1" inputmode="numeric" aria-label="${type} nippujen määrä" autocomplete="off">`;
+        html += `<button type="button" class="btn btn-primary btn-sm lasilista-tilaus-btn" data-lasilista-order="${type}">Tilaa</button>`;
+        html += '</td>';
         html += '</tr>';
     });
     html += '</tbody></table>';
@@ -8121,6 +8192,7 @@ function buildLasilistaVarastoHtml(draft, open, wasteDraft) {
     html += '<summary class="tuotanto-content-row">Lasilista varasto</summary>';
     html += '<div class="tuotanto-content-panel">';
     html += `<div id="lasilistaVarastoResults">${buildLasilistaVarastoListHtml(loadLasilistaVarasto())}</div>`;
+    html += `<div class="lasilista-tulevat" id="lasilistaVarastoIncoming">${buildLasilistaIncomingHtml()}</div>`;
     html += '<div class="maali-varasto-add">';
     html += '<label class="maali-varasto-label" for="lasilistaVarastoAdd">Lisää lasilistoja</label>';
     html += '<p class="maali-varasto-hint">Yksi tyyppi riville. Metrit merkitään 250m.</p>';
@@ -8144,6 +8216,33 @@ function refreshLasilistaVarastoList(root) {
     const results = scope.querySelector('#lasilistaVarastoResults');
     if (!results) return;
     results.innerHTML = buildLasilistaVarastoListHtml(loadLasilistaVarasto());
+}
+
+function buildLasilistaIncomingHtml() {
+    const rows = loadLasilistaIncoming();
+    let html = '<div class="maali-section-label">Tulevat paketit</div>';
+    if (rows.length === 0) {
+        html += '<p class="maali-varasto-empty">Ei tulevia paketteja.</p>';
+        return html;
+    }
+    html += '<ul class="maali-tilaus-list">';
+    rows.forEach((row) => {
+        const type = escapeHtmlText(row.type);
+        const bundleLabel = row.bundles === 1 ? '1 nippu' : `${row.bundles} nippua`;
+        const meters = formatLasilistaTableMeters(row.bundles * LASILISTA_BUNDLE_METERS);
+        html += '<li class="maali-tilaus-row">';
+        html += `<span class="maali-tilaus-text">${type}  ${bundleLabel}, ${meters}</span>`;
+        html += `<button type="button" class="maali-tilaus-ack" data-lasilista-ack="${type}">Kuittaa</button>`;
+        html += '</li>';
+    });
+    html += '</ul>';
+    return html;
+}
+
+function refreshLasilistaIncoming(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const incoming = scope && scope.querySelector('#lasilistaVarastoIncoming');
+    if (incoming) incoming.innerHTML = buildLasilistaIncomingHtml();
 }
 
 function resolveLasilistaVarastoWeek() {
@@ -8272,6 +8371,27 @@ function bindLasilistaVarastoOnce() {
         const addBtn = event.target.closest ? event.target.closest('#lasilistaVarastoAddBtn') : null;
         if (addBtn && summary.contains(addBtn)) {
             addLasilistatFromInput(summary);
+            return;
+        }
+        const orderBtn = event.target.closest ? event.target.closest('[data-lasilista-order]') : null;
+        if (orderBtn && summary.contains(orderBtn)) {
+            const cell = orderBtn.closest('.lasilista-tilaus-cell');
+            const qtyInput = cell && cell.querySelector('.lasilista-tilaus-qty');
+            const qty = qtyInput ? Number(String(qtyInput.value).trim().replace(',', '.')) : 1;
+            if (!orderLasilistaBundle(orderBtn.dataset.lasilistaOrder, qty)) {
+                showToast('Kirjoita nippujen määrä, esimerkiksi 2.', 'warning');
+                return;
+            }
+            if (qtyInput) qtyInput.value = '1';
+            refreshLasilistaIncoming(summary);
+            return;
+        }
+        const ackBtn = event.target.closest ? event.target.closest('[data-lasilista-ack]') : null;
+        if (ackBtn && summary.contains(ackBtn)) {
+            acknowledgeLasilistaIncoming(ackBtn.dataset.lasilistaAck);
+            refreshLasilistaVarastoList(summary);
+            refreshLasilistaIncoming(summary);
+            refreshLasilistaViikko(summary);
             return;
         }
         const weekBtn = event.target.closest ? event.target.closest('[data-lasilista-week]') : null;
