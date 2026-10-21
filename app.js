@@ -10469,6 +10469,7 @@ function prefetchNewestPaketitJobs(rows) {
 }
 
 function loadPaketitView() {
+    updatePaketitDateReportButtons();
     const container = document.getElementById('paketitContainer');
     if (!container) return;
 
@@ -11032,6 +11033,416 @@ function matchesPaketitSearch(jobNumber, packedItem, query, packedTimestamps) {
     }
 
     return false;
+}
+
+function isPaketitDateQuery(query) {
+    const q = String(query || '').trim();
+    if (!q) return false;
+    if (PAKETIT_DATE_RANGE_REGEX.test(q.toLowerCase())) return true;
+    if (/^\d{4}$/.test(q)) return true;
+    if (/^\d{1,2}\.\d{4}$/.test(q)) return true;
+    if (/^\d{1,2}\.\d{1,2}$/.test(q)) return true;
+    if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(q)) return true;
+    return false;
+}
+
+function updatePaketitDateReportButtons() {
+    const bar = document.getElementById('paketitDateReport');
+    if (!bar) return;
+    const visible = isPaketitDateQuery(paketitSearchQuery);
+    bar.classList.toggle('is-visible', visible);
+    bar.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    const container = document.getElementById('paketitContainer');
+    if (container) container.style.paddingBottom = visible ? '4.5rem' : '';
+}
+
+function paketitDateReportTotals(rows) {
+    return (rows || []).reduce((totals, row) => {
+        const units = Number(row.units) || 0;
+        if (row.column === 'ikkuna') {
+            totals.ikkuna += 1;
+            totals.ikkunaYksikot += units;
+        } else {
+            totals.ovi += 1;
+            totals.oviYksikot += units;
+        }
+        return totals;
+    }, { ovi: 0, oviYksikot: 0, ikkuna: 0, ikkunaYksikot: 0 });
+}
+
+function paketitDateReportCells(row) {
+    const isWindow = row.column === 'ikkuna';
+    return {
+        pvm: formatPaketitDate(row.packedAt),
+        tyonro: String(row.jobNumber),
+        tuote: String(row.itemName),
+        ovi: isWindow ? '' : '1',
+        oviYks: !isWindow && row.units ? String(row.units) : '',
+        ikk: isWindow ? '1' : '',
+        ikkYks: isWindow && row.units ? String(row.units) : ''
+    };
+}
+
+async function mapPaketitJobs(jobs, limit, mapper) {
+    const results = new Array(jobs.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, jobs.length) }, async () => {
+        while (next < jobs.length) {
+            const index = next;
+            next += 1;
+            results[index] = await mapper(jobs[index]);
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
+
+async function collectPaketitDateReport(query) {
+    const title = String(query || '').trim();
+    const rows = [];
+    let failed = 0;
+    await mapPaketitJobs(paketitIndexJobs, 6, async (job) => {
+        const jobNumber = String(job.jobNumber || '');
+        if (!jobNumber) return;
+        let payload = null;
+        try {
+            payload = await fetchPaketitJobPayload(jobNumber);
+        } catch (error) {
+            failed += 1;
+            return;
+        }
+        if (!payload) {
+            failed += 1;
+            return;
+        }
+        const packedItems = getPackedItemsFromJobPayload(payload);
+        const timestampForPkg = paketitTimestampLookup(jobNumber, payload);
+        const packedTimestamps = {};
+        packedItems.forEach((item) => {
+            if (item.packageNumber == null) return;
+            packedTimestamps[`${jobNumber}-${item.packageNumber}`] = timestampForPkg(item.packageNumber);
+        });
+        packedItems.forEach((packedItem) => {
+            if (!matchesPaketitSearch(jobNumber, packedItem, title, packedTimestamps)) return;
+            const packedAt = parsePaketitTimeMs(timestampForPkg(packedItem.packageNumber));
+            if (!Number.isFinite(packedAt)) return;
+            const liveItem = (payload.items && payload.items[packedItem.itemName]) || {};
+            rows.push({
+                packedAt,
+                dayKey: lapivientiDayKey(new Date(packedAt)),
+                jobNumber,
+                itemName: packedItem.itemName,
+                column: lapivientiColumn(liveItem),
+                units: parseItemUnitCount(liveItem) || 0
+            });
+        });
+    });
+    rows.sort((a, b) => {
+        const dayDiff = dayKeySortValue(a.dayKey) - dayKeySortValue(b.dayKey);
+        if (dayDiff !== 0) return dayDiff;
+        if (a.packedAt !== b.packedAt) return a.packedAt - b.packedAt;
+        const jobCmp = String(a.jobNumber).localeCompare(String(b.jobNumber), 'fi', { numeric: true, sensitivity: 'base' });
+        if (jobCmp !== 0) return jobCmp;
+        return String(a.itemName).localeCompare(String(b.itemName), 'fi', { numeric: true, sensitivity: 'base' });
+    });
+    return { title, rows, failed };
+}
+
+function buildPaketitDateReportTsv(title, rows) {
+    const lines = [
+        lapivientiTsvCell(title),
+        'pvm:\ttyönro:\ttuote:\tovi kpl:\tyksiköt:\tikkuna kpl:\tyksiköt:'
+    ];
+    (rows || []).forEach((row) => {
+        const cells = paketitDateReportCells(row);
+        lines.push([
+            cells.pvm,
+            cells.tyonro,
+            cells.tuote,
+            cells.ovi,
+            cells.oviYks,
+            cells.ikk,
+            cells.ikkYks
+        ].map(lapivientiTsvCell).join('\t'));
+    });
+    const totals = paketitDateReportTotals(rows);
+    lines.push([
+        'yhteensä',
+        '',
+        '',
+        String(totals.ovi),
+        String(totals.oviYksikot),
+        String(totals.ikkuna),
+        String(totals.ikkunaYksikot)
+    ].map(lapivientiTsvCell).join('\t'));
+    return lines.join('\n');
+}
+
+function paketitDateReportFileName(title) {
+    const safe = String(title || '')
+        .trim()
+        .replace(/\s+/g, '')
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^[._]+|[._]+$/g, '');
+    return `pakatut-tuotteet_${safe || 'aikavali'}.pdf`;
+}
+
+let paketitReportLogoDataUrl = null;
+
+async function rasterizeGradusLogo() {
+    if (paketitReportLogoDataUrl) return paketitReportLogoDataUrl;
+    try {
+        const response = await fetch('gradus-logo.svg?v=20260609R2');
+        if (!response.ok) return null;
+        const svgText = (await response.text()).replace('<svg ', '<svg width="180" height="40" ');
+        const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }));
+        try {
+            const dataUrl = await new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 720;
+                    canvas.height = 160;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    resolve(canvas.toDataURL('image/png'));
+                };
+                image.onerror = () => reject(new Error('logo'));
+                image.src = url;
+            });
+            paketitReportLogoDataUrl = dataUrl;
+            return dataUrl;
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    } catch (error) {
+        return null;
+    }
+}
+
+function savePaketitDateReportPdf(report, logoDataUrl) {
+    const { jsPDF } = window.jspdf || {};
+    if (!jsPDF) throw new Error('PDF-lataus ei ole saatavilla.');
+
+    const doc = new jsPDF('l', 'mm', 'a4');
+    doc.setProperties({
+        title: String(report.title || 'Pakatut tuotteet'),
+        creator: 'Gradus'
+    });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const footerReserve = 12;
+    const tableWidth = pageWidth - margin * 2;
+    const columns = [
+        { key: 'pvm', label: 'pvm:', width: 26, align: 'left' },
+        { key: 'tyonro', label: 'työnro:', width: 28, align: 'left' },
+        { key: 'tuote', label: 'tuote:', width: 0, align: 'left' },
+        { key: 'ovi', label: 'ovi kpl:', width: 22, align: 'right' },
+        { key: 'oviYks', label: 'yksiköt:', width: 20, align: 'right' },
+        { key: 'ikk', label: 'ikkuna kpl:', width: 26, align: 'right' },
+        { key: 'ikkYks', label: 'yksiköt:', width: 20, align: 'right' }
+    ];
+    const fixedWidth = columns.reduce((sum, col) => sum + col.width, 0);
+    columns.find((col) => col.key === 'tuote').width = tableWidth - fixedWidth;
+    const totals = paketitDateReportTotals(report.rows);
+    const pageLimit = pageHeight - footerReserve;
+
+    function drawTableHeader(y) {
+        const headerH = 8;
+        doc.setFillColor(243, 244, 246);
+        doc.setDrawColor(190, 190, 190);
+        doc.setLineWidth(0.15);
+        doc.rect(margin, y, tableWidth, headerH, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(26, 26, 26);
+        let x = margin;
+        columns.forEach((col, index) => {
+            if (index > 0) doc.line(x, y, x, y + headerH);
+            const pad = 1.6;
+            const textX = col.align === 'right' ? x + col.width - pad : x + pad;
+            doc.text(col.label, textX, y + 5.2, { align: col.align === 'right' ? 'right' : 'left' });
+            x += col.width;
+        });
+        return y + headerH;
+    }
+
+    function ensureRoom(y, height) {
+        if (y + height <= pageLimit) return y;
+        if (y <= margin + 8.5) return y;
+        doc.addPage();
+        return drawTableHeader(margin);
+    }
+
+    let y = margin;
+    const logoH = 10;
+    const logoW = logoH * (180 / 40);
+    if (logoDataUrl) {
+        try {
+            doc.addImage(logoDataUrl, 'PNG', margin, y, logoW, logoH);
+        } catch (error) {
+            logoDataUrl = null;
+        }
+    }
+    if (!logoDataUrl) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(26, 26, 46);
+        doc.text('GRADUS', margin, y + 7);
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(110, 110, 110);
+    doc.text(formatFinnishDate(new Date()), pageWidth - margin, y + 6.5, { align: 'right' });
+    y += logoH + 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(26, 26, 26);
+    doc.splitTextToSize(String(report.title || ''), tableWidth).forEach((line) => {
+        doc.text(line, margin, y);
+        y += 7;
+    });
+    y += 1;
+    doc.setDrawColor(26, 26, 26);
+    doc.setLineWidth(0.35);
+    doc.line(margin, y, margin + tableWidth, y);
+    y += 4;
+    y = drawTableHeader(y);
+
+    (report.rows || []).forEach((row) => {
+        const cells = paketitDateReportCells(row);
+        const tuoteCol = columns.find((col) => col.key === 'tuote');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        const nameLines = doc.splitTextToSize(cells.tuote || '', Math.max(10, tuoteCol.width - 3.2));
+        const lineStep = 3.7;
+        const rowH = Math.max(7, nameLines.length * lineStep + 2.6);
+        y = ensureRoom(y, rowH);
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(214, 214, 214);
+        doc.setLineWidth(0.1);
+        doc.rect(margin, y, tableWidth, rowH, 'FD');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(26, 26, 26);
+        let x = margin;
+        columns.forEach((col, index) => {
+            if (index > 0) doc.line(x, y, x, y + rowH);
+            const pad = 1.6;
+            if (col.key === 'tuote') {
+                nameLines.forEach((line, lineIndex) => {
+                    doc.text(line, x + pad, y + 4.5 + lineIndex * lineStep);
+                });
+            } else {
+                const textX = col.align === 'right' ? x + col.width - pad : x + pad;
+                doc.text(cells[col.key] || '', textX, y + rowH / 2 + 1.1, { align: col.align === 'right' ? 'right' : 'left' });
+            }
+            x += col.width;
+        });
+        y += rowH;
+    });
+
+    const totalH = 8;
+    y = ensureRoom(y, totalH);
+    doc.setFillColor(236, 236, 236);
+    doc.setDrawColor(170, 170, 170);
+    doc.setLineWidth(0.2);
+    doc.rect(margin, y, tableWidth, totalH, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(26, 26, 26);
+    const totalCells = {
+        pvm: 'yhteensä',
+        tyonro: '',
+        tuote: '',
+        ovi: String(totals.ovi),
+        oviYks: String(totals.oviYksikot),
+        ikk: String(totals.ikkuna),
+        ikkYks: String(totals.ikkunaYksikot)
+    };
+    let totalX = margin;
+    columns.forEach((col, index) => {
+        if (index > 0) doc.line(totalX, y, totalX, y + totalH);
+        const pad = 1.6;
+        const textX = col.align === 'right' ? totalX + col.width - pad : totalX + pad;
+        doc.text(totalCells[col.key] || '', textX, y + 5.2, { align: col.align === 'right' ? 'right' : 'left' });
+        totalX += col.width;
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+        doc.setPage(page);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(110, 110, 110);
+        doc.text(`${page} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+    }
+
+    doc.save(paketitDateReportFileName(report.title));
+}
+
+let paketitDateReportBusy = false;
+
+async function runPaketitDateReport(btn, onReport) {
+    if (paketitDateReportBusy) return;
+    if (!isPaketitDateQuery(paketitSearchQuery)) return;
+    if (!paketitIndexLoaded) {
+        showToast('Paketteja ladataan vielä.', 'warning');
+        return;
+    }
+    const query = paketitSearchQuery;
+    paketitDateReportBusy = true;
+    const buttons = document.querySelectorAll('#paketitDateReport button');
+    if (btn && !btn.dataset.originalLabel) btn.dataset.originalLabel = btn.textContent;
+    if (btn) btn.textContent = 'Haetaan…';
+    buttons.forEach((button) => {
+        button.disabled = true;
+    });
+    try {
+        const report = await collectPaketitDateReport(query);
+        if (!report.rows.length) {
+            if (report.failed > 0) showToast('Tuotteita ei saatu ladattua.', 'error');
+            else showToast('Ei pakattuja tuotteita tältä aikaväliltä.', 'warning');
+            return;
+        }
+        if (report.failed > 0) {
+            const noun = report.failed === 1 ? 'työ' : 'työtä';
+            showToast(`Raportista puuttuu ${report.failed} ${noun}, koska niiden tietoja ei saatu ladattua.`, 'warning');
+        }
+        await onReport(report);
+        return true;
+    } catch (error) {
+        console.error('Paketit-aikaväliraportti epäonnistui:', error);
+        showToast('Raportin teko epäonnistui.', 'error');
+    } finally {
+        paketitDateReportBusy = false;
+        buttons.forEach((button) => {
+            button.disabled = false;
+        });
+        if (btn && btn.dataset.originalLabel) btn.textContent = btn.dataset.originalLabel;
+    }
+}
+
+async function copyPaketitDateReport(btn) {
+    const copied = await runPaketitDateReport(btn, async (report) => {
+        await copyPakettiTextToClipboard(buildPaketitDateReportTsv(report.title, report.rows));
+    });
+    if (copied) flashPakettiCopyButton(btn);
+}
+
+async function downloadPaketitDateReportPdf(btn) {
+    await runPaketitDateReport(btn, async (report) => {
+        const { jsPDF } = window.jspdf || {};
+        if (!jsPDF) {
+            showToast('PDF-lataus ei ole saatavilla.', 'error');
+            return;
+        }
+        const logo = await rasterizeGradusLogo();
+        savePaketitDateReportPdf(report, logo);
+    });
 }
 
 function handleMitatSearchInput(value) {

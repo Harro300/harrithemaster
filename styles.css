@@ -2959,6 +2959,49 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     border-color: var(--text-secondary);
 }
 
+.paketit-date-report {
+    position: sticky;
+    bottom: 12px;
+    z-index: 2;
+    display: none;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.paketit-date-report.is-visible {
+    display: flex;
+}
+
+.paketit-date-report-btn {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--accent-color);
+    background: var(--accent-color);
+    color: var(--bg-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.paketit-date-report-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+.paketit-date-report-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+@media (max-width: 768px) {
+    .paketit-date-report {
+        bottom: 8px;
+        flex-wrap: wrap;
+    }
+}
+
 .mitat-toggle-icon {
     font-size: 0.75rem;
     color: var(--text-secondary);
