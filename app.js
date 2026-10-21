@@ -9282,6 +9282,38 @@ function formatItemUnitPhrase(item) {
     return `${n} yksikköä`;
 }
 
+let mitatFrozenItemOrder = null;
+
+function sortMitatItemsByProductionState(jobNumber, names, packedMitat, doneMitat, checkedMitat) {
+    const productionRank = (itemName) => {
+        const key = `${jobNumber}-${itemName}`;
+        if (packedMitat[key]) return 3;
+        if (doneMitat[key]) return 0;
+        if (checkedMitat[key]) return 1;
+        return 2;
+    };
+    return names.slice().sort((a, b) => {
+        const rankDiff = productionRank(a) - productionRank(b);
+        if (rankDiff !== 0) return rankDiff;
+        return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+    });
+}
+
+function applyFrozenMitatItemOrder(visibleNames, frozenNames, liveSorted) {
+    const index = new Map(frozenNames.map((name, i) => [name, i]));
+    const known = [];
+    const unknown = [];
+    visibleNames.forEach((name) => {
+        if (index.has(name)) known.push(name);
+        else unknown.push(name);
+    });
+    known.sort((a, b) => index.get(a) - index.get(b));
+    const liveIndex = new Map(liveSorted.map((name, i) => [name, i]));
+    unknown.sort((a, b) => (liveIndex.get(a) ?? 0) - (liveIndex.get(b) ?? 0));
+    if (unknown.length > 0) frozenNames.push(...unknown);
+    return known.concat(unknown);
+}
+
 // Load and display Mitat view
 function loadMittatView() {
     const katselu = isKatseluMode();
@@ -9406,6 +9438,7 @@ function loadMittatView() {
         return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
     });
     
+    const liveSortedByJob = new Map();
     jobNumbers.forEach(jobNumber => {
         const jobId = `job-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}`;
         
@@ -9427,12 +9460,14 @@ function loadMittatView() {
         const visibleItemNames = searchVisibleNames.filter((itemName) =>
             itemMatchesJobViewFilter(jobNumber, itemName, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit)
         );
-        visibleItemNames.sort((a, b) => {
-            const aPacked = packedMitat[`${jobNumber}-${a}`] ? 1 : 0;
-            const bPacked = packedMitat[`${jobNumber}-${b}`] ? 1 : 0;
-            if (aPacked !== bPacked) return aPacked - bPacked;
-            return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
-        });
+        const liveSortedNames = sortMitatItemsByProductionState(jobNumber, visibleItemNames, packedMitat, doneMitat, checkedMitat);
+        liveSortedByJob.set(String(jobNumber), liveSortedNames);
+        const orderedNames = mitatFrozenItemOrder
+            && String(mitatFrozenItemOrder.jobNumber) === String(jobNumber)
+            && String(selectedMitatJobNumber) === String(jobNumber)
+            ? applyFrozenMitatItemOrder(visibleItemNames, mitatFrozenItemOrder.names, liveSortedNames)
+            : liveSortedNames;
+        visibleItemNames.splice(0, visibleItemNames.length, ...orderedNames);
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
@@ -9868,6 +9903,11 @@ function loadMittatView() {
         }
     }
     setupMitatSplitLayout();
+    const openJobNumber = selectedMitatJobNumber == null ? '' : String(selectedMitatJobNumber);
+    if (openJobNumber && (!mitatFrozenItemOrder || String(mitatFrozenItemOrder.jobNumber) !== openJobNumber)) {
+        const names = liveSortedByJob.get(openJobNumber);
+        if (names) mitatFrozenItemOrder = { jobNumber: openJobNumber, names: names.slice() };
+    }
     applyPendingJobDeepLink();
 }
 
