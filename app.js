@@ -9427,6 +9427,12 @@ function loadMittatView() {
         const visibleItemNames = searchVisibleNames.filter((itemName) =>
             itemMatchesJobViewFilter(jobNumber, itemName, packedMitat, doneMitat, checkedMitat, checkedKulmalistat, checkedPaneelit)
         );
+        visibleItemNames.sort((a, b) => {
+            const aPacked = packedMitat[`${jobNumber}-${a}`] ? 1 : 0;
+            const bPacked = packedMitat[`${jobNumber}-${b}`] ? 1 : 0;
+            if (aPacked !== bPacked) return aPacked - bPacked;
+            return a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+        });
         const totalCount = itemNames.length;
         const doneCount = itemNames.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
 
@@ -9496,6 +9502,9 @@ function loadMittatView() {
         html += `</svg>`;
         html += `<span class="mitat-job-progress-text" id="${jobId}-progress-text">${doneCount}/${totalCount}</span>`;
         html += `</div>`;
+        if (mitatSearchQuery) {
+            html += `<span class="mitat-job-search-hits">osumat ${searchVisibleNames.length}</span>`;
+        }
         if (isBlockSelectedForJob) {
             html += `<button type="button" class="btn btn-sm mitat-job-block-exit-btn" onclick="event.stopPropagation(); startBlockAssignForJob('${safeJobAttr}')">Poistu lohko tilasta</button>`;
         }
@@ -11478,9 +11487,6 @@ function matchesMitatSearch(jobNumber, itemName, item, query, jobBlocksAll = {},
     const blocks = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
     const blockName = blocks.find((block) => block.id === blockId)?.name || (blockId ? '' : 'Ei lohkoa');
     if (blockName && blockName.toLowerCase().includes(q)) return true;
-
-    const calc = String(item.calculator || '').toLowerCase();
-    if (calc.includes(q)) return true;
 
     if (String(item.lasilistaColor || '').toLowerCase().includes(q)) return true;
     if (String(item.lasilistaSize || '').toLowerCase().includes(q)) return true;

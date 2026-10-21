@@ -2679,6 +2679,14 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     line-height: 1.2;
 }
 
+.mitat-job-search-hits {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    line-height: 1;
+}
+
 .mitat-job-delete-btn {
     width: 26px;
     height: 26px;
