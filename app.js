@@ -11277,7 +11277,7 @@ function savePaketitDateReportPdf(report, logoDataUrl) {
     }
 
     let y = margin;
-    const logoH = 10;
+    const logoH = 5;
     const logoW = logoH * (180 / 40);
     if (logoDataUrl) {
         try {
@@ -11288,20 +11288,21 @@ function savePaketitDateReportPdf(report, logoDataUrl) {
     }
     if (!logoDataUrl) {
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(13);
+        doc.setFontSize(7);
         doc.setTextColor(26, 26, 46);
-        doc.text('GRADUS', margin, y + 7);
+        doc.text('GRADUS', margin, y + 3.6);
     }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(110, 110, 110);
-    doc.text(formatFinnishDate(new Date()), pageWidth - margin, y + 6.5, { align: 'right' });
-    y += logoH + 6;
+    doc.text(formatFinnishDate(new Date()), pageWidth - margin, y + 3.6, { align: 'right' });
+    y += logoH + 14;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
     doc.setTextColor(26, 26, 26);
-    doc.splitTextToSize(String(report.title || ''), tableWidth).forEach((line) => {
+    const reportHeading = `pakatut teräspuolen tuotteet ajalta: ${report.title || ''}`.toLocaleUpperCase('fi');
+    doc.splitTextToSize(reportHeading, tableWidth).forEach((line) => {
         doc.text(line, margin, y);
         y += 7;
     });
