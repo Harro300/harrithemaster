@@ -82,7 +82,8 @@ const ADMIN_EMAILS = [
 ];
 const COORDINATOR_EMAILS = [
     'koordinaattori@teras.fi',
-    'logistiikka@teras.fi'
+    'logistiikka@teras.fi',
+    'arttu@teras.fi'
 ];
 const WAREHOUSE_EMAILS = [
     'varasto@teras.fi'
@@ -7340,8 +7341,12 @@ function paintMatchesQuery(name, query) {
     return paintNameKey(name).replace(/\s+/g, '').includes(needle);
 }
 
+const PAINT_BOX_KG = 20;
+
 function formatPaintBoxCount(count) {
-    return count === 1 ? '1 laatikko' : `${count} laatikkoa`;
+    const boxes = Math.trunc(Number(count) || 0);
+    const label = boxes === 1 ? '1 laatikko' : `${boxes} laatikkoa`;
+    return `${label} - ${boxes * PAINT_BOX_KG}kg`;
 }
 
 function formatPaintDelta(delta) {
@@ -7363,6 +7368,35 @@ function paintCodeRank(name) {
         if (num >= 1 && num <= 99) return { group: 1, num };
     }
     return { group: 2, num: 0 };
+}
+
+function paintNameHasWord(code, word) {
+    return ` ${code} `.includes(` ${word} `);
+}
+
+function paintProductCard(name) {
+    const code = collapsePaintName(name);
+    let vari = '';
+    let merkki = '';
+    if (/^RAL(?:\s|\d|$)/.test(code)) {
+        vari = 'RAL';
+        merkki = 'Teknos';
+    } else if (/^RR(?:\s|\d|$)/.test(code)) {
+        vari = 'RR';
+        merkki = 'Teknos';
+    }
+    const hasMatta = paintNameHasWord(code, 'MATTA');
+    const hasKiilto = paintNameHasWord(code, 'KIILTÄVÄ') || paintNameHasWord(code, 'KIILTAVA');
+    let pinta = '';
+    if (hasMatta && !hasKiilto) pinta = 'QN';
+    else if (hasKiilto && !hasMatta) pinta = 'QZ';
+    return {
+        nimi: code,
+        vari: vari || '—',
+        pinta: pinta || '—',
+        laatikko: `${PAINT_BOX_KG} kg`,
+        merkki: merkki || '—'
+    };
 }
 
 function comparePaintStock(a, b) {
@@ -7809,10 +7843,13 @@ function buildMaaliVarastoListHtml(items, query, showAll) {
         html += '<li class="maali-varasto-row">';
         html += `<span class="maali-varasto-name">${name}</span>`;
         html += `<span class="maali-varasto-count">${formatPaintBoxCount(item.count)}</span>`;
+        html += `<button type="button" class="maali-tuotekortti-btn" data-maali-card="${name}" aria-label="Tuotekortti, ${name}">Tuotekortti</button>`;
         html += '<span class="maali-varasto-stepper">';
         html += `<button type="button" class="maali-varasto-step" data-maali-action="dec" data-maali-name="${name}" aria-label="Vähennä yksi laatikko, ${name}">−</button>`;
         html += `<button type="button" class="maali-varasto-step" data-maali-action="inc" data-maali-name="${name}" aria-label="Lisää yksi laatikko, ${name}">+</button>`;
-        html += '</span></li>';
+        html += '</span>';
+        html += `<button type="button" class="maali-poista-btn" data-maali-remove="${name}" aria-label="Poista ${name} maalivarastosta">Poista</button>`;
+        html += '</li>';
     });
     html += '</ul>';
     return html;
@@ -7828,8 +7865,10 @@ function buildMaaliTilauksetInnerHtml() {
         const name = escapeHtmlText(order.name);
         const zero = order.balance === 0 ? ' is-zero' : '';
         html += `<li class="maali-tilaus-row${zero}">`;
-        html += `<span class="maali-tilaus-text">${name}  ${formatPaintDelta(-order.qty)}, varastossa ${order.balance}</span>`;
+        html += `<span class="maali-tilaus-text">${name}  ${formatPaintDelta(-order.qty)} - ${order.qty * PAINT_BOX_KG}kg, varastossa ${order.balance}</span>`;
+        html += `<button type="button" class="maali-tuotekortti-btn" data-maali-card="${name}" aria-label="Tuotekortti, ${name}">Tuotekortti</button>`;
         html += `<button type="button" class="maali-tilaus-ack" data-maali-ack="${name}">Kuittaa</button>`;
+        html += `<button type="button" class="maali-poista-btn" data-maali-remove="${name}" aria-label="Poista ${name} maalivarastosta">Poista</button>`;
         html += '</li>';
     });
     html += '</ul>';
@@ -7903,8 +7942,31 @@ function buildMaaliVarastoHtml(query, draft, showAll, open) {
     html += '<button type="button" class="btn btn-primary btn-sm maali-varasto-add-btn" id="maaliVarastoAddBtn">Lisää varastoon</button>';
     html += '</div></div>';
     html += `<div class="maali-viikko" id="maaliVarastoWeek">${buildMaaliViikkoHtml()}</div>`;
+    html += '<dialog id="maaliTuotekortti" class="maali-tuotekortti" aria-labelledby="maaliTuotekorttiTitle">';
+    html += '<h2 id="maaliTuotekorttiTitle" class="maali-tuotekortti-title"></h2>';
+    html += '<dl class="maali-tuotekortti-fields">';
+    html += '<div><dt>Väri</dt><dd data-maali-field="vari"></dd></div>';
+    html += '<div><dt>Pinta</dt><dd data-maali-field="pinta"></dd></div>';
+    html += '<div><dt>Laatikko</dt><dd data-maali-field="laatikko"></dd></div>';
+    html += '<div><dt>Merkki</dt><dd data-maali-field="merkki"></dd></div>';
+    html += '</dl>';
+    html += '<button type="button" class="maali-tuotekortti-close" id="maaliTuotekorttiClose">Sulje</button>';
+    html += '</dialog>';
     html += '</div></details></div>';
     return html;
+}
+
+function openMaaliTuotekortti(name) {
+    const dialog = document.getElementById('maaliTuotekortti');
+    if (!dialog) return;
+    const card = paintProductCard(name);
+    const title = dialog.querySelector('#maaliTuotekorttiTitle');
+    if (title) title.textContent = card.nimi;
+    ['vari', 'pinta', 'laatikko', 'merkki'].forEach((field) => {
+        const el = dialog.querySelector(`[data-maali-field="${field}"]`);
+        if (el) el.textContent = card[field];
+    });
+    if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
 }
 
 function refreshMaaliVarastoResults(root) {
@@ -7954,6 +8016,17 @@ function adjustMaaliCount(name, delta) {
     saveMaaliVarasto(items);
     recordMaaliVarastoEvent(existing.name, delta, Math.max(0, next));
     if (delta > 0) pruneMaaliHuomiot();
+}
+
+function removeMaaliFromVarasto(name) {
+    const key = paintNameKey(name);
+    if (!key) return;
+    const items = loadMaaliVarasto().filter((row) => paintNameKey(row.name) !== key);
+    saveMaaliVarasto(items);
+    const events = loadMaaliVarastoEvents().filter((event) => paintNameKey(event.name) !== key);
+    saveMaaliVarastoEvents(events);
+    const notices = loadMaaliHuomiot().filter((notice) => paintNameKey(notice.color) !== key);
+    saveMaaliHuomiot(notices);
 }
 
 function addMaalitFromInput(summary) {
@@ -8010,11 +8083,31 @@ function bindMaaliVarastoOnce() {
         refreshMaaliViikko(summary);
     });
     summary.addEventListener('click', (event) => {
+        const cardBtn = event.target.closest ? event.target.closest('[data-maali-card]') : null;
+        if (cardBtn && summary.contains(cardBtn)) {
+            openMaaliTuotekortti(cardBtn.dataset.maaliCard);
+            return;
+        }
+        const closeCard = event.target.closest ? event.target.closest('#maaliTuotekorttiClose') : null;
+        if (closeCard && summary.contains(closeCard)) {
+            const dialog = summary.querySelector('#maaliTuotekortti');
+            if (dialog && dialog.open) dialog.close();
+            return;
+        }
         const step = event.target.closest ? event.target.closest('[data-maali-action]') : null;
         if (step && summary.contains(step)) {
             const delta = step.dataset.maaliAction === 'inc' ? 1 : -1;
             adjustMaaliCount(step.dataset.maaliName, delta);
             refreshMaaliVarastoPanels(summary);
+            return;
+        }
+        const removeBtn = event.target.closest ? event.target.closest('[data-maali-remove]') : null;
+        if (removeBtn && summary.contains(removeBtn)) {
+            const paintName = removeBtn.dataset.maaliRemove;
+            if (confirm(`Poistetaanko ${paintName} maalivarastosta?`)) {
+                removeMaaliFromVarasto(paintName);
+                refreshMaaliVarastoPanels(summary);
+            }
             return;
         }
         const showAllBtn = event.target.closest ? event.target.closest('#maaliVarastoShowAll') : null;

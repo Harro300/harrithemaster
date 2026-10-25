@@ -1051,6 +1051,108 @@ body.dark-mode .lasilista-varasto-table tr.is-zero td {
     color: var(--text-secondary);
 }
 
+.maali-tuotekortti-btn,
+.maali-tuotekortti-close {
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.maali-tuotekortti-btn:hover,
+.maali-tuotekortti-close:hover {
+    background: var(--bg-primary);
+    border-color: var(--text-muted);
+}
+
+.maali-tuotekortti-btn:focus-visible,
+.maali-tuotekortti-close:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.maali-poista-btn {
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    color: var(--danger-color);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.maali-poista-btn:hover {
+    background: var(--bg-primary);
+    border-color: var(--danger-color);
+}
+
+.maali-poista-btn:focus-visible {
+    outline: 2px solid var(--danger-color);
+    outline-offset: 2px;
+}
+
+.maali-tuotekortti {
+    width: min(420px, calc(100vw - 32px));
+    margin: auto;
+    padding: 20px 22px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 8px 28px var(--card-shadow-hover);
+}
+
+.maali-tuotekortti::backdrop {
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.maali-tuotekortti-title {
+    margin: 0 0 16px;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.maali-tuotekortti-fields {
+    margin: 0;
+}
+
+.maali-tuotekortti-fields div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.maali-tuotekortti-fields dt {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.maali-tuotekortti-fields dd {
+    margin: 0;
+    font-weight: 600;
+    text-align: right;
+}
+
+.maali-tuotekortti-close {
+    display: block;
+    margin: 16px 0 0 auto;
+}
+
 .maali-varasto-stepper {
     display: flex;
     flex-shrink: 0;
