@@ -7343,16 +7343,31 @@ function paintMatchesQuery(name, query) {
 
 const PAINT_BOX_KG = 20;
 
-function formatPaintBoxCount(count) {
-    const boxes = Math.trunc(Number(count) || 0);
-    const label = boxes === 1 ? '1 laatikko' : `${boxes} laatikkoa`;
-    return `${label} - ${boxes * PAINT_BOX_KG}kg`;
+function formatPaintBoxAmount(kg, name) {
+    const totalKg = Math.max(0, Math.round(Number(kg) || 0));
+    const boxKg = paintBoxKg(name);
+    const boxes = boxKg > 0 ? totalKg / boxKg : 0;
+    const exactOne = Math.abs(boxes - 1) < 1e-9;
+    const label = exactOne
+        ? '1 laatikko'
+        : `${boxes.toLocaleString('fi-FI', { maximumFractionDigits: 2, minimumFractionDigits: 0 })} laatikkoa`;
+    return `${label} - ${totalKg}kg`;
 }
 
-function formatPaintDelta(delta) {
-    const amount = Math.abs(Math.trunc(Number(delta) || 0));
-    const label = amount === 1 ? '1 laatikko' : `${amount} laatikkoa`;
-    return `${Number(delta) < 0 ? '−' : '+'}${label}`;
+function formatPaintStockAmount(kg, name) {
+    const brand = paintCardStored(name).brand.toLocaleLowerCase('fi');
+    return `(${brand}) ${formatPaintBoxAmount(kg, name)}`;
+}
+
+function formatPaintSignedAmount(deltaKg, name) {
+    const amount = Math.trunc(Number(deltaKg) || 0);
+    const sign = amount < 0 ? '−' : '+';
+    return `${sign}${formatPaintBoxAmount(Math.abs(amount), name)}`;
+}
+
+function formatPaintBoxCount(count, name) {
+    const boxes = Math.trunc(Number(count) || 0);
+    return formatPaintStockAmount(boxes * paintBoxKg(name), name);
 }
 
 function paintCodeRank(name) {
@@ -7374,28 +7389,113 @@ function paintNameHasWord(code, word) {
     return ` ${code} `.includes(` ${word} `);
 }
 
-function paintProductCard(name) {
-    const code = collapsePaintName(name);
-    let vari = '';
-    let merkki = '';
-    if (/^RAL(?:\s|\d|$)/.test(code)) {
-        vari = 'RAL';
-        merkki = 'Teknos';
-    } else if (/^RR(?:\s|\d|$)/.test(code)) {
-        vari = 'RR';
-        merkki = 'Teknos';
-    }
+function paintFamily(code) {
+    if (/^RAL(?:\s|\d|$)/.test(code)) return 'RAL';
+    if (/^RR(?:\s|\d|$)/.test(code)) return 'RR';
+    return '';
+}
+
+function paintFinishCode(code) {
     const hasMatta = paintNameHasWord(code, 'MATTA');
     const hasKiilto = paintNameHasWord(code, 'KIILTÄVÄ') || paintNameHasWord(code, 'KIILTAVA');
-    let pinta = '';
-    if (hasMatta && !hasKiilto) pinta = 'QN';
-    else if (hasKiilto && !hasMatta) pinta = 'QZ';
+    if (hasMatta && hasKiilto) return '';
+    if (hasKiilto) return 'QZ';
+    if (hasMatta || paintFamily(code)) return 'QN';
+    return '';
+}
+
+function paintSectionId(name) {
+    const code = collapsePaintName(name);
+    const family = paintFamily(code);
+    const finish = paintFinishCode(code);
+    if (family === 'RAL' && finish === 'QN') return 'ral-matta';
+    if (family === 'RAL' && finish === 'QZ') return 'ral-kiilto';
+    if (family === 'RR' && finish === 'QN') return 'rr-matta';
+    if (family === 'RR' && finish === 'QZ') return 'rr-kiilto';
+    return 'muu';
+}
+
+const PAINT_SECTIONS = [
+    { id: 'ral-matta', label: 'RAL matta' },
+    { id: 'ral-kiilto', label: 'RAL kiiltävä' },
+    { id: 'rr-matta', label: 'RR matta' },
+    { id: 'rr-kiilto', label: 'RR kiiltävä' },
+    { id: 'muu', label: 'Luokittelemattomat' }
+];
+
+const MAALI_TUOTEKORTIT_KEY = 'maaliTuotekortit';
+
+function parseMaaliTuotekortit(source) {
+    const cards = {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return cards;
+    Object.keys(source).forEach((rawKey) => {
+        const key = paintNameKey(rawKey);
+        const row = source[rawKey] || {};
+        const boxKg = Math.floor(Number(row.boxKg));
+        const orderBoxes = Math.floor(Number(row.orderBoxes));
+        if (!key || !Number.isFinite(boxKg) || boxKg <= 0) return;
+        cards[key] = {
+            boxKg,
+            brand: row.brand === 'Jotun' ? 'Jotun' : 'Teknos',
+            orderBoxes: Number.isFinite(orderBoxes) && orderBoxes > 0 ? orderBoxes : 1
+        };
+    });
+    return cards;
+}
+
+function loadMaaliTuotekortit() {
+    try {
+        return parseMaaliTuotekortit(JSON.parse(localStorage.getItem(MAALI_TUOTEKORTIT_KEY) || '{}'));
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveMaaliTuotekortit(cards) {
+    localStorage.setItem(MAALI_TUOTEKORTIT_KEY, JSON.stringify(parseMaaliTuotekortit(cards)));
+    queueMaaliVarastoSync();
+}
+
+function paintCardStored(name) {
+    const key = paintNameKey(name);
+    const row = key ? loadMaaliTuotekortit()[key] : null;
+    return {
+        boxKg: row && row.boxKg > 0 ? row.boxKg : PAINT_BOX_KG,
+        brand: row && row.brand === 'Jotun' ? 'Jotun' : 'Teknos',
+        orderBoxes: row && row.orderBoxes > 0 ? row.orderBoxes : 1
+    };
+}
+
+function paintBoxKg(name) {
+    return paintCardStored(name).boxKg;
+}
+
+function savePaintCard(name, card) {
+    const key = paintNameKey(name);
+    const boxKg = Math.floor(Number(card?.boxKg));
+    const orderBoxes = Math.floor(Number(card?.orderBoxes));
+    if (!key || !Number.isFinite(boxKg) || boxKg <= 0 || !Number.isFinite(orderBoxes) || orderBoxes <= 0) return;
+    const cards = loadMaaliTuotekortit();
+    cards[key] = {
+        boxKg,
+        brand: card.brand === 'Jotun' ? 'Jotun' : 'Teknos',
+        orderBoxes
+    };
+    saveMaaliTuotekortit(cards);
+}
+
+function paintProductCard(name) {
+    const code = collapsePaintName(name);
+    const stored = paintCardStored(name);
+    const family = paintFamily(code);
+    const finish = paintFinishCode(code);
     return {
         nimi: code,
-        vari: vari || '—',
-        pinta: pinta || '—',
-        laatikko: `${PAINT_BOX_KG} kg`,
-        merkki: merkki || '—'
+        vari: family || '—',
+        pinta: finish || '—',
+        boxKg: stored.boxKg,
+        brand: stored.brand,
+        orderBoxes: stored.orderBoxes
     };
 }
 
@@ -7411,39 +7511,41 @@ function sortPaintStock(items) {
     return (items || []).slice().sort(comparePaintStock);
 }
 
+function paintStockKg(item) {
+    const name = collapsePaintName(item?.name);
+    if (!name) return 0;
+    const kg = Number(item?.kg);
+    if (Number.isFinite(kg) && kg > 0) return Math.round(kg);
+    const count = Number(item?.count);
+    if (!Number.isFinite(count) || count <= 0) return 0;
+    return Math.round(count * paintBoxKg(name));
+}
+
+function normalizePaintStock(source) {
+    const items = [];
+    (Array.isArray(source) ? source : []).forEach((item) => {
+        const name = collapsePaintName(item?.name);
+        const kg = paintStockKg(item);
+        if (!name || kg <= 0) return;
+        const existing = items.find((row) => paintNameKey(row.name) === paintNameKey(name));
+        if (existing) existing.kg += kg;
+        else items.push({ name, kg });
+    });
+    items.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+    return items;
+}
+
 function loadMaaliVarasto() {
     try {
         const raw = JSON.parse(localStorage.getItem(MAALI_VARASTO_KEY) || 'null');
-        const source = Array.isArray(raw?.items) ? raw.items : [];
-        const items = [];
-        source.forEach((item) => {
-            const name = collapsePaintName(item?.name);
-            const count = Math.floor(Number(item?.count));
-            if (!name || !Number.isFinite(count) || count <= 0) return;
-            const key = paintNameKey(name);
-            const existing = items.find((row) => paintNameKey(row.name) === key);
-            if (existing) existing.count += count;
-            else items.push({ name, count });
-        });
-        items.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
-        return items;
+        return normalizePaintStock(raw?.items);
     } catch (error) {
         return [];
     }
 }
 
 function saveMaaliVarasto(items) {
-    const clean = [];
-    (items || []).forEach((item) => {
-        const name = collapsePaintName(item?.name);
-        const count = Math.floor(Number(item?.count));
-        if (!name || !Number.isFinite(count) || count <= 0) return;
-        const key = paintNameKey(name);
-        const existing = clean.find((row) => paintNameKey(row.name) === key);
-        if (existing) existing.count += count;
-        else clean.push({ name, count });
-    });
-    clean.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
+    const clean = normalizePaintStock(items);
     localStorage.setItem(MAALI_VARASTO_KEY, JSON.stringify({ items: clean }));
     queueMaaliVarastoSync();
     return clean;
@@ -7451,26 +7553,40 @@ function saveMaaliVarasto(items) {
 
 const MAALI_VARASTO_EVENTS_KEY = 'maaliVarastoEvents';
 
+function paintEventKg(event) {
+    const kg = Number(event?.deltaKg);
+    if (Number.isFinite(kg) && kg !== 0) return Math.trunc(kg);
+    const boxes = Math.trunc(Number(event?.delta));
+    if (!boxes) return 0;
+    return boxes * paintBoxKg(event?.name);
+}
+
+function parseMaaliVarastoEvents(source) {
+    if (!Array.isArray(source)) return [];
+    return source.map((event) => {
+        const name = collapsePaintName(event?.name);
+        const deltaKg = paintEventKg(Object.assign({}, event, { name }));
+        if (!name || !deltaKg) return null;
+        const at = Number(event?.at);
+        const hasStoredKg = Number.isFinite(Number(event?.deltaKg)) && Number(event.deltaKg) !== 0;
+        return {
+            id: String(event?.id || `${at || Date.now()}`),
+            name,
+            deltaKg,
+            delta: hasStoredKg ? 0 : Math.trunc(Number(event?.delta)),
+            dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
+            at: Number.isFinite(at) && at > 0 ? at : Date.now(),
+            balanceAfter: Math.max(0, Math.round(Number(event?.balanceAfter) || 0)),
+            acked: deltaKg > 0 ? true : !!event?.acked,
+            dismissed: deltaKg < 0 && !!event?.dismissed,
+            orderOnly: deltaKg < 0 && !!event?.orderOnly
+        };
+    }).filter(Boolean);
+}
+
 function loadMaaliVarastoEvents() {
     try {
-        const raw = JSON.parse(localStorage.getItem(MAALI_VARASTO_EVENTS_KEY) || '[]');
-        if (!Array.isArray(raw)) return [];
-        return raw.map((event) => {
-            const name = collapsePaintName(event?.name);
-            const delta = Math.trunc(Number(event?.delta));
-            if (!name || !Number.isFinite(delta) || delta === 0) return null;
-            const at = Number(event?.at);
-            return {
-                id: String(event?.id || `${at || Date.now()}`),
-                name,
-                delta,
-                dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
-                at: Number.isFinite(at) && at > 0 ? at : Date.now(),
-                balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
-                acked: delta > 0 ? true : !!event?.acked,
-                orderOnly: delta < 0 && !!event?.orderOnly
-            };
-        }).filter(Boolean);
+        return parseMaaliVarastoEvents(JSON.parse(localStorage.getItem(MAALI_VARASTO_EVENTS_KEY) || '[]'));
     } catch (error) {
         return [];
     }
@@ -7481,8 +7597,8 @@ function saveMaaliVarastoEvents(events) {
     queueMaaliVarastoSync();
 }
 
-function recordMaaliVarastoEvent(name, delta, balanceAfter, options) {
-    const amount = Math.trunc(Number(delta));
+function recordMaaliVarastoEvent(name, deltaKg, balanceKg, options) {
+    const amount = Math.trunc(Number(deltaKg));
     const paintName = collapsePaintName(name);
     if (!paintName || !Number.isFinite(amount) || amount === 0) return;
     const events = loadMaaliVarastoEvents();
@@ -7490,10 +7606,11 @@ function recordMaaliVarastoEvent(name, delta, balanceAfter, options) {
     events.push({
         id: `${at}-${Math.random().toString(36).slice(2, 8)}`,
         name: paintName,
-        delta: amount,
+        deltaKg: amount,
+        delta: 0,
         dayKey: lapivientiDayKey(),
         at,
-        balanceAfter: Math.max(0, Math.floor(Number(balanceAfter) || 0)),
+        balanceAfter: Math.max(0, Math.round(Number(balanceKg) || 0)),
         acked: amount > 0,
         orderOnly: amount < 0 && !!(options && options.orderOnly)
     });
@@ -7504,10 +7621,10 @@ function collectOpenPaintOrders() {
     const stock = loadMaaliVarasto();
     const grouped = new Map();
     loadMaaliVarastoEvents().forEach((event) => {
-        if (event.acked || event.delta >= 0) return;
+        if (event.acked || paintEventKg(event) >= 0) return;
         const key = paintNameKey(event.name);
         const row = grouped.get(key) || { name: event.name, qty: 0, at: 0 };
-        row.qty += Math.abs(event.delta);
+        row.qty += Math.abs(paintEventKg(event));
         if (event.at >= row.at) {
             row.at = event.at;
             row.name = event.name;
@@ -7519,34 +7636,43 @@ function collectOpenPaintOrders() {
         return {
             name: row.name,
             qty: row.qty,
-            balance: item ? item.count : 0,
+            balance: item ? item.kg : 0,
             at: row.at
         };
     }).sort((a, b) => b.at - a.at);
 }
 
-function acknowledgeMaaliOrder(name) {
+function acknowledgeMaaliOrder(name, orderQty) {
+    const key = paintNameKey(name);
+    const qty = Math.floor(Number(orderQty));
+    if (!key || !Number.isFinite(qty) || qty <= 0) return;
+    const events = loadMaaliVarastoEvents();
+    let paintName = collapsePaintName(name);
+    let hadOpen = false;
+    events.forEach((event) => {
+        if (paintEventKg(event) >= 0 || event.acked || paintNameKey(event.name) !== key) return;
+        event.acked = true;
+        hadOpen = true;
+        paintName = event.name;
+    });
+    if (!hadOpen) return;
+    saveMaaliVarastoEvents(events);
+    addMaaliIncoming(paintName, qty);
+}
+
+function dismissMaaliOrder(name) {
     const key = paintNameKey(name);
     if (!key) return;
     const events = loadMaaliVarastoEvents();
-    let qty = 0;
-    let paintName = collapsePaintName(name);
+    let changed = false;
     events.forEach((event) => {
-        if (event.delta >= 0 || event.acked || paintNameKey(event.name) !== key) return;
+        if (paintEventKg(event) >= 0 || event.acked || paintNameKey(event.name) !== key) return;
         event.acked = true;
-        qty += Math.abs(event.delta);
-        paintName = event.name;
+        event.dismissed = true;
+        changed = true;
     });
-    if (qty <= 0) return;
+    if (!changed) return;
     saveMaaliVarastoEvents(events);
-    const items = loadMaaliVarasto();
-    const existing = items.find((row) => paintNameKey(row.name) === key);
-    if (existing) existing.count += qty;
-    else items.push({ name: paintName, count: qty });
-    const saved = saveMaaliVarasto(items);
-    const item = saved.find((row) => paintNameKey(row.name) === key);
-    recordMaaliVarastoEvent(item ? item.name : paintName, qty, item ? item.count : qty);
-    pruneMaaliHuomiot();
 }
 
 const MAALI_VARASTO_HUOMIOT_KEY = 'maaliVarastoHuomiot';
@@ -7572,44 +7698,80 @@ function saveMaaliHuomiot(notices) {
     queueMaaliVarastoSync();
 }
 
+const MAALI_VARASTO_INCOMING_KEY = 'maaliVarastoIncoming';
+
+function parseMaaliIncoming(source) {
+    const rows = [];
+    (Array.isArray(source) ? source : []).forEach((row) => {
+        const name = collapsePaintName(row?.name);
+        const count = Math.floor(Number(row?.count));
+        if (!name || !Number.isFinite(count) || count <= 0) return;
+        const existing = rows.find((item) => paintNameKey(item.name) === paintNameKey(name));
+        if (existing) existing.count += count;
+        else rows.push({ name, count });
+    });
+    return sortPaintStock(rows);
+}
+
+function loadMaaliIncoming() {
+    try {
+        return parseMaaliIncoming(JSON.parse(localStorage.getItem(MAALI_VARASTO_INCOMING_KEY) || '[]'));
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveMaaliIncoming(rows) {
+    localStorage.setItem(MAALI_VARASTO_INCOMING_KEY, JSON.stringify(parseMaaliIncoming(rows)));
+    queueMaaliVarastoSync();
+}
+
+function paintColorIncoming(color) {
+    const key = paintNameKey(color);
+    if (!key) return false;
+    return loadMaaliIncoming().some((row) => paintNameKey(row.name) === key);
+}
+
+function addMaaliIncoming(name, count) {
+    const paintName = collapsePaintName(name);
+    const qty = Math.floor(Number(count));
+    if (!paintName || !Number.isFinite(qty) || qty <= 0) return;
+    const rows = loadMaaliIncoming();
+    const existing = rows.find((row) => paintNameKey(row.name) === paintNameKey(paintName));
+    if (existing) existing.count += qty;
+    else rows.push({ name: paintName, count: qty });
+    saveMaaliIncoming(rows);
+}
+
+function acknowledgeMaaliIncoming(name) {
+    const key = paintNameKey(name);
+    if (!key) return;
+    const rows = loadMaaliIncoming();
+    const row = rows.find((item) => paintNameKey(item.name) === key);
+    if (!row) return;
+    saveMaaliIncoming(rows.filter((item) => paintNameKey(item.name) !== key));
+    const items = loadMaaliVarasto();
+    const existing = items.find((item) => paintNameKey(item.name) === key);
+    const addKg = Math.round(row.count * paintBoxKg(row.name));
+    if (existing) existing.kg += addKg;
+    else items.push({ name: row.name, kg: addKg });
+    const saved = saveMaaliVarasto(items);
+    const item = saved.find((entry) => paintNameKey(entry.name) === key);
+    recordMaaliVarastoEvent(item ? item.name : row.name, addKg, item ? item.kg : addKg);
+    pruneMaaliHuomiot();
+}
+
 function buildMaaliVarastoPayload() {
     return {
         items: loadMaaliVarasto(),
         events: loadMaaliVarastoEvents(),
-        huomiot: loadMaaliHuomiot()
+        huomiot: loadMaaliHuomiot(),
+        incoming: loadMaaliIncoming(),
+        cards: loadMaaliTuotekortit()
     };
 }
 
 function maaliVarastoPayloadFromRemote(data) {
-    const items = [];
-    (Array.isArray(data?.items) ? data.items : []).forEach((item) => {
-        const name = collapsePaintName(item?.name);
-        const count = Math.floor(Number(item?.count));
-        if (!name || !Number.isFinite(count) || count <= 0) return;
-        const key = paintNameKey(name);
-        const existing = items.find((row) => paintNameKey(row.name) === key);
-        if (existing) existing.count += count;
-        else items.push({ name, count });
-    });
-    items.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
-
-    const events = (Array.isArray(data?.events) ? data.events : []).map((event) => {
-        const name = collapsePaintName(event?.name);
-        const delta = Math.trunc(Number(event?.delta));
-        if (!name || !Number.isFinite(delta) || delta === 0) return null;
-        const at = Number(event?.at);
-        return {
-            id: String(event?.id || `${at || Date.now()}`),
-            name,
-            delta,
-            dayKey: event?.dayKey || lapivientiDayKey(new Date(Number.isFinite(at) ? at : Date.now())),
-            at: Number.isFinite(at) && at > 0 ? at : Date.now(),
-            balanceAfter: Math.max(0, Math.floor(Number(event?.balanceAfter) || 0)),
-            acked: delta > 0 ? true : !!event?.acked,
-            orderOnly: delta < 0 && !!event?.orderOnly
-        };
-    }).filter(Boolean);
-
     const huomiot = (Array.isArray(data?.huomiot) ? data.huomiot : []).map((notice) => {
         const jobNumber = String(notice?.jobNumber || '').trim();
         const color = collapsePaintName(notice?.color);
@@ -7618,19 +7780,27 @@ function maaliVarastoPayloadFromRemote(data) {
         return { jobNumber, color, at: Number.isFinite(at) && at > 0 ? at : Date.now() };
     }).filter(Boolean);
 
-    return { items, events, huomiot };
+    return {
+        items: normalizePaintStock(data?.items),
+        events: parseMaaliVarastoEvents(data?.events),
+        huomiot,
+        incoming: parseMaaliIncoming(data?.incoming),
+        cards: parseMaaliTuotekortit(data?.cards)
+    };
 }
 
 function maaliVarastoStateKey(state) {
-    const items = (state?.items || []).map((item) => `${item.name}\t${item.count}`);
+    const items = (state?.items || []).map((item) => `${item.name}\t${item.kg}`);
     const events = (state?.events || []).map((event) => [
         event.id,
         event.name,
+        event.deltaKg,
         event.delta,
         event.dayKey,
         event.at,
         event.balanceAfter,
         event.acked ? 1 : 0,
+        event.dismissed ? 1 : 0,
         event.orderOnly ? 1 : 0
     ].join('\t'));
     const huomiot = (state?.huomiot || []).map((notice) => [
@@ -7638,12 +7808,17 @@ function maaliVarastoStateKey(state) {
         notice.color,
         notice.at
     ].join('\t'));
-    return JSON.stringify({ items, events, huomiot });
+    const incoming = (state?.incoming || []).map((row) => `${row.name}\t${row.count}`);
+    const cards = Object.keys(state?.cards || {}).sort().map((key) => {
+        const card = state.cards[key];
+        return `${key}\t${card.boxKg}\t${card.brand}\t${card.orderBoxes}`;
+    });
+    return JSON.stringify({ items, events, huomiot, incoming, cards });
 }
 
 function maaliVarastoLocalHasData() {
     const state = buildMaaliVarastoPayload();
-    return state.items.length > 0 || state.events.length > 0 || state.huomiot.length > 0;
+    return state.items.length > 0 || state.events.length > 0 || state.huomiot.length > 0 || state.incoming.length > 0 || Object.keys(state.cards || {}).length > 0;
 }
 
 function applyMaaliVarastoPayload(state) {
@@ -7652,6 +7827,8 @@ function applyMaaliVarastoPayload(state) {
         localStorage.setItem(MAALI_VARASTO_KEY, JSON.stringify({ items: state.items || [] }));
         localStorage.setItem(MAALI_VARASTO_EVENTS_KEY, JSON.stringify(state.events || []));
         localStorage.setItem(MAALI_VARASTO_HUOMIOT_KEY, JSON.stringify(state.huomiot || []));
+        localStorage.setItem(MAALI_VARASTO_INCOMING_KEY, JSON.stringify(state.incoming || []));
+        localStorage.setItem(MAALI_TUOTEKORTIT_KEY, JSON.stringify(state.cards || {}));
     } finally {
         maaliVarastoApplyingRemote = false;
     }
@@ -7709,10 +7886,10 @@ function noteMissingPaint(jobNumber, color) {
     if (notices.some((notice) => notice.jobNumber === job && paintNameKey(notice.color) === key)) return;
     notices.push({ jobNumber: job, color: name, at: Date.now() });
     saveMaaliHuomiot(notices);
-    const alreadyOrdered = loadMaaliVarastoEvents().some((event) =>
-        !event.acked && event.delta < 0 && paintNameKey(event.name) === key
+    const alreadyOrdered = paintColorIncoming(name) || loadMaaliVarastoEvents().some((event) =>
+        !event.acked && paintEventKg(event) < 0 && paintNameKey(event.name) === key
     );
-    if (!alreadyOrdered) recordMaaliVarastoEvent(name, -1, 0, { orderOnly: true });
+    if (!alreadyOrdered) recordMaaliVarastoEvent(name, -paintBoxKg(name), 0, { orderOnly: true });
 }
 
 function pruneMaaliHuomiot() {
@@ -7731,13 +7908,15 @@ function ensureOrdersForMissingPaints(notices) {
     const events = loadMaaliVarastoEvents();
     (notices || []).forEach((notice) => {
         const key = paintNameKey(notice.color);
+        if (paintColorIncoming(notice.color)) return;
         const covered = events.some((event) => {
-            if (paintNameKey(event.name) !== key || event.delta >= 0) return false;
-            return event.orderOnly || !event.acked;
+            if (paintNameKey(event.name) !== key || paintEventKg(event) >= 0) return false;
+            return event.orderOnly || event.dismissed || !event.acked;
         });
         if (covered) return;
-        recordMaaliVarastoEvent(notice.color, -1, 0, { orderOnly: true });
-        events.push({ name: notice.color, delta: -1, acked: false, orderOnly: true });
+        const missingKg = paintBoxKg(notice.color);
+        recordMaaliVarastoEvent(notice.color, -missingKg, 0, { orderOnly: true });
+        events.push({ name: notice.color, deltaKg: -missingKg, delta: 0, acked: false, orderOnly: true });
     });
 }
 
@@ -7815,12 +7994,13 @@ function parsePaintBatch(text) {
 }
 
 function mergePaintAdditions(items, additions) {
-    const next = (items || []).map((item) => ({ name: item.name, count: item.count }));
+    const next = (items || []).map((item) => ({ name: item.name, kg: paintStockKg(item) }));
     (additions || []).forEach((add) => {
         const key = paintNameKey(add.name);
+        const addKg = Math.round(add.count * paintBoxKg(add.name));
         const existing = next.find((row) => paintNameKey(row.name) === key);
-        if (existing) existing.count += add.count;
-        else next.push({ name: add.name, count: add.count });
+        if (existing) existing.kg += addKg;
+        else next.push({ name: add.name, kg: addKg });
     });
     next.sort((a, b) => a.name.localeCompare(b.name, 'fi', { sensitivity: 'base', numeric: true }));
     return next;
@@ -7837,21 +8017,29 @@ function buildMaaliVarastoListHtml(items, query, showAll) {
     if (visible.length === 0) {
         return '<p class="maali-varasto-empty">Ei maaleja haulle.</p>';
     }
-    let html = '<ul class="maali-varasto-list">';
-    visible.forEach((item) => {
-        const name = escapeHtmlText(item.name);
-        html += '<li class="maali-varasto-row">';
-        html += `<span class="maali-varasto-name">${name}</span>`;
-        html += `<span class="maali-varasto-count">${formatPaintBoxCount(item.count)}</span>`;
-        html += `<button type="button" class="maali-tuotekortti-btn" data-maali-card="${name}" aria-label="Tuotekortti, ${name}">Tuotekortti</button>`;
-        html += '<span class="maali-varasto-stepper">';
-        html += `<button type="button" class="maali-varasto-step" data-maali-action="dec" data-maali-name="${name}" aria-label="Vähennä yksi laatikko, ${name}">−</button>`;
-        html += `<button type="button" class="maali-varasto-step" data-maali-action="inc" data-maali-name="${name}" aria-label="Lisää yksi laatikko, ${name}">+</button>`;
-        html += '</span>';
-        html += `<button type="button" class="maali-poista-btn" data-maali-remove="${name}" aria-label="Poista ${name} maalivarastosta">Poista</button>`;
-        html += '</li>';
+    let html = '';
+    PAINT_SECTIONS.forEach((section) => {
+        const rows = visible.filter((item) => paintSectionId(item.name) === section.id);
+        if (!rows.length) return;
+        html += `<h3 class="maali-osasto-title">${section.label}</h3>`;
+        html += '<ul class="maali-varasto-list">';
+        rows.forEach((item) => {
+            const name = escapeHtmlText(item.name);
+            html += '<li class="maali-varasto-row">';
+            html += `<span class="maali-varasto-name">${name}</span>`;
+            html += `<span class="maali-varasto-count">${formatPaintStockAmount(item.kg, item.name)}</span>`;
+            html += `<button type="button" class="maali-tuotekortti-btn" data-maali-card="${name}" aria-label="Tuotekortti, ${name}">Tuotekortti</button>`;
+            html += '<span class="maali-varasto-stepper">';
+            html += `<button type="button" class="maali-varasto-step" data-maali-action="dec" data-maali-name="${name}" aria-label="Vähennä kilokentän määrä, ${name}">−</button>`;
+            html += `<button type="button" class="maali-varasto-step" data-maali-action="inc" data-maali-name="${name}" aria-label="Lisää kilokentän määrä, ${name}">+</button>`;
+            html += `<input type="number" class="maali-kg-input" min="1" step="1" inputmode="numeric" value="${paintBoxKg(item.name)}" aria-label="Muutettava määrä kilogrammoina, ${name}">`;
+            html += '<span class="maali-kg-suffix">kg</span>';
+            html += '</span>';
+            html += `<button type="button" class="maali-poista-btn" data-maali-remove="${name}" aria-label="Poista ${name} maalivarastosta">Poista</button>`;
+            html += '</li>';
+        });
+        html += '</ul>';
     });
-    html += '</ul>';
     return html;
 }
 
@@ -7864,11 +8052,32 @@ function buildMaaliTilauksetInnerHtml() {
     orders.forEach((order) => {
         const name = escapeHtmlText(order.name);
         const zero = order.balance === 0 ? ' is-zero' : '';
+        const stored = paintCardStored(order.name);
         html += `<li class="maali-tilaus-row${zero}">`;
-        html += `<span class="maali-tilaus-text">${name}  ${formatPaintDelta(-order.qty)} - ${order.qty * PAINT_BOX_KG}kg, varastossa ${order.balance}</span>`;
+        html += `<span class="maali-tilaus-text">${name}  ${formatPaintSignedAmount(-order.qty, order.name)}, varastossa ${formatPaintBoxAmount(order.balance, order.name)}</span>`;
         html += `<button type="button" class="maali-tuotekortti-btn" data-maali-card="${name}" aria-label="Tuotekortti, ${name}">Tuotekortti</button>`;
-        html += `<button type="button" class="maali-tilaus-ack" data-maali-ack="${name}">Kuittaa</button>`;
-        html += `<button type="button" class="maali-poista-btn" data-maali-remove="${name}" aria-label="Poista ${name} maalivarastosta">Poista</button>`;
+        html += `<input type="number" class="maali-tilaus-qty" min="1" step="1" inputmode="numeric" value="${stored.orderBoxes}" aria-label="Tilattavien laatikoiden määrä, ${name}">`;
+        html += `<button type="button" class="maali-tilaus-ack" data-maali-ack="${name}">Tilaa</button>`;
+        html += `<button type="button" class="maali-tilaus-ack" data-maali-dismiss="${name}" aria-label="Ohita ${name} tilauslistalla">Ohita</button>`;
+        html += '</li>';
+    });
+    html += '</ul>';
+    return html;
+}
+
+function buildMaaliIncomingHtml() {
+    const rows = loadMaaliIncoming();
+    let html = '<div class="maali-section-label">Tulevat paketit</div>';
+    if (rows.length === 0) {
+        html += '<p class="maali-varasto-empty">Ei tulevia paketteja.</p>';
+        return html;
+    }
+    html += '<ul class="maali-tilaus-list">';
+    rows.forEach((row) => {
+        const name = escapeHtmlText(row.name);
+        html += '<li class="maali-tilaus-row">';
+        html += `<span class="maali-tilaus-text">${name}  ${formatPaintBoxCount(row.count, row.name)}</span>`;
+        html += `<button type="button" class="maali-tilaus-ack" data-maali-receive="${name}">Kuittaa</button>`;
         html += '</li>';
     });
     html += '</ul>';
@@ -7903,7 +8112,7 @@ function buildMaaliViikkoHtml() {
             html += '<tr>';
             html += `<td>${escapeHtmlText(row.name)}</td>`;
             html += `<td>${escapeHtmlText(dayKeyToFinnishDate(row.dayKey))}</td>`;
-            html += `<td class="maali-viikko-num">${formatPaintDelta(row.delta)}</td>`;
+            html += `<td class="maali-viikko-num">${formatPaintSignedAmount(paintEventKg(row), row.name)}</td>`;
             html += '</tr>';
         });
     }
@@ -7928,6 +8137,7 @@ function buildMaaliVarastoHtml(query, draft, showAll, open) {
     html += '<div class="maali-section-label">Tilauslista</div>';
     html += `<div id="maaliVarastoOrders">${buildMaaliTilauksetInnerHtml()}</div>`;
     html += '</div>';
+    html += `<div class="maali-tulevat" id="maaliVarastoIncoming">${buildMaaliIncomingHtml()}</div>`;
     html += '<div class="maali-haku">';
     html += '<label class="maali-varasto-label" for="maaliVarastoSearch">Hae maalia</label>';
     html += `<input type="search" id="maaliVarastoSearch" class="maali-varasto-search" placeholder="Hae maalia, esim. RAL 7024" value="${escapeHtmlText(q)}" autocomplete="off" spellcheck="false">`;
@@ -7947,8 +8157,9 @@ function buildMaaliVarastoHtml(query, draft, showAll, open) {
     html += '<dl class="maali-tuotekortti-fields">';
     html += '<div><dt>Väri</dt><dd data-maali-field="vari"></dd></div>';
     html += '<div><dt>Pinta</dt><dd data-maali-field="pinta"></dd></div>';
-    html += '<div><dt>Laatikko</dt><dd data-maali-field="laatikko"></dd></div>';
-    html += '<div><dt>Merkki</dt><dd data-maali-field="merkki"></dd></div>';
+    html += '<div><dt>Laatikko</dt><dd class="maali-tuotekortti-edit"><input type="number" class="maali-tuotekortti-input" min="1" step="1" inputmode="numeric" data-maali-card-field="boxKg" aria-label="Laatikon paino kilogrammoina"><span>kg</span></dd></div>';
+    html += '<div><dt>Merkki</dt><dd><select class="maali-tuotekortti-input" data-maali-card-field="brand" aria-label="Maalin merkki"><option value="Teknos">Teknos</option><option value="Jotun">Jotun</option></select></dd></div>';
+    html += '<div><dt>Määrä</dt><dd class="maali-tuotekortti-edit"><input type="number" class="maali-tuotekortti-input" min="1" step="1" inputmode="numeric" data-maali-card-field="orderBoxes" aria-label="Tavallinen tilausmäärä laatikoina"><span id="maaliKorttiOrderKg"></span></dd></div>';
     html += '</dl>';
     html += '<button type="button" class="maali-tuotekortti-close" id="maaliTuotekorttiClose">Sulje</button>';
     html += '</dialog>';
@@ -7956,16 +8167,55 @@ function buildMaaliVarastoHtml(query, draft, showAll, open) {
     return html;
 }
 
+function updateMaaliKorttiOrderLabel(dialog) {
+    const label = dialog.querySelector('#maaliKorttiOrderKg');
+    if (!label) return;
+    const boxes = Math.floor(Number(dialog.querySelector('[data-maali-card-field="orderBoxes"]')?.value));
+    const kgEach = Math.floor(Number(dialog.querySelector('[data-maali-card-field="boxKg"]')?.value));
+    if (!Number.isFinite(boxes) || boxes <= 0 || !Number.isFinite(kgEach) || kgEach <= 0) {
+        label.textContent = '';
+        return;
+    }
+    const text = boxes === 1 ? '1 laatikko' : `${boxes} laatikkoa`;
+    label.textContent = `${text} - ${boxes * kgEach}kg`;
+}
+
+function saveOpenMaaliKortti(dialog) {
+    const name = dialog.dataset.paintName;
+    if (!name) return;
+    const boxKg = Math.floor(Number(dialog.querySelector('[data-maali-card-field="boxKg"]')?.value));
+    const orderBoxes = Math.floor(Number(dialog.querySelector('[data-maali-card-field="orderBoxes"]')?.value));
+    const brand = dialog.querySelector('[data-maali-card-field="brand"]')?.value;
+    if (!Number.isFinite(boxKg) || boxKg <= 0 || !Number.isFinite(orderBoxes) || orderBoxes <= 0) return;
+    if (brand !== 'Teknos' && brand !== 'Jotun') return;
+    const current = paintCardStored(name);
+    if (current.boxKg === boxKg && current.orderBoxes === orderBoxes && current.brand === brand) {
+        updateMaaliKorttiOrderLabel(dialog);
+        return;
+    }
+    savePaintCard(name, { boxKg, brand, orderBoxes });
+    updateMaaliKorttiOrderLabel(dialog);
+    refreshMaaliVarastoPanels(document.getElementById('materiaaliVarastoView'));
+}
+
 function openMaaliTuotekortti(name) {
     const dialog = document.getElementById('maaliTuotekortti');
     if (!dialog) return;
     const card = paintProductCard(name);
+    dialog.dataset.paintName = card.nimi;
     const title = dialog.querySelector('#maaliTuotekorttiTitle');
     if (title) title.textContent = card.nimi;
-    ['vari', 'pinta', 'laatikko', 'merkki'].forEach((field) => {
-        const el = dialog.querySelector(`[data-maali-field="${field}"]`);
-        if (el) el.textContent = card[field];
-    });
+    const vari = dialog.querySelector('[data-maali-field="vari"]');
+    const pinta = dialog.querySelector('[data-maali-field="pinta"]');
+    if (vari) vari.textContent = card.vari;
+    if (pinta) pinta.textContent = card.pinta;
+    const boxKg = dialog.querySelector('[data-maali-card-field="boxKg"]');
+    const orderBoxes = dialog.querySelector('[data-maali-card-field="orderBoxes"]');
+    const brand = dialog.querySelector('[data-maali-card-field="brand"]');
+    if (boxKg) boxKg.value = String(card.boxKg);
+    if (orderBoxes) orderBoxes.value = String(card.orderBoxes);
+    if (brand) brand.value = card.brand;
+    updateMaaliKorttiOrderLabel(dialog);
     if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
 }
 
@@ -7992,6 +8242,12 @@ function refreshMaaliTilaukset(root) {
     if (orders) orders.innerHTML = buildMaaliTilauksetInnerHtml();
 }
 
+function refreshMaaliIncoming(root) {
+    const scope = root || document.getElementById('materiaaliVarastoView');
+    const incoming = scope && scope.querySelector('#maaliVarastoIncoming');
+    if (incoming) incoming.innerHTML = buildMaaliIncomingHtml();
+}
+
 function refreshMaaliViikko(root) {
     const scope = root || document.getElementById('materiaaliVarastoView');
     const week = scope && scope.querySelector('#maaliVarastoWeek');
@@ -8002,20 +8258,27 @@ function refreshMaaliVarastoPanels(root) {
     refreshMaaliVarastoResults(root);
     refreshMaaliHuomiot(root);
     refreshMaaliTilaukset(root);
+    refreshMaaliIncoming(root);
     refreshMaaliViikko(root);
 }
 
-function adjustMaaliCount(name, delta) {
+function adjustMaaliKg(name, deltaKg) {
     const items = loadMaaliVarasto();
     const key = paintNameKey(name);
     const existing = items.find((row) => paintNameKey(row.name) === key);
-    if (!existing) return;
-    const next = existing.count + delta;
-    if (next < 0) return;
-    existing.count = next;
+    if (!existing) return false;
+    const amount = Math.trunc(Number(deltaKg));
+    if (!Number.isFinite(amount) || amount === 0) return false;
+    const next = existing.kg + amount;
+    if (next < 0) {
+        showToast(`Varastossa on vain ${existing.kg}kg.`, 'warning');
+        return false;
+    }
+    existing.kg = next;
     saveMaaliVarasto(items);
-    recordMaaliVarastoEvent(existing.name, delta, Math.max(0, next));
-    if (delta > 0) pruneMaaliHuomiot();
+    recordMaaliVarastoEvent(existing.name, amount, Math.max(0, next));
+    if (amount > 0) pruneMaaliHuomiot();
+    return true;
 }
 
 function removeMaaliFromVarasto(name) {
@@ -8027,6 +8290,13 @@ function removeMaaliFromVarasto(name) {
     saveMaaliVarastoEvents(events);
     const notices = loadMaaliHuomiot().filter((notice) => paintNameKey(notice.color) !== key);
     saveMaaliHuomiot(notices);
+    const incoming = loadMaaliIncoming().filter((row) => paintNameKey(row.name) !== key);
+    saveMaaliIncoming(incoming);
+    const cards = loadMaaliTuotekortit();
+    if (cards[key]) {
+        delete cards[key];
+        saveMaaliTuotekortit(cards);
+    }
 }
 
 function addMaalitFromInput(summary) {
@@ -8040,7 +8310,8 @@ function addMaalitFromInput(summary) {
     const saved = saveMaaliVarasto(mergePaintAdditions(loadMaaliVarasto(), additions));
     additions.forEach((add) => {
         const item = saved.find((row) => paintNameKey(row.name) === paintNameKey(add.name));
-        recordMaaliVarastoEvent(item ? item.name : add.name, add.count, item ? item.count : add.count);
+        const addKg = Math.round(add.count * paintBoxKg(add.name));
+        recordMaaliVarastoEvent(item ? item.name : add.name, addKg, item ? item.kg : addKg);
     });
     pruneMaaliHuomiot();
     area.value = '';
@@ -8055,7 +8326,7 @@ async function copyMaaliVarastoWeek(btn) {
         lines.push([
             row.name,
             dayKeyToFinnishDate(row.dayKey),
-            formatPaintDelta(row.delta)
+            formatPaintSignedAmount(paintEventKg(row), row.name)
         ].map(lapivientiTsvCell).join('\t'));
     });
     try {
@@ -8073,9 +8344,21 @@ function bindMaaliVarastoOnce() {
     summary.addEventListener('input', (event) => {
         if (event.target && event.target.id === 'maaliVarastoSearch') {
             refreshMaaliVarastoResults(summary);
+            return;
+        }
+        const field = event.target && event.target.closest ? event.target.closest('[data-maali-card-field]') : null;
+        const dialog = summary.querySelector('#maaliTuotekortti');
+        if (field && dialog && dialog.contains(field)) {
+            saveOpenMaaliKortti(dialog);
         }
     });
     summary.addEventListener('change', (event) => {
+        const field = event.target && event.target.closest ? event.target.closest('[data-maali-card-field]') : null;
+        const dialog = summary.querySelector('#maaliTuotekortti');
+        if (field && dialog && dialog.contains(field)) {
+            saveOpenMaaliKortti(dialog);
+            return;
+        }
         if (!event.target || event.target.id !== 'maaliVarastoWeekSelect') return;
         const parsed = parseIsoWeekKey(event.target.value);
         if (!parsed) return;
@@ -8096,8 +8379,20 @@ function bindMaaliVarastoOnce() {
         }
         const step = event.target.closest ? event.target.closest('[data-maali-action]') : null;
         if (step && summary.contains(step)) {
-            const delta = step.dataset.maaliAction === 'inc' ? 1 : -1;
-            adjustMaaliCount(step.dataset.maaliName, delta);
+            const row = step.closest('.maali-varasto-row');
+            const input = row && row.querySelector('.maali-kg-input');
+            const kg = Number(input && input.value);
+            if (!Number.isInteger(kg) || kg <= 0) {
+                showToast('Anna kilomäärä.', 'warning');
+                return;
+            }
+            const delta = step.dataset.maaliAction === 'inc' ? kg : -kg;
+            if (adjustMaaliKg(step.dataset.maaliName, delta)) refreshMaaliVarastoPanels(summary);
+            return;
+        }
+        const dismissBtn = event.target.closest ? event.target.closest('[data-maali-dismiss]') : null;
+        if (dismissBtn && summary.contains(dismissBtn)) {
+            dismissMaaliOrder(dismissBtn.dataset.maaliDismiss);
             refreshMaaliVarastoPanels(summary);
             return;
         }
@@ -8120,7 +8415,20 @@ function bindMaaliVarastoOnce() {
         }
         const ackBtn = event.target.closest ? event.target.closest('[data-maali-ack]') : null;
         if (ackBtn && summary.contains(ackBtn)) {
-            acknowledgeMaaliOrder(ackBtn.dataset.maaliAck);
+            const row = ackBtn.closest('.maali-tilaus-row');
+            const input = row && row.querySelector('.maali-tilaus-qty');
+            const qty = input ? Math.floor(Number(input.value)) : 0;
+            if (!Number.isFinite(qty) || qty <= 0) {
+                showToast('Anna tilattava määrä.', 'warning');
+                return;
+            }
+            acknowledgeMaaliOrder(ackBtn.dataset.maaliAck, qty);
+            refreshMaaliVarastoPanels(summary);
+            return;
+        }
+        const receiveBtn = event.target.closest ? event.target.closest('[data-maali-receive]') : null;
+        if (receiveBtn && summary.contains(receiveBtn)) {
+            acknowledgeMaaliIncoming(receiveBtn.dataset.maaliReceive);
             refreshMaaliVarastoPanels(summary);
             return;
         }
