@@ -70,6 +70,7 @@ let isTuotantoContentView = false;
 let isLapivientiView = false;
 let isMateriaaliVarastoView = false;
 let selectedLapivientiWeek = null;
+let lapivientiShowIdentifiers = false;
 let selectedMaaliVarastoWeek = null;
 let selectedLasilistaVarastoWeek = null;
 
@@ -2110,23 +2111,82 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+function jobNumberFromMitatSection(section) {
+    const encoded = section && section.dataset ? section.dataset.jobNumber : '';
+    if (!encoded) return '';
+    try {
+        return decodeURIComponent(encoded);
+    } catch (error) {
+        return '';
+    }
+}
+
+function packingShortcutJobNumber() {
+    const mittatView = document.getElementById('mittatView');
+    if (!mittatView || mittatView.classList.contains('d-none')) return '';
+    if (isKatseluMode()) return '';
+    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView) return '';
+    const openJobs = [];
+    mittatView.querySelectorAll('.mitat-job-items').forEach((el) => {
+        if (el.style.display === 'none') return;
+        const section = el.closest('.mitat-job-section');
+        const jobNumber = jobNumberFromMitatSection(section);
+        if (jobNumber) openJobs.push({ section, jobNumber });
+    });
+    if (!openJobs.length) return '';
+    const active = document.activeElement;
+    if (active && typeof active.closest === 'function') {
+        const focused = openJobs.find((job) => job.section === active.closest('.mitat-job-section'));
+        if (focused) return focused.jobNumber;
+    }
+    return openJobs.length === 1 ? openJobs[0].jobNumber : '';
+}
+
+function packingJobHasSelection(jobNumber) {
+    const prefix = `${jobNumber}||`;
+    return Object.keys(selectedPackingItems).some((key) => key.startsWith(prefix) && selectedPackingItems[key]);
+}
+
 document.addEventListener('keydown', function(e) {
-    if (!isBlockAssignMode) return;
     if (document.querySelector('.modal.show')) return;
 
-    if (e.key === 'Escape') {
+    const ctrlP = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === 'KeyP';
+    if (ctrlP) {
+        const jobNumber = packingShortcutJobNumber();
+        if (!jobNumber) return;
         e.preventDefault();
-        clearBlockAssignMode();
-        loadMittatView();
+        e.stopPropagation();
+        if (!(isPackingListMode && selectedPackingJobNumber === jobNumber)) {
+            startPackingListForJob(jobNumber);
+        }
         return;
     }
 
-    if (e.key !== 'Enter') return;
+    if (isBlockAssignMode) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            clearBlockAssignMode();
+            loadMittatView();
+            return;
+        }
+
+        if (e.key !== 'Enter') return;
+        const blockTag = e.target && e.target.tagName;
+        if (blockTag === 'INPUT' || blockTag === 'TEXTAREA' || blockTag === 'SELECT') return;
+        e.preventDefault();
+        e.stopPropagation();
+        openJobBlocksPickModal();
+        return;
+    }
+
+    if (e.key !== 'Enter' || e.repeat) return;
+    if (!isPackingListMode || !selectedPackingJobNumber) return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (!packingJobHasSelection(selectedPackingJobNumber)) return;
     e.preventDefault();
     e.stopPropagation();
-    openJobBlocksPickModal();
+    downloadPackingList(selectedPackingJobNumber);
 }, true);
 
 // Close admin panel on Escape key.
@@ -7171,6 +7231,11 @@ function shiftLapivientiWeek(delta) {
     changeLapivientiWeek(shiftIsoWeekKey(resolveLapivientiWeek(), delta));
 }
 
+function toggleLapivientiIdentifiers() {
+    lapivientiShowIdentifiers = !lapivientiShowIdentifiers;
+    loadMittatView();
+}
+
 function lapivientiEventAt(event) {
     const at = Number(event?.at);
     return Number.isFinite(at) && at > 0 ? at : null;
@@ -7225,14 +7290,55 @@ function aggregateLapivientiRows(weekKey) {
     });
 }
 
+function listLapivientiDetailRows(weekKey) {
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const rows = [];
+    getLapivientiEvents().forEach((event) => {
+        if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
+        const itemName = lapivientiItemNameFromEvent(event);
+        const liveItem = itemName ? mittatData[event.jobNumber]?.[itemName] : null;
+        const column = liveItem ? lapivientiColumn(liveItem) : event.column;
+        const units = Number(event.unitCount) || 0;
+        const isWindow = column === 'ikkuna';
+        rows.push({
+            dayKey: event.dayKey,
+            jobNumber: event.jobNumber,
+            itemName,
+            userName: lapivientiTekijaName(event),
+            ovi: isWindow ? 0 : 1,
+            ikkuna: isWindow ? 1 : 0,
+            oviYksikot: isWindow ? 0 : units,
+            ikkunaYksikot: isWindow ? units : 0,
+            at: lapivientiEventAt(event)
+        });
+    });
+    return rows.sort((a, b) => {
+        const aDay = dayKeySortValue(a.dayKey);
+        const bDay = dayKeySortValue(b.dayKey);
+        if (aDay !== bDay) return aDay - bDay;
+        const aAt = a.at == null ? Number.POSITIVE_INFINITY : a.at;
+        const bAt = b.at == null ? Number.POSITIVE_INFINITY : b.at;
+        if (aAt !== bAt) return aAt - bAt;
+        const jobCmp = String(a.jobNumber).localeCompare(String(b.jobNumber), 'fi', { numeric: true, sensitivity: 'base' });
+        if (jobCmp !== 0) return jobCmp;
+        const nameCmp = String(a.itemName).localeCompare(String(b.itemName), 'fi', { numeric: true, sensitivity: 'base' });
+        if (nameCmp !== 0) return nameCmp;
+        return String(a.userName).localeCompare(String(b.userName), 'fi', { sensitivity: 'base' });
+    });
+}
+
 function buildLapivientiTableHtml() {
+    const showIds = lapivientiShowIdentifiers;
     const weekKey = resolveLapivientiWeek();
     const weeks = collectLapivientiWeekKeys(weekKey);
-    const rows = aggregateLapivientiRows(weekKey);
-    let html = '<div class="lapivienti-wrap">';
+    const rows = showIds ? listLapivientiDetailRows(weekKey) : aggregateLapivientiRows(weekKey);
+    const labelColspan = showIds ? 4 : 3;
+    const emptyColspan = showIds ? 8 : 7;
+    let html = `<div class="lapivienti-wrap${showIds ? ' is-identifiers' : ''}">`;
     html += '<div class="lapivienti-header">';
     html += '<h3 class="lapivienti-heading">Läpivienti</h3>';
     html += '<div class="lapivienti-week-controls">';
+    html += `<button type="button" class="lapivienti-identifiers-btn" onclick="toggleLapivientiIdentifiers()" aria-pressed="${showIds ? 'true' : 'false'}">${showIds ? 'piilota yksilöintitunnus' : 'näytä yksilöintitunnukset'}</button>`;
     html += '<button type="button" class="lapivienti-week-btn" onclick="shiftLapivientiWeek(-1)" aria-label="Edellinen viikko">‹</button>';
     html += `<select id="lapivientiWeekSelect" class="lapivienti-week-select" onchange="changeLapivientiWeek(this.value)" aria-label="Viikko">`;
     weeks.forEach((week) => {
@@ -7245,6 +7351,7 @@ function buildLapivientiTableHtml() {
     html += '<table class="lapivienti-table"><thead><tr>';
     html += '<th scope="col">pvm:</th>';
     html += '<th scope="col">työnro:</th>';
+    if (showIds) html += '<th scope="col">yksilöintitunnus:</th>';
     html += '<th scope="col">tekijä:</th>';
     html += '<th scope="col">ovi kpl:</th>';
     html += '<th scope="col">yksiköt:</th>';
@@ -7252,12 +7359,13 @@ function buildLapivientiTableHtml() {
     html += '<th scope="col">yksiköt:</th>';
     html += '</tr></thead><tbody>';
     if (rows.length === 0) {
-        html += '<tr><td colspan="7" class="lapivienti-empty">Ei merkittyjä tuotteita tällä viikolla.</td></tr>';
+        html += `<tr><td colspan="${emptyColspan}" class="lapivienti-empty">Ei merkittyjä tuotteita tällä viikolla.</td></tr>`;
     } else {
         rows.forEach((row) => {
             html += '<tr>';
             html += `<td>${escapeHtmlText(dayKeyToFinnishDate(row.dayKey))}</td>`;
             html += `<td>${escapeHtmlText(row.jobNumber)}</td>`;
+            if (showIds) html += `<td>${escapeHtmlText(row.itemName)}</td>`;
             html += `<td>${escapeHtmlText(row.userName)}</td>`;
             html += `<td class="lapivienti-num">${row.ovi ? row.ovi : ''}</td>`;
             html += `<td class="lapivienti-num">${row.oviYksikot ? row.oviYksikot : ''}</td>`;
@@ -7271,7 +7379,7 @@ function buildLapivientiTableHtml() {
     const ikkunaTotal = rows.reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
     const ikkunaYksikotTotal = rows.reduce((sum, row) => sum + (Number(row.ikkunaYksikot) || 0), 0);
     html += '</tbody><tfoot><tr>';
-    html += '<th scope="row" colspan="3">yhteensä</th>';
+    html += `<th scope="row" colspan="${labelColspan}">yhteensä</th>`;
     html += `<td class="lapivienti-num">${oviTotal}</td>`;
     html += `<td class="lapivienti-num">${oviYksikotTotal}</td>`;
     html += `<td class="lapivienti-num">${ikkunaTotal}</td>`;
@@ -7287,31 +7395,44 @@ function lapivientiTsvCell(value) {
     return String(value ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
 }
 
-function buildLapivientiTsv(rows) {
-    const lines = ['pvm:\ttyönro:\ttekijä:\tovi kpl:\tyksiköt:\tikkuna kpl:\tyksiköt:'];
+function buildLapivientiTsv(rows, showIds) {
+    const header = showIds
+        ? 'pvm:\ttyönro:\tyksilöintitunnus:\ttekijä:\tovi kpl:\tyksiköt:\tikkuna kpl:\tyksiköt:'
+        : 'pvm:\ttyönro:\ttekijä:\tovi kpl:\tyksiköt:\tikkuna kpl:\tyksiköt:';
+    const lines = [header];
     (rows || []).forEach((row) => {
-        lines.push([
+        const cells = [
             dayKeyToFinnishDate(row.dayKey),
-            row.jobNumber,
+            row.jobNumber
+        ];
+        if (showIds) cells.push(row.itemName);
+        cells.push(
             row.userName,
             row.ovi ? String(row.ovi) : '',
             row.oviYksikot ? String(row.oviYksikot) : '',
             row.ikkuna ? String(row.ikkuna) : '',
             row.ikkunaYksikot ? String(row.ikkunaYksikot) : ''
-        ].map(lapivientiTsvCell).join('\t'));
+        );
+        lines.push(cells.map(lapivientiTsvCell).join('\t'));
     });
     const oviTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ovi) || 0), 0);
     const oviYksikotTotal = (rows || []).reduce((sum, row) => sum + (Number(row.oviYksikot) || 0), 0);
     const ikkunaTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ikkuna) || 0), 0);
     const ikkunaYksikotTotal = (rows || []).reduce((sum, row) => sum + (Number(row.ikkunaYksikot) || 0), 0);
-    lines.push(['yhteensä', '', '', String(oviTotal), String(oviYksikotTotal), String(ikkunaTotal), String(ikkunaYksikotTotal)].join('\t'));
+    const totalCells = ['yhteensä', ''];
+    if (showIds) totalCells.push('');
+    totalCells.push('', String(oviTotal), String(oviYksikotTotal), String(ikkunaTotal), String(ikkunaYksikotTotal));
+    lines.push(totalCells.join('\t'));
     return lines.join('\n');
 }
 
 async function copyLapivientiTable(btn) {
-    const rows = aggregateLapivientiRows(resolveLapivientiWeek());
+    const weekKey = resolveLapivientiWeek();
+    const rows = lapivientiShowIdentifiers
+        ? listLapivientiDetailRows(weekKey)
+        : aggregateLapivientiRows(weekKey);
     try {
-        await copyPakettiTextToClipboard(buildLapivientiTsv(rows));
+        await copyPakettiTextToClipboard(buildLapivientiTsv(rows, lapivientiShowIdentifiers));
         flashPakettiCopyButton(btn);
     } catch (error) {
         showToast('Kopiointi epäonnistui.', 'error');
@@ -10443,6 +10564,8 @@ function loadMittatView() {
                 } else {
                     html += `<span class="mitat-block-name">${escapeHtmlText(group.name)}</span>`;
                 }
+                const blockDone = countBlockDoneItems(jobNumber, group, itemNames, itemBlocksAll, doneMitat, jobBlockList);
+                html += `<span class="mitat-block-done-count">${blockDone.done} / ${blockDone.total} tehty</span>`;
                 if (blockShipLabel) {
                     html += `<span class="mitat-block-ship-date">${escapeHtmlText(blockShipLabel)}</span>`;
                 }
@@ -12328,9 +12451,12 @@ function matchesMitatSearch(jobNumber, itemName, item, query, jobBlocksAll = {},
 
     for (const section of (item.data || [])) {
         if (String(section.title || '').toLowerCase().includes(q)) return true;
+        if (isKulmalistatSectionTitle(section.title)) continue;
         for (const row of (section.items || [])) {
-            if (String(row.label || '').toLowerCase().includes(q)) return true;
-            if (String(row.value || '').toLowerCase().includes(q)) return true;
+            const label = String(row.label || '');
+            const value = String(row.value || '');
+            if (!parseLasilistaRow(label) && label.toLowerCase().includes(q)) return true;
+            if (!parseLasilistaRow(value) && value.toLowerCase().includes(q)) return true;
         }
     }
 
@@ -12511,6 +12637,17 @@ function saveShipDate(target, iso) {
 function getJobBlocks(jobNumber) {
     const jobBlocks = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
     return Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
+}
+
+function countBlockDoneItems(jobNumber, group, itemNames, itemBlocksAll, doneMitat, jobBlockList) {
+    const blockIds = new Set((jobBlockList || []).map((block) => block.id));
+    const names = (itemNames || []).filter((itemName) => {
+        const blockId = itemBlocksAll[`${jobNumber}-${itemName}`];
+        if (group.id) return blockId === group.id;
+        return !blockId || !blockIds.has(blockId);
+    });
+    const done = names.filter((itemName) => doneMitat[`${jobNumber}-${itemName}`]).length;
+    return { done, total: names.length };
 }
 
 function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, itemBlocksAll) {
@@ -12714,7 +12851,7 @@ function renderJobBlocksNameFields() {
         const previous = previousInputs[i];
         const previousName = (previous?.value || '').trim();
         const existingName = (existing[i]?.name || '').trim();
-        input.value = previousName || existingName || `Lohko ${i + 1}`;
+        input.value = previousName || existingName || `ERÄ ${i + 1}`;
         const blockId = previous?.dataset.blockId || existing[i]?.id || '';
         if (blockId) input.dataset.blockId = blockId;
         wrapper.appendChild(label);
