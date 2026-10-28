@@ -703,6 +703,23 @@ body.dark-mode .maali-varasto-row.is-zero .maali-varasto-name {
     white-space: nowrap;
 }
 
+.lasilista-tuotekortti-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.lasilista-tuotekortti-btn:hover,
+.lasilista-tuotekortti-btn:focus-visible {
+    color: var(--accent-color);
+}
+
 .lasilista-varasto-table td {
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -3875,6 +3892,24 @@ body.dark-mode .scan-pdf-preview-canvas {
 
 .lapivienti-table td.lapivienti-num {
     text-align: right;
+}
+
+.lapivienti-tekija-input {
+    width: 9rem;
+    min-width: 6rem;
+    max-width: 14rem;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    margin: 0;
+}
+
+.lapivienti-tekija-input:focus {
+    outline: 1px solid var(--accent-color);
+    background: var(--bg-primary, #fff);
 }
 
 .lapivienti-table .lapivienti-empty {

@@ -6902,6 +6902,25 @@ function recordLapivientiEvent(checkKey, jobNumber, item) {
     enqueueLapivientiOp({ type: 'upsert', event });
 }
 
+function renameLapivientiTekija(itemKeys, userName) {
+    const name = String(userName || '').trim();
+    const keySet = new Set((itemKeys || []).map((key) => String(key)));
+    if (!name || !keySet.size) return;
+    const events = getLapivientiEvents();
+    let changed = false;
+    events.forEach((event) => {
+        if (!keySet.has(event.itemKey)) return;
+        if (event.userName === name && !event.userId) return;
+        event.userId = null;
+        event.userName = name;
+        changed = true;
+    });
+    if (!changed) return;
+    saveLapivientiEvents(events);
+    enqueueLapivientiOp({ type: 'tekija', itemKeys: [...keySet], userName: name });
+    loadMittatView();
+}
+
 function updateLapivientiEventUnitCount(checkKey, unitCount) {
     const events = getLapivientiEvents();
     let changed = false;
@@ -7028,6 +7047,12 @@ function applyLapivientiOp(events, op) {
     }
     if (op.type === 'deleteJob') {
         return list.filter((row) => String(row.jobNumber) !== String(op.jobNumber));
+    }
+    if (op.type === 'tekija') {
+        const keys = new Set((Array.isArray(op.itemKeys) ? op.itemKeys : []).map((key) => String(key)));
+        const userName = String(op.userName || '').trim();
+        if (!userName || !keys.size) return list;
+        return list.map((row) => (keys.has(row.itemKey) ? { ...row, userId: null, userName } : row));
     }
     return list;
 }
@@ -7254,6 +7279,7 @@ function aggregateLapivientiRows(weekKey) {
                 dayKey: event.dayKey,
                 jobNumber: event.jobNumber,
                 userName,
+                itemKeys: [],
                 ovi: 0,
                 ikkuna: 0,
                 oviYksikot: 0,
@@ -7265,6 +7291,7 @@ function aggregateLapivientiRows(weekKey) {
             if (row.firstAt == null || at < row.firstAt) row.firstAt = at;
         }
         const row = grouped.get(key);
+        row.itemKeys.push(event.itemKey);
         const itemName = lapivientiItemNameFromEvent(event);
         const liveItem = itemName ? mittatData[event.jobNumber]?.[itemName] : null;
         const column = liveItem ? lapivientiColumn(liveItem) : event.column;
@@ -7303,6 +7330,7 @@ function listLapivientiDetailRows(weekKey) {
         rows.push({
             dayKey: event.dayKey,
             jobNumber: event.jobNumber,
+            itemKey: event.itemKey,
             itemName,
             userName: lapivientiTekijaName(event),
             ovi: isWindow ? 0 : 1,
@@ -7366,7 +7394,7 @@ function buildLapivientiTableHtml() {
             html += `<td>${escapeHtmlText(dayKeyToFinnishDate(row.dayKey))}</td>`;
             html += `<td>${escapeHtmlText(row.jobNumber)}</td>`;
             if (showIds) html += `<td>${escapeHtmlText(row.itemName)}</td>`;
-            html += `<td>${escapeHtmlText(row.userName)}</td>`;
+            html += `<td>${lapivientiTekijaInputHtml(row.userName, showIds ? [row.itemKey] : row.itemKeys)}</td>`;
             html += `<td class="lapivienti-num">${row.ovi ? row.ovi : ''}</td>`;
             html += `<td class="lapivienti-num">${row.oviYksikot ? row.oviYksikot : ''}</td>`;
             html += `<td class="lapivienti-num">${row.ikkuna ? row.ikkuna : ''}</td>`;
@@ -7389,6 +7417,52 @@ function buildLapivientiTableHtml() {
     html += '<button type="button" class="btn btn-outline-secondary btn-sm lapivienti-copy-btn" onclick="copyLapivientiTable(this)">Kopioi</button>';
     html += '</div></div>';
     return html;
+}
+
+function lapivientiTekijaInputHtml(userName, itemKeys) {
+    const name = String(userName || '');
+    const keys = JSON.stringify(Array.isArray(itemKeys) ? itemKeys : []);
+    return `<input type="text" class="lapivienti-tekija-input" value="${escapeHtmlText(name)}" data-original-name="${escapeHtmlText(name)}" data-lapivienti-keys="${escapeHtmlText(keys)}" aria-label="Tekijä" onblur="commitLapivientiTekija(this)" onkeydown="onLapivientiTekijaKeydown(event, this)">`;
+}
+
+function onLapivientiTekijaKeydown(event, input) {
+    if (!event || !input) return;
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        input.blur();
+        return;
+    }
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    input.dataset.skipCommit = '1';
+    input.value = input.dataset.originalName || '';
+    input.blur();
+}
+
+function commitLapivientiTekija(input) {
+    if (!input) return;
+    if (input.dataset.skipCommit === '1') {
+        delete input.dataset.skipCommit;
+        return;
+    }
+    const nextName = String(input.value || '').trim();
+    const previous = String(input.dataset.originalName || '');
+    if (!nextName || nextName === previous) {
+        input.value = previous;
+        return;
+    }
+    let keys = [];
+    try {
+        keys = JSON.parse(input.getAttribute('data-lapivienti-keys') || '[]');
+    } catch (error) {
+        input.value = previous;
+        return;
+    }
+    if (!Array.isArray(keys) || !keys.length) {
+        input.value = previous;
+        return;
+    }
+    renameLapivientiTekija(keys, nextName);
 }
 
 function lapivientiTsvCell(value) {
@@ -8651,6 +8725,44 @@ function loadLasilistaVarasto() {
     }
 }
 
+function lasilistaCardValues(row) {
+    const orderRaw = Math.floor(Number(row?.orderBundles));
+    const alertRaw = Number(row?.alertMeters);
+    return {
+        orderBundles: Number.isInteger(orderRaw) && orderRaw > 0 ? orderRaw : 1,
+        alertMeters: Number.isFinite(alertRaw) && alertRaw >= 0 ? Math.round(alertRaw * 100) / 100 : 0
+    };
+}
+
+function parseLasilistaCards(source) {
+    const cards = {};
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return cards;
+    Object.keys(source).forEach((key) => {
+        const type = normalizeLasilistaType(key);
+        if (!type) return;
+        const card = lasilistaCardValues(source[key]);
+        if (card.orderBundles === 1 && card.alertMeters === 0) return;
+        cards[type] = card;
+    });
+    return cards;
+}
+
+function loadLasilistaCards() {
+    return parseLasilistaCards(readLasilistaVarastoRaw().cards);
+}
+
+function lasilistaCardStored(type) {
+    const key = normalizeLasilistaType(type);
+    const card = key ? loadLasilistaCards()[key] : null;
+    return card || { orderBundles: 1, alertMeters: 0 };
+}
+
+function withLasilistaCards(payload, cards) {
+    const parsed = parseLasilistaCards(cards);
+    if (Object.keys(parsed).length) payload.cards = parsed;
+    return payload;
+}
+
 function saveLasilistaVarasto(items) {
     const sorted = collectLasilistaStockItems(items);
     const raw = readLasilistaVarastoRaw();
@@ -8659,6 +8771,7 @@ function saveLasilistaVarasto(items) {
         const percent = parseLasilistaWasteInput(raw.wastePercent);
         payload.wastePercent = percent == null ? LASILISTA_WASTE_DEFAULT : percent;
     }
+    withLasilistaCards(payload, raw.cards);
     localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify(payload));
     queueLasilistaVarastoSync();
     return sorted;
@@ -8667,7 +8780,26 @@ function saveLasilistaVarasto(items) {
 function saveLasilistaWastePercent(percent) {
     const raw = readLasilistaVarastoRaw();
     const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
-    localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify({ items, wastePercent: percent }));
+    const payload = { items, wastePercent: percent };
+    withLasilistaCards(payload, raw.cards);
+    localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify(payload));
+    queueLasilistaVarastoSync();
+}
+
+function saveLasilistaCard(type, card) {
+    const key = normalizeLasilistaType(type);
+    if (!key) return;
+    const next = lasilistaCardValues(card);
+    const current = lasilistaCardStored(key);
+    if (current.orderBundles === next.orderBundles && current.alertMeters === next.alertMeters) return;
+    const cards = loadLasilistaCards();
+    if (next.orderBundles === 1 && next.alertMeters === 0) delete cards[key];
+    else cards[key] = next;
+    const raw = readLasilistaVarastoRaw();
+    const payload = { items: Array.isArray(raw.items) ? raw.items : [] };
+    if (Object.prototype.hasOwnProperty.call(raw, 'wastePercent')) payload.wastePercent = raw.wastePercent;
+    withLasilistaCards(payload, cards);
+    localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify(payload));
     queueLasilistaVarastoSync();
 }
 
@@ -8798,6 +8930,7 @@ function buildLasilistaVarastoPayload() {
     return {
         items: loadLasilistaVarasto(),
         wastePercent: loadLasilistaWastePercent(),
+        cards: loadLasilistaCards(),
         events: loadLasilistaVarastoEvents(),
         incoming: loadLasilistaIncoming()
     };
@@ -8809,6 +8942,7 @@ function lasilistaVarastoPayloadFromRemote(data) {
     return {
         items,
         wastePercent: percent == null ? LASILISTA_WASTE_DEFAULT : percent,
+        cards: parseLasilistaCards(data?.cards),
         events: parseLasilistaVarastoEvents(data?.events),
         incoming: parseLasilistaIncoming(data?.incoming)
     };
@@ -8818,6 +8952,11 @@ function lasilistaVarastoStateKey(state) {
     return JSON.stringify({
         items: (state?.items || []).map((item) => ({ type: item.type, meters: item.meters })),
         wastePercent: state?.wastePercent,
+        cards: Object.keys(state?.cards || {}).sort().map((type) => ({
+            type,
+            orderBundles: state.cards[type].orderBundles,
+            alertMeters: state.cards[type].alertMeters
+        })),
         events: (state?.events || []).map((event) => ({
             id: event.id,
             kind: event.kind,
@@ -8836,6 +8975,7 @@ function lasilistaVarastoLocalHasData() {
     const items = collectLasilistaStockItems(Array.isArray(raw.items) ? raw.items : []);
     return items.length > 0
         || Object.prototype.hasOwnProperty.call(raw, 'wastePercent')
+        || Object.keys(loadLasilistaCards()).length > 0
         || loadLasilistaVarastoEvents().length > 0
         || loadLasilistaIncoming().length > 0;
 }
@@ -8843,10 +8983,10 @@ function lasilistaVarastoLocalHasData() {
 function applyLasilistaVarastoPayload(state) {
     lasilistaVarastoApplyingRemote = true;
     try {
-        localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify({
+        localStorage.setItem(LASILISTA_VARASTO_KEY, JSON.stringify(withLasilistaCards({
             items: state.items || [],
             wastePercent: state.wastePercent
-        }));
+        }, state.cards)));
         localStorage.setItem(LASILISTA_VARASTO_EVENTS_KEY, JSON.stringify(state.events || []));
         localStorage.setItem(LASILISTA_VARASTO_INCOMING_KEY, JSON.stringify(state.incoming || []));
     } finally {
@@ -9071,11 +9211,12 @@ function buildLasilistaVarastoListHtml(items) {
         const uncut = displayedLasilistaMeters(uncutMm[item.type] || 0);
         const wasteMeters = Math.round((uncut * wastePercent / 100) * 100) / 100;
         const spare = Math.round((item.meters - uncut - wasteMeters) * 100) / 100;
-        const short = spare < 0;
+        const card = lasilistaCardStored(item.type);
+        const short = spare < card.alertMeters;
         const type = escapeHtmlText(item.type);
         const uncutLabel = `${formatLasilistaTableMeters(uncut)}${formatLasilistaWasteSuffix(uncut, wastePercent)}`;
         html += `<tr${short ? ' class="is-zero"' : ''}>`;
-        html += `<th scope="row">${type}</th>`;
+        html += `<th scope="row"><button type="button" class="lasilista-tuotekortti-btn" data-lasilista-card="${type}" aria-label="Tuotekortti, ${type}">${type}</button></th>`;
         html += '<td class="lasilista-varasto-capacity-cell">';
         html += `<input type="text" class="lasilista-varasto-capacity" inputmode="decimal" data-lasilista-type="${type}" value="${formatLasilistaTableMeters(item.meters)}" aria-label="${type} varaston kapasiteetti, metriä" autocomplete="off" spellcheck="false">`;
         html += '</td>';
@@ -9083,7 +9224,7 @@ function buildLasilistaVarastoListHtml(items) {
         html += `<td>${formatLasilistaStockCompact(spare)}</td>`;
         html += '<td class="lasilista-tilaus-cell">';
         html += `<span class="lasilista-tilaus-info">${LASILISTA_BUNDLE_LENGTH_M}m x ${LASILISTA_BUNDLE_COUNT} kpl = ${LASILISTA_BUNDLE_METERS}m</span>`;
-        html += `<input type="number" class="lasilista-tilaus-qty" min="1" step="1" value="1" inputmode="numeric" aria-label="${type} nippujen määrä" autocomplete="off">`;
+        html += `<input type="number" class="lasilista-tilaus-qty" min="1" step="1" value="${card.orderBundles}" inputmode="numeric" aria-label="${type} nippujen määrä" autocomplete="off">`;
         html += `<button type="button" class="btn btn-primary btn-sm lasilista-tilaus-btn" data-lasilista-order="${type}">Tilaa</button>`;
         html += '</td>';
         html += '</tr>';
@@ -9122,6 +9263,15 @@ function buildLasilistaVarastoHtml(draft, open, wasteDraft) {
     html += '<span class="lasilista-hukka-unit">%</span>';
     html += '</div>';
     html += `<div class="maali-viikko" id="lasilistaVarastoWeek">${buildLasilistaViikkoHtml()}</div>`;
+    html += '<dialog id="lasilistaTuotekortti" class="maali-tuotekortti" aria-labelledby="lasilistaTuotekorttiTitle">';
+    html += '<h2 id="lasilistaTuotekorttiTitle" class="maali-tuotekortti-title"></h2>';
+    html += '<dl class="maali-tuotekortti-fields">';
+    html += '<div><dt>Koko</dt><dd data-lasilista-field="koko"></dd></div>';
+    html += '<div><dt>Yleinen tilausmäärä</dt><dd class="maali-tuotekortti-edit"><input type="number" class="maali-tuotekortti-input" min="1" step="1" inputmode="numeric" data-lasilista-card-field="orderBundles" aria-label="Yleinen tilausmäärä nippuina"><span>nippua</span></dd></div>';
+    html += '<div><dt>Hälyraja</dt><dd class="maali-tuotekortti-edit"><input type="text" class="maali-tuotekortti-input" inputmode="decimal" data-lasilista-card-field="alertMeters" aria-label="Hälyraja metreissä"><span>m</span></dd></div>';
+    html += '</dl>';
+    html += '<button type="button" class="maali-tuotekortti-close" id="lasilistaTuotekorttiClose">Sulje</button>';
+    html += '</dialog>';
     html += '</div></details></div>';
     return html;
 }
@@ -9279,11 +9429,49 @@ function addLasilistatFromInput(summary) {
     showToast(skipped > 0 ? 'Lisätty varastoon. Osa riveistä ohitettiin.' : 'Lisätty varastoon.', 'success');
 }
 
+function openLasilistaTuotekortti(type) {
+    const key = normalizeLasilistaType(type);
+    const dialog = document.getElementById('lasilistaTuotekortti');
+    if (!key || !dialog) return;
+    const card = lasilistaCardStored(key);
+    dialog.dataset.lasilistaType = key;
+    const title = dialog.querySelector('#lasilistaTuotekorttiTitle');
+    if (title) title.textContent = key;
+    const koko = dialog.querySelector('[data-lasilista-field="koko"]');
+    if (koko) koko.textContent = key;
+    const order = dialog.querySelector('[data-lasilista-card-field="orderBundles"]');
+    const alertMeters = dialog.querySelector('[data-lasilista-card-field="alertMeters"]');
+    if (order) order.value = String(card.orderBundles);
+    if (alertMeters) alertMeters.value = formatLasilistaCapacityInput(card.alertMeters);
+    if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
+}
+
+function saveOpenLasilistaKortti(dialog) {
+    const type = normalizeLasilistaType(dialog?.dataset?.lasilistaType);
+    if (!type) return;
+    const orderRaw = Math.floor(Number(dialog.querySelector('[data-lasilista-card-field="orderBundles"]')?.value));
+    const alertRaw = parseLasilistaCapacityInput(dialog.querySelector('[data-lasilista-card-field="alertMeters"]')?.value);
+    if (!Number.isInteger(orderRaw) || orderRaw <= 0 || alertRaw == null || alertRaw < 0) return;
+    saveLasilistaCard(type, { orderBundles: orderRaw, alertMeters: alertRaw });
+    refreshLasilistaVarastoList(document.getElementById('materiaaliVarastoView'));
+}
+
 function bindLasilistaVarastoOnce() {
     const summary = document.getElementById('materiaaliVarastoView');
     if (!summary || summary.dataset.lasilistaBound === '1') return;
     summary.dataset.lasilistaBound = '1';
     summary.addEventListener('click', (event) => {
+        const cardBtn = event.target.closest ? event.target.closest('[data-lasilista-card]') : null;
+        if (cardBtn && summary.contains(cardBtn)) {
+            openLasilistaTuotekortti(cardBtn.dataset.lasilistaCard);
+            return;
+        }
+        const closeCard = event.target.closest ? event.target.closest('#lasilistaTuotekorttiClose') : null;
+        if (closeCard && summary.contains(closeCard)) {
+            const dialog = summary.querySelector('#lasilistaTuotekortti');
+            if (dialog && dialog.open) dialog.close();
+            return;
+        }
         const addBtn = event.target.closest ? event.target.closest('#lasilistaVarastoAddBtn') : null;
         if (addBtn && summary.contains(addBtn)) {
             addLasilistatFromInput(summary);
@@ -9298,7 +9486,7 @@ function bindLasilistaVarastoOnce() {
                 showToast('Kirjoita nippujen määrä, esimerkiksi 2.', 'warning');
                 return;
             }
-            if (qtyInput) qtyInput.value = '1';
+            if (qtyInput) qtyInput.value = String(lasilistaCardStored(orderBtn.dataset.lasilistaOrder).orderBundles);
             refreshLasilistaIncoming(summary);
             return;
         }
@@ -9325,13 +9513,26 @@ function bindLasilistaVarastoOnce() {
     });
     summary.addEventListener('input', (event) => {
         const target = event.target;
-        if (!target || target.id !== 'lasilistaHukka' || !summary.contains(target)) return;
+        if (!target || !summary.contains(target)) return;
+        const cardField = target.closest ? target.closest('[data-lasilista-card-field]') : null;
+        const dialog = summary.querySelector('#lasilistaTuotekortti');
+        if (cardField && dialog && dialog.contains(cardField)) {
+            saveOpenLasilistaKortti(dialog);
+            return;
+        }
+        if (target.id !== 'lasilistaHukka') return;
         target.dataset.dirty = '1';
         previewLasilistaWaste(target, summary);
     });
     summary.addEventListener('change', (event) => {
         const target = event.target;
         if (!target || !summary.contains(target)) return;
+        const cardField = target.closest ? target.closest('[data-lasilista-card-field]') : null;
+        const dialog = summary.querySelector('#lasilistaTuotekortti');
+        if (cardField && dialog && dialog.contains(cardField)) {
+            saveOpenLasilistaKortti(dialog);
+            return;
+        }
         if (target.id === 'lasilistaHukka') {
             commitLasilistaWaste(target, summary);
             return;
@@ -9350,7 +9551,8 @@ function bindLasilistaVarastoOnce() {
         const target = event.target;
         if (!target || !summary.contains(target) || event.key !== 'Enter') return;
         const capacity = target.closest ? target.closest('.lasilista-varasto-capacity') : null;
-        if (target.id !== 'lasilistaHukka' && !capacity) return;
+        const cardField = target.closest ? target.closest('[data-lasilista-card-field]') : null;
+        if (target.id !== 'lasilistaHukka' && !capacity && !cardField) return;
         event.preventDefault();
         target.blur();
     });
