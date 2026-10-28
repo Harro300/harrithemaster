@@ -15654,6 +15654,9 @@ let scanBatchFiles = [];
 let scanBatchIndex = 0;
 let scanBatchJobNumber = null;
 let scanBatchActive = false;
+let scanMergeFrozen = null;
+let scanMergeLiveCommitted = false;
+let scanMergeUnitSignature = '';
 let scanTransferQueue = [];
 let scanTransferQueueOpen = false;
 let scanQueueIdSeq = 1;
@@ -16402,7 +16405,13 @@ function acceptScanToQueue() {
     }
     const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
     let results;
-    if (isScanDoorWindowMode()) {
+    if (scanMergeFrozen) {
+        results = buildScanMergedSaveBlob(lasilistaSize, color);
+        if (!scanBlobHasResults(results)) {
+            showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
+            return;
+        }
+    } else if (isScanDoorWindowMode()) {
         results = buildDoorWindowScanResults(lasilistaSize, color);
         if (!results || !(results.data || []).length) {
             showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
@@ -16413,10 +16422,12 @@ function acceptScanToQueue() {
         applyScanReviewToCalculator();
         results = buildMittatResultsFromDom(lasilistaSize, color);
     }
-    const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
-    if (sections.length === 0 && !isNoResultsTransferMode) {
-        showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
-        return;
+    if (!scanMergeFrozen) {
+        const sections = document.getElementById('results')?.querySelectorAll('.result-section') || [];
+        if (sections.length === 0 && !isNoResultsTransferMode) {
+            showToast('Ei kelvollisia tuloksia jonoon. Tarkista syötteet.', 'warning');
+            return;
+        }
     }
     results.unitCount = readScanUnitCount();
 
@@ -16431,9 +16442,10 @@ function acceptScanToQueue() {
         quantity,
         lasilistaSize,
         lasilistaColor: color,
-        calculator: currentCalculator,
+        calculator: (results && results.calculator) || currentCalculator,
         results
     });
+    resetScanMerge();
 
     const card = document.getElementById('scanReviewCard');
     if (card) card.style.display = 'none';
@@ -17327,9 +17339,11 @@ function updateScanReviewVisibility() {
     if (badge) badge.style.display = doorWindowOn ? '' : 'none';
     if (winKickWrap) winKickWrap.style.display = (doorWindowOn && winKickOn) ? '' : 'none';
     syncScanWindowCalculatorFromDoor();
+    applyScanMergeFieldVisibility();
 }
 
 function showScanReview(parsed, canvas) {
+    resetScanMerge();
     const setV = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
     const mark = (id, ok) => { const el = document.getElementById(id); if (el) el.classList.toggle('scan-uncertain', ok !== 'ok'); };
 
@@ -17443,7 +17457,13 @@ function applyScanResult() {
     const lasilistaSize = rawSize === 'ei-lasilistaa' ? '' : rawSize;
 
     let results;
-    if (isScanDoorWindowMode()) {
+    if (scanMergeFrozen) {
+        results = buildScanMergedSaveBlob(lasilistaSize, color);
+        if (!scanBlobHasResults(results)) {
+            showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
+            return;
+        }
+    } else if (isScanDoorWindowMode()) {
         results = buildDoorWindowScanResults(lasilistaSize, color);
         if (!results || !(results.data || []).length) {
             showToast('Ei kelvollisia tuloksia siirrettäväksi. Tarkista syötteet.', 'warning');
@@ -17474,8 +17494,10 @@ function applyScanResult() {
 }
 
 function closeScanReview() {
+    resetScanMerge();
     const card = document.getElementById('scanReviewCard');
     if (card) card.style.display = 'none';
+    restoreManualMergeButtonAfterScanReview();
     clearScanPdfPreview();
     // Keskeytä jäljellä olevat PDF:t, säilytä siirtojono
     if (scanBatchActive) {
@@ -17498,16 +17520,90 @@ function isScanDoorWindowMode() {
     return !!document.getElementById('scanDoorWindowMode')?.checked;
 }
 
-function suggestScanUnitCount() {
+function isScanReviewOpen() {
+    const card = document.getElementById('scanReviewCard');
+    return !!(card && card.style.display !== 'none');
+}
+
+function hideManualMergeButtonDuringScanReview() {
+    if (!isScanReviewOpen()) return;
+    const btn = document.getElementById('btnYhdistaMerge');
+    if (btn) btn.style.display = 'none';
+}
+
+function restoreManualMergeButtonAfterScanReview() {
+    if (mergeMode) return;
+    const btn = document.getElementById('btnYhdistaMerge');
+    const hasSections = !!document.getElementById('results')?.querySelector('.result-section');
+    if (btn) btn.style.display = hasSections ? '' : 'none';
+}
+
+function applyScanMergeFieldVisibility() {
+    if (!scanMergeFrozen) return;
+    ['scanWindowSection', 'scanDoorSectionLabel', 'scanDoorWindowBadge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+}
+
+function updateScanMergeStatus() {
+    const status = document.getElementById('scanMergeStatus');
+    const cancelBtn = document.getElementById('scanPeruutaMergeBtn');
+    const active = !!scanMergeFrozen;
+    if (cancelBtn) cancelBtn.style.display = active ? '' : 'none';
+    if (!status) return;
+    if (!active) {
+        status.style.display = 'none';
+        status.textContent = '';
+        return;
+    }
+    const n = (scanMergeFrozen.inputsHistory && scanMergeFrozen.inputsHistory.length) || 1;
+    status.style.display = '';
+    status.textContent = n > 1 ? `Yhdistetty (${n} kpl)` : buildMergeFirstSummary(scanMergeFrozen);
+}
+
+function resetScanMerge() {
+    scanMergeFrozen = null;
+    scanMergeLiveCommitted = false;
+    scanMergeUnitSignature = '';
+    updateScanMergeStatus();
+}
+
+function scanCurrentPart() {
     const calc = document.getElementById('scanCalculator')?.value || '';
     const paneCount = Math.max(1, Math.min(12, parseInt(document.getElementById('scanPaneCount')?.value, 10) || 1));
-    if (isScanDoorWindowMode()) {
-        return suggestUnitCountFromParts([
-            { calculator: calc, paneCount },
-            { calculator: windowCalculatorForDoor(calc), paneCount: 1 }
-        ]);
+    return { calculator: calc, paneCount };
+}
+
+function collectScanUnitParts() {
+    const current = scanCurrentPart();
+    if (!scanMergeFrozen) {
+        if (isScanDoorWindowMode()) {
+            return [
+                current,
+                { calculator: windowCalculatorForDoor(current.calculator), paneCount: 1 }
+            ];
+        }
+        return [current];
     }
-    return suggestUnitCountFromParts([{ calculator: calc, paneCount }]);
+    const history = scanMergeFrozen.inputsHistory
+        ? scanMergeFrozen.inputsHistory
+        : (scanMergeFrozen.inputs ? [scanMergeFrozen.inputs] : []);
+    const parts = history.map(part => ({
+        calculator: part.calculator,
+        paneCount: part.paneCount,
+        paneHeights: part.paneHeights
+    }));
+    if (!scanMergeLiveCommitted) parts.push(current);
+    return parts.length ? parts : [current];
+}
+
+function scanUnitPartsSignature(parts) {
+    return (parts || []).map(part => `${part.calculator || ''}:${part.paneCount || ''}`).join('|');
+}
+
+function suggestScanUnitCount() {
+    return suggestUnitCountFromParts(collectScanUnitParts());
 }
 
 function bindScanUnitCountEdit() {
@@ -17519,8 +17615,14 @@ function bindScanUnitCountEdit() {
 
 function refreshScanUnitSuggestion() {
     const el = document.getElementById('scanUnitCount');
-    if (!el || el.dataset.userEdited === '1') return;
-    el.value = suggestScanUnitCount();
+    if (!el) return;
+    const parts = collectScanUnitParts();
+    const sig = scanUnitPartsSignature(parts);
+    const compositionChanged = sig !== scanMergeUnitSignature;
+    if (el.dataset.userEdited === '1' && !compositionChanged) return;
+    scanMergeUnitSignature = sig;
+    if (compositionChanged) el.dataset.userEdited = '0';
+    el.value = suggestUnitCountFromParts(parts);
 }
 
 function readScanUnitCount() {
@@ -17687,9 +17789,171 @@ function buildDoorWindowScanResults(lasilistaSize, color) {
     }
 }
 
+function scanCurrentInputsValid() {
+    const s = readScanDoorSettings();
+    if (!s.calc) return false;
+    const isWindow = s.calc.includes('ikkuna');
+    if (!isWindow && s.mainWidth < 500) return false;
+    if (isWindow && s.paneCount === 1 && s.mainWidth < 100) return false;
+    if (s.kickEnabled && s.kickHeight < 100) return false;
+    if (!scanMergeFrozen && isScanDoorWindowMode()) {
+        const winW = parseInt(document.getElementById('scanWindowWidth')?.value, 10) || 0;
+        const winH = parseInt(document.getElementById('scanWindowHeight')?.value, 10) || 0;
+        if (winW < 100 || winH < 100) return false;
+    }
+    return true;
+}
+
+function withScanProductSettings(calc, s, fn) {
+    const prevCalc = currentCalculator;
+    const prevSettings = { ...settings };
+    currentCalculator = calc;
+    settings = {
+        ...prevSettings,
+        gapOption: s.gapOption,
+        paneCount: s.paneCount || 1,
+        kickPlateEnabled: !!s.kickEnabled,
+        sealThresholdEnabled: !!s.sealEnabled,
+        umpioviEnabled: !!s.umpioviEnabled,
+        umpivasikkaEnabled: !!s.umpivasikkaEnabled
+    };
+    try {
+        return fn();
+    } finally {
+        currentCalculator = prevCalc;
+        settings = prevSettings;
+    }
+}
+
+function scanBlobHasResults(blob) {
+    if (!blob) return false;
+    if (blob.metadataOnly) return true;
+    return (blob.data || []).length > 0;
+}
+
+function buildSingleScanProductBlob(lasilistaSize, color) {
+    const s = readScanDoorSettings();
+    if (!s.calc) return null;
+    return withScanProductSettings(s.calc, s, () => {
+        const inputs = snapshotScanInputs(s.calc, s, {
+            yhdistettyLeveys: s.calc.includes('ikkuna') && !!s.kickEnabled
+        });
+        if (isUmpioviNoResultsMode()) {
+            return {
+                calculator: s.calc,
+                timestamp: new Date().toISOString(),
+                lasilistaSize: lasilistaSize || '',
+                lasilistaColor: color || '',
+                metadataOnly: true,
+                inputs,
+                data: []
+            };
+        }
+        const raw = computeScanRawResults(s.calc, {
+            ...s,
+            useYhdistettyLeveys: s.calc.includes('ikkuna') && !!s.kickEnabled
+        });
+        return {
+            calculator: s.calc,
+            timestamp: new Date().toISOString(),
+            lasilistaSize: lasilistaSize || '',
+            lasilistaColor: color || '',
+            metadataOnly: false,
+            inputs,
+            data: formatResultToData(raw, s.calc, { ...settings }) || []
+        };
+    });
+}
+
+function buildFrozenScanBlob() {
+    if (isScanDoorWindowMode()) return buildDoorWindowScanResults('', '');
+    return buildSingleScanProductBlob('', '');
+}
+
+function showScanMergedData(data) {
+    const resultsDiv = document.getElementById('results');
+    if (data && data.length) displayMergedResults(data);
+    else if (resultsDiv) resultsDiv.innerHTML = '<p class="text-muted">Umpiovi + Tiivistekynnys ilman potkupeltiä: ei laskettavia mittoja.</p>';
+    hideManualMergeButtonDuringScanReview();
+}
+
+function activateScanMerge() {
+    if (!isScanReviewOpen()) return;
+    if (!scanCurrentInputsValid()) {
+        showToast('Tarkista syötteet ennen yhdistämistä.', 'warning');
+        return;
+    }
+    const blob = scanMergeFrozen ? buildSingleScanProductBlob('', '') : buildFrozenScanBlob();
+    if (!scanBlobHasResults(blob)) {
+        showToast('Ei yhdistettäviä tuloksia.', 'warning');
+        return;
+    }
+    if (!scanMergeFrozen) scanMergeFrozen = blob;
+    else scanMergeFrozen = mergeResults(scanMergeFrozen, blob);
+    scanMergeLiveCommitted = true;
+    updateScanMergeStatus();
+    applyScanMergeFieldVisibility();
+    showScanMergedData(scanMergeFrozen.data);
+    refreshScanUnitSuggestion();
+}
+
+function cancelScanMerge() {
+    if (!scanMergeFrozen) return;
+    scanMergeFrozen = null;
+    scanMergeLiveCommitted = false;
+    scanMergeUnitSignature = '';
+    const unitEl = document.getElementById('scanUnitCount');
+    if (unitEl) unitEl.dataset.userEdited = '0';
+    updateScanMergeStatus();
+    updateScanReviewVisibility();
+    calculateFromScanReview();
+}
+
+function buildScanMergedSaveBlob(lasilistaSize, color) {
+    if (!scanMergeFrozen) return null;
+    if (scanMergeLiveCommitted) {
+        const saved = JSON.parse(JSON.stringify(scanMergeFrozen));
+        saved.lasilistaSize = lasilistaSize || '';
+        saved.lasilistaColor = color || '';
+        saved.timestamp = new Date().toISOString();
+        return saved;
+    }
+    if (!scanCurrentInputsValid()) return null;
+    const incoming = buildSingleScanProductBlob(lasilistaSize, color);
+    if (!scanBlobHasResults(incoming)) return null;
+    const base = JSON.parse(JSON.stringify(scanMergeFrozen));
+    base.lasilistaSize = lasilistaSize || '';
+    base.lasilistaColor = color || '';
+    const merged = mergeResults(base, incoming);
+    merged.lasilistaSize = lasilistaSize || '';
+    merged.lasilistaColor = color || '';
+    return merged;
+}
+
 function calculateFromScanReview() {
     const card = document.getElementById('scanReviewCard');
     if (!card || card.style.display === 'none') return;
+
+    if (scanMergeFrozen) {
+        scanMergeLiveCommitted = false;
+        refreshScanUnitSuggestion();
+        const resultsDiv = document.getElementById('results');
+        if (!scanCurrentInputsValid()) {
+            if (resultsDiv) resultsDiv.innerHTML = '<p class="text-danger">Tarkista syötteet ennen yhdistämistä.</p>';
+            hideManualMergeButtonDuringScanReview();
+            return;
+        }
+        const incoming = buildSingleScanProductBlob('', '');
+        if (!scanBlobHasResults(incoming)) {
+            if (resultsDiv) resultsDiv.innerHTML = '<p class="text-danger">Ei yhdistettäviä tuloksia.</p>';
+            hideManualMergeButtonDuringScanReview();
+            return;
+        }
+        const merged = mergeResults(scanMergeFrozen, incoming);
+        showScanMergedData(merged && merged.data);
+        return;
+    }
+
     refreshScanUnitSuggestion();
 
     if (isScanDoorWindowMode()) {
@@ -17697,16 +17961,19 @@ function calculateFromScanReview() {
         if (!door.calc) return;
         if (door.mainWidth < 500) {
             document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
+            hideManualMergeButtonDuringScanReview();
             return;
         }
         const winW = parseInt(document.getElementById('scanWindowWidth')?.value, 10) || 0;
         const winH = parseInt(document.getElementById('scanWindowHeight')?.value, 10) || 0;
         if (winW < 100 || winH < 100) {
             document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista ikkunan syötteet (leveys ja korkeus).</p>';
+            hideManualMergeButtonDuringScanReview();
             return;
         }
         const merged = buildDoorWindowScanResults('', '');
         if (merged && merged.data) displayMergedResults(merged.data);
+        hideManualMergeButtonDuringScanReview();
         return;
     }
 
@@ -17767,21 +18034,25 @@ function calculateFromScanReview() {
     if (isUmpioviNoResultsMode()) {
         document.getElementById('results').innerHTML = '<p class="text-muted">Umpiovi + Tiivistekynnys ilman potkupeltiä: ei laskettavia mittoja.</p>';
         restore();
+        hideManualMergeButtonDuringScanReview();
         return;
     }
     if (!isWindow && mainWidth < 500) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
         restore();
+        hideManualMergeButtonDuringScanReview();
         return;
     }
     if (isWindow && paneCount === 1 && mainWidth < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
         restore();
+        hideManualMergeButtonDuringScanReview();
         return;
     }
     if (kickEnabled && kickHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
         restore();
+        hideManualMergeButtonDuringScanReview();
         return;
     }
 
@@ -17796,4 +18067,5 @@ function calculateFromScanReview() {
 
     displayResults(results);
     restore();
+    hideManualMergeButtonDuringScanReview();
 }
