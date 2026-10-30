@@ -336,13 +336,17 @@ body.dark-mode .tuotanto-display-options-menu {
 }
 .ovi-ui .tyyppi-valinta.naytto-pysty { grid-template-columns: 1fr; }
 
-#mittatView > .card:first-child {
+#mittatView > .card:first-child,
+#calculatorScreen > .card:first-child,
+#paketitView > .card:first-child {
     position: relative;
     z-index: 20;
     overflow: visible;
 }
 
-#mittatView > .card:first-child:hover {
+#mittatView > .card:first-child:hover,
+#calculatorScreen > .card:first-child:hover,
+#paketitView > .card:first-child:hover {
     transform: none;
 }
 
@@ -3933,4 +3937,310 @@ body.dark-mode .scan-pdf-preview-canvas {
 
 .lapivienti-copy-btn {
     margin-top: 0;
+}
+
+.kuorma-kapasiteetti-view {
+    padding: 4px 0 20px;
+}
+
+.kk-page-head {
+    margin-bottom: 20px;
+}
+
+#kkDocSelect {
+    max-width: 360px;
+}
+
+.kk-sheet-scroll {
+    overflow-x: auto;
+}
+
+.kk-sheet {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    font-size: 0.85rem;
+}
+
+.kk-sheet th,
+.kk-sheet td {
+    border: 1px solid var(--border-color);
+    padding: 0;
+    vertical-align: middle;
+    text-align: center;
+}
+
+.kk-sheet th {
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.kk-sheet tfoot th,
+.kk-sheet tfoot td {
+    padding: 6px 8px;
+    background: var(--bg-tertiary);
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kk-sheet .kk-name-col {
+    min-width: 140px;
+    text-align: left;
+}
+
+.kk-sheet .is-weekend {
+    background: var(--bg-primary);
+}
+
+.kk-sheet-input {
+    width: 100%;
+    min-width: 4.2rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: right;
+    padding: 6px 8px;
+    font: inherit;
+}
+
+.kk-sheet-name {
+    text-align: left;
+    min-width: 0;
+}
+
+.kk-name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kk-name-wrap .kk-sheet-name {
+    flex: 1;
+}
+
+.kk-name-wrap .preset-checkbox {
+    width: 22px;
+    height: 22px;
+    margin-right: 4px;
+}
+
+body.dark-mode .kk-name-wrap .preset-checkbox.checked {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #1a1a1a;
+}
+
+.kk-sheet-input:focus {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+    background: var(--bg-secondary);
+}
+
+.kk-week-total {
+    padding: 6px 8px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.kk-sheet th.kk-week-heading {
+    white-space: nowrap;
+}
+
+.kk-sheet-remove {
+    border: 0;
+    background: transparent;
+    color: var(--danger-color);
+    font-size: 0.75rem;
+    font-weight: 650;
+    padding: 6px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.kk-table {
+    width: 100%;
+    border-collapse: collapse;
+    color: var(--text-primary);
+}
+
+.kk-table th,
+.kk-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+    text-align: left;
+}
+
+.kk-table th {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.kk-hours {
+    width: 7.5rem;
+}
+
+.kk-minutes {
+    width: 6.5rem;
+    display: inline-block;
+}
+
+.kk-minutes-cell {
+    white-space: nowrap;
+    width: 9rem;
+}
+
+.kk-unit {
+    margin-left: 8px;
+    color: var(--text-secondary);
+}
+
+.kk-sum {
+    margin: 12px 0 0;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kk-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.kk-add .form-control {
+    max-width: 280px;
+}
+
+.kk-note {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin: 0 0 16px;
+}
+
+.admin-accordion-content .kk-note {
+    margin: 0 0 12px;
+}
+
+.kk-view-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.kk-view-tab {
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.kk-view-tab.is-active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--bg-secondary);
+}
+
+.kk-week-controls {
+    margin-bottom: 18px;
+}
+
+.kk-dept {
+    margin-bottom: 22px;
+}
+
+.kk-dept-title {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kk-week-scroll {
+    overflow-x: auto;
+}
+
+.kk-timetable {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(108px, 1fr));
+    gap: 8px;
+    min-width: 760px;
+}
+
+.kk-day-head {
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.kk-day {
+    min-height: 118px;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.kk-day-head.is-weekend,
+.kk-day.is-weekend {
+    opacity: 0.72;
+}
+
+.kk-day-head.is-today,
+.kk-day.is-today {
+    border: 1px solid var(--accent-color);
+    opacity: 1;
+}
+
+.kk-day-date {
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.kk-meter-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.kk-meter-row span:last-child {
+    color: var(--text-primary);
+    font-weight: 650;
+}
+
+.kk-meter {
+    height: 6px;
+    margin-top: 10px;
+    border-radius: 999px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+}
+
+.kk-meter-fill {
+    width: 0;
+    height: 100%;
+    background: var(--accent-color);
 }
