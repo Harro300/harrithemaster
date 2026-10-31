@@ -40,6 +40,14 @@
         { id: 'economy_pariovi', label: 'Economy pariovi', kind: 'ovi' },
         { id: 'economy_ikkuna', label: 'Economy ikkuna', kind: 'ikkuna' }
     ];
+    const CALCULATOR_PRODUCT_IDS = {
+        'janisol-kayntiovi': 'janisol_kayntiovi',
+        'janisol-pariovi': 'janisol_pariovi',
+        'janisol-ikkuna': 'janisol_ikkuna',
+        'economy-kayntiovi': 'economy_kayntiovi',
+        'economy-pariovi': 'economy_pariovi',
+        'economy-ikkuna': 'economy_ikkuna'
+    };
 
     let state = loadState();
     let pageView = 'asetukset';
@@ -366,6 +374,7 @@
         enabled.addEventListener('change', () => {
             state.enabled = enabled.checked;
             save();
+            if (typeof updateKuormaButton === 'function') updateKuormaButton();
         });
         select.addEventListener('change', () => {
             state.selectedDoc = select.value;
@@ -495,6 +504,64 @@
         return controls;
     }
 
+    function isoFromDate(date) {
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return date.getFullYear() + '-' + month + '-' + day;
+    }
+
+    function readStorageMap(key) {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks) {
+        const blockId = itemBlocks[jobNumber + '-' + itemName];
+        const blocks = Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber] : [];
+        const block = blocks.find((entry) => entry && entry.id === blockId);
+        const blockDate = typeof normalizeShipDate === 'function' ? normalizeShipDate(block && block.shipDate) : '';
+        if (blockDate) return blockDate;
+        return typeof normalizeShipDate === 'function' ? normalizeShipDate(jobShipDates[jobNumber]) : '';
+    }
+
+    function productionLoadMinutes(department, date) {
+        const day = isoFromDate(date);
+        const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
+        if (!jobs.length || !day) return null;
+        const mittatData = readStorageMap('mittatData');
+        const packed = readStorageMap('packedMitat');
+        const jobShipDates = readStorageMap('jobShipDates');
+        const jobBlocks = readStorageMap('jobBlocks');
+        const itemBlocks = readStorageMap('itemBlocks');
+        let sum = 0;
+        let any = false;
+        jobs.forEach((jobNumber) => {
+            const items = mittatData[jobNumber];
+            if (!items || typeof items !== 'object') return;
+            const names = Object.keys(items);
+            if (!names.length) return;
+            if (typeof isJobFullyPacked === 'function' && isJobFullyPacked(jobNumber)) return;
+            names.forEach((itemName) => {
+                if (packed[jobNumber + '-' + itemName]) return;
+                if (shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks) !== day) return;
+                const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
+                if (typeof amount !== 'number') return;
+                sum += amount;
+                any = true;
+            });
+        });
+        return any ? sum : null;
+    }
+
+    function formatLoadMinutes(minutes) {
+        if (typeof minutes !== 'number') return '—';
+        return formatSum(minutes / 60);
+    }
+
     function renderWeek() {
         const host = document.getElementById('kkWeek');
         if (!host) return;
@@ -534,23 +601,32 @@
         for (let index = 0; index < 7; index += 1) {
             const date = addDays(monday, index);
             const weekend = index >= 5;
-            const hoursText = formatSum(departmentDayHours(department, WEEKDAYS[index]));
+            const hours = departmentDayHours(department, WEEKDAYS[index]);
+            const hoursText = formatSum(hours);
+            const minutes = productionLoadMinutes(department, date);
+            const loadText = formatLoadMinutes(minutes);
             const cell = document.createElement('div');
             cell.className = 'kk-day' + (weekend ? ' is-weekend' : '') + (sameDay(date, today) ? ' is-today' : '');
-            cell.setAttribute('aria-label', WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. Kuormaa ei ole.');
+            const loadLabel = typeof minutes === 'number' ? ('Kuorma ' + loadText + '.') : 'Kuormaa ei ole.';
+            cell.setAttribute('aria-label', WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. ' + loadLabel);
 
             const dateLine = document.createElement('div');
             dateLine.className = 'kk-day-date';
             dateLine.textContent = formatDayMonth(date);
 
             const capacityRow = meterRow('Kapasiteetti', hoursText);
-            const loadRow = meterRow('Kuorma', '—');
+            const loadRow = meterRow('Kuorma', loadText);
 
             const meter = document.createElement('div');
             meter.className = 'kk-meter';
             meter.setAttribute('aria-hidden', 'true');
             const fill = document.createElement('div');
             fill.className = 'kk-meter-fill';
+            if (typeof minutes === 'number' && minutes > 0) {
+                const ratio = hours > 0 ? (minutes / 60) / hours : 2;
+                fill.style.width = Math.min(100, ratio * 100) + '%';
+                if (ratio > 1) fill.classList.add('is-over');
+            }
             meter.appendChild(fill);
 
             cell.append(dateLine, capacityRow, loadRow, meter);
@@ -890,10 +966,41 @@
         return wrap;
     }
 
+    function kokoonpanoMinutesForInputs(inputs) {
+        if (!inputs || inputs.pystypaneliEnabled) return null;
+        const productId = CALCULATOR_PRODUCT_IDS[inputs.calculator];
+        const product = PRODUCTS.find((item) => item.id === productId);
+        const times = productId && state.kuorma.kokoonpano[productId];
+        if (!product || !times) return null;
+        const panes = parseInt(inputs.paneCount, 10);
+        const paneCount = Number.isFinite(panes) && panes >= 1 ? panes : 1;
+        let total = (times.standardi || 0) + Math.max(0, paneCount - 1) * (times.ruutu || 0);
+        if (inputs.kickPlateEnabled) total += times.potkupelti || 0;
+        if (product.kind === 'ovi' && inputs.sealThresholdEnabled) total += times.tiivistekynnys || 0;
+        return total;
+    }
+
+    function loadQuote(parts) {
+        const minutes = (Array.isArray(parts) ? parts : []).map(kokoonpanoMinutesForInputs);
+        const known = minutes.filter((value) => typeof value === 'number');
+        return {
+            saha: null,
+            hitsaus: null,
+            maalaus: null,
+            kokoonpano: known.length ? known.reduce((sum, value) => sum + value, 0) : null
+        };
+    }
+
     function open() {
         if (typeof setTuotantoNakyma === 'function') setTuotantoNakyma('kuorma');
         if (typeof switchView === 'function') switchView('mitat');
     }
 
-    window.KuormaKapasiteetti = { open, mount, unmount };
+    window.KuormaKapasiteetti = {
+        open,
+        mount,
+        unmount,
+        loadQuote,
+        isShownInProduction: function () { return state.enabled === true; }
+    };
 })();

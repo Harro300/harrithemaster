@@ -364,9 +364,14 @@ function rememberLoadedActiveItems(state) {
 }
 
 function applyActiveJobPayloadsToLocalStorage(payloads) {
-    const prev = pendingJobSyncs.size > 0 ? getMitatStateFromLocalStorage() : null;
+    const koeJobs = loadKuormaKoeJobs();
+    const prev = (pendingJobSyncs.size > 0 || koeJobs.length > 0) ? getMitatStateFromLocalStorage() : null;
     const state = emptyMitatState();
-    (payloads || []).forEach((payload) => absorbJobPayload(state, payload));
+    const remoteJobNumbers = new Set();
+    (payloads || []).forEach((payload) => {
+        absorbJobPayload(state, payload);
+        if (payload && payload.jobNumber) remoteJobNumbers.add(String(payload.jobNumber));
+    });
     if (prev) {
         pendingJobSyncs.forEach((jobNumber) => {
             if (prev.mittatData && prev.mittatData[jobNumber]) {
@@ -375,13 +380,25 @@ function applyActiveJobPayloadsToLocalStorage(payloads) {
                 stripJobFromMitatState(state, jobNumber);
             }
         });
+        koeJobs.forEach((jobNumber) => {
+            if (remoteJobNumbers.has(jobNumber)) {
+                forgetKuormaKoeJob(jobNumber);
+                return;
+            }
+            if (pendingJobSyncs.has(jobNumber)) return;
+            if (prev.mittatData && prev.mittatData[jobNumber]) {
+                copyJobSliceIntoState(state, prev, jobNumber);
+            }
+        });
     }
     applyMitatStateToLocalStorage(state);
     rememberLoadedActiveItems(state);
+    loadKuormaKoeJobs().forEach((jobNumber) => loadedActiveItemNames.delete(String(jobNumber)));
 }
 
 function applyJobPayloadIntoLocalStorage(payload) {
     if (!payload || !payload.jobNumber) return;
+    if (isKuormaKoeJob(payload.jobNumber)) forgetKuormaKoeJob(payload.jobNumber);
     const state = getMitatStateFromLocalStorage();
     stripJobFromMitatState(state, payload.jobNumber);
     absorbJobPayload(state, payload);
@@ -480,6 +497,7 @@ async function syncMitatInputsToFirestore(jobNumberOrNumbers) {
         const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
 
         for (const jobNumber of jobs) {
+            if (isKuormaKoeJob(jobNumber)) continue;
             const jobItems = mittatData[jobNumber];
             const jobInputs = {};
             if (jobItems && typeof jobItems === 'object') {
@@ -510,6 +528,7 @@ async function syncMitatInputsToFirestore(jobNumberOrNumbers) {
 }
 
 async function syncJobItemInputsToFirestore(jobNumber, itemName, item) {
+    if (isKuormaKoeJob(jobNumber)) return;
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
@@ -848,6 +867,7 @@ async function commitJobPayloadIndex(jobNumber, payload) {
 }
 
 async function syncTuotantoJobToFirestore(jobNumber, capture, isStale) {
+    if (isKuormaKoeJob(jobNumber)) return;
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
@@ -962,7 +982,8 @@ function enqueueJobSync(jobNumber, capture) {
 }
 
 async function syncTuotantoJobsToFirestore(jobNumbers) {
-    const unique = [...new Set((jobNumbers || []).filter(Boolean).map(String))];
+    const unique = [...new Set((jobNumbers || []).filter(Boolean).map(String))]
+        .filter((jobNumber) => !isKuormaKoeJob(jobNumber));
     const runs = unique.map((jobNumber) => enqueueJobSync(jobNumber, {
         forceDelete: false,
         payload: buildTuotantoJobPayload(jobNumber)
@@ -972,11 +993,56 @@ async function syncTuotantoJobsToFirestore(jobNumbers) {
     }
 }
 
+function loadKuormaKoeJobs() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem('kuormaKoeJobs') || '[]');
+        if (!Array.isArray(parsed)) return [];
+        return [...new Set(parsed.map((job) => String(job || '').trim()).filter(Boolean))];
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveKuormaKoeJobs(jobs) {
+    localStorage.setItem('kuormaKoeJobs', JSON.stringify([...new Set((jobs || []).map((job) => String(job || '').trim()).filter(Boolean))]));
+}
+
+function isKuormaKoeJob(jobNumber) {
+    const key = String(jobNumber || '').trim();
+    if (!key) return false;
+    return loadKuormaKoeJobs().includes(key);
+}
+
+function markKuormaKoeJob(jobNumber) {
+    const key = String(jobNumber || '').trim();
+    if (!key) return;
+    const jobs = loadKuormaKoeJobs();
+    if (!jobs.includes(key)) jobs.push(key);
+    saveKuormaKoeJobs(jobs);
+}
+
+function forgetKuormaKoeJob(jobNumber) {
+    const key = String(jobNumber || '').trim();
+    if (!key) return;
+    saveKuormaKoeJobs(loadKuormaKoeJobs().filter((job) => job !== key));
+}
+
+function renameKuormaKoeJob(fromJob, toJob) {
+    const from = String(fromJob || '').trim();
+    const to = String(toJob || '').trim();
+    if (!from || !to || !isKuormaKoeJob(from)) return;
+    const jobs = loadKuormaKoeJobs().filter((job) => job !== from && job !== to);
+    jobs.push(to);
+    saveKuormaKoeJobs(jobs);
+}
+
 function dualWriteMitatState(jobNumberOrNumbers, options) {
     const jobs = Array.isArray(jobNumberOrNumbers)
         ? jobNumberOrNumbers
         : (jobNumberOrNumbers ? [jobNumberOrNumbers] : []);
-    const unique = [...new Set(jobs.filter(Boolean).map(String))];
+    const unique = [...new Set(jobs.filter(Boolean).map(String))]
+        .filter((jobNumber) => !isKuormaKoeJob(jobNumber));
+    if (unique.length === 0) return Promise.resolve([]);
     const forceDelete = !!(options && options.forceDelete);
     // Payload kaapataan heti, ennen ensimmäistä awaitia. Jonon suoritus ei
     // lue localStoragea uudelleen. Indeksimuisti päivittyy vasta kirjoituksen jälkeen.
@@ -994,6 +1060,10 @@ async function syncMitatJobRenameToFirestore(fromJob, toJob) {
     fromJob = String(fromJob || '');
     toJob = String(toJob || '');
     if (!fromJob || !toJob || fromJob === toJob) return false;
+    if (isKuormaKoeJob(fromJob)) {
+        renameKuormaKoeJob(fromJob, toJob);
+        return true;
+    }
     if (isMitatDataClearedAgainstKnownJobs()) {
         console.warn('Työnumeron muokkaus-synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
         return false;
@@ -1093,6 +1163,7 @@ async function copyMissingActiveJobsToFirestore() {
 
     try {
         for (const jobNumber of Object.keys(mittatData)) {
+            if (isKuormaKoeJob(jobNumber)) continue;
             if (isJobFullyPacked(jobNumber)) continue;
             try {
                 const ref = doc(db, 'mitatState', resolveMitatJobDocId(jobNumber));
@@ -1227,6 +1298,7 @@ function buildPaketitIndexRowFromPayload(payload) {
 }
 
 async function writeJobPayloadToFirestore(jobNumber, payload) {
+    if (isKuormaKoeJob(jobNumber)) return;
     if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
         return;
     }
@@ -1429,6 +1501,7 @@ async function ensurePaketitIndexFromLocalStorage() {
         const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
         const jobs = [];
         Object.keys(mittatData).forEach((jobNumber) => {
+            if (isKuormaKoeJob(jobNumber)) return;
             const row = buildPaketitIndexRow(jobNumber);
             if (row) jobs.push(row);
         });
@@ -1456,6 +1529,7 @@ async function copyMissingPackedJobsToFirestore() {
 
     try {
         for (const jobNumber of Object.keys(mittatData)) {
+            if (isKuormaKoeJob(jobNumber)) continue;
             const packedItems = getPackedItemsForJob(
                 jobNumber, mittatData, packedMitat, packedPackageNumbers, hiddenMitatItems
             );
@@ -3128,6 +3202,7 @@ function calculate() {
         let html = '<p class="text-muted">Umpiovi + Tiivistekynnys ilman potkupeltiä: ei laskettavia mittoja.</p>';
         if (pystypaneliEnabled) html += `<div class="row">${buildPystypaneliResultsHtml()}</div>`;
         document.getElementById('results').innerHTML = html;
+        updateKuormaButton();
         return;
     }
     
@@ -3166,22 +3241,26 @@ function calculate() {
     const isVerkkoCalculator = isVerkkoCalculatorType();
     if (!isWindowCalculator && !isVerkkoSeina && mainDoorWidth < 500) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Leveys ≥ 500 mm.</p>';
+        updateKuormaButton();
         return;
     }
     
     if ((isWindowCalculator || isVerkkoSeina) && settings.paneCount === 1 && mainDoorWidth < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
+        updateKuormaButton();
         return;
     }
 
     if (isVerkkoSeinaMulti && paneWidths.some(w => w < 100)) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Ruudun leveys ≥ 100 mm.</p>';
+        updateKuormaButton();
         return;
     }
-    
+
     if (!isVerkkoCalculator && settings.kickPlateEnabled && kickPlateHeight < 100) {
         document.getElementById('results').innerHTML = '<p class="text-danger">Tarkista syötteet. Potkupellin korkeus ≥ 100 mm.</p>';
-            return;
+        updateKuormaButton();
+        return;
     }
     
     let results = {};
@@ -4070,6 +4149,60 @@ function sortByFinnishNumberString(a, b) {
 }
 
 // Display results with combined duplicates
+function currentKuormaParts() {
+    const current = captureCurrentInputsForMerge();
+    if (!(mergeMode && frozenFirstResult)) return [current];
+    const history = frozenFirstResult.inputsHistory
+        ? frozenFirstResult.inputsHistory
+        : (frozenFirstResult.inputs ? [frozenFirstResult.inputs] : []);
+    if (!mergeLiveCommitted) return history.concat([current]);
+    return history.length ? history : [current];
+}
+
+function updateKuormaButton() {
+    const button = document.getElementById('btnKuormaTulokset');
+    const panel = document.getElementById('kuormaTulokset');
+    if (!button || !panel) return;
+    const api = window.KuormaKapasiteetti;
+    const shown = !!(api && typeof api.isShownInProduction === 'function' && api.isShownInProduction());
+    if (!shown) {
+        button.hidden = true;
+        panel.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    button.hidden = false;
+    const quote = api.loadQuote(currentKuormaParts());
+    const minutes = quote.kokoonpano;
+    button.textContent = typeof minutes === 'number' ? ('Kuorma ' + minutes + ' min') : 'Kuorma';
+    const rows = [
+        ['saha', 'Saha'],
+        ['hitsaus', 'Hitsaus'],
+        ['maalaus', 'Maalaus'],
+        ['kokoonpano', 'Kokoonpano']
+    ];
+    panel.replaceChildren();
+    rows.forEach((entry) => {
+        const row = document.createElement('div');
+        row.className = 'kk-load-preview-row';
+        const name = document.createElement('span');
+        name.textContent = entry[1];
+        const value = document.createElement('span');
+        const amount = quote[entry[0]];
+        value.textContent = typeof amount === 'number' ? (amount + ' min') : '—';
+        row.append(name, value);
+        panel.appendChild(row);
+    });
+}
+
+function toggleKuormaTulokset() {
+    const button = document.getElementById('btnKuormaTulokset');
+    const panel = document.getElementById('kuormaTulokset');
+    if (!button || !panel || button.hidden) return;
+    panel.hidden = !panel.hidden;
+    button.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+}
+
 function displayResults(results) {
     const resultsDiv = document.getElementById('results');
     const isWindowCalculator = currentCalculator && currentCalculator.includes('ikkuna');
@@ -4096,6 +4229,7 @@ function displayResults(results) {
             const btnYhdista = document.getElementById('btnYhdistaMerge');
             if (btnYhdista) btnYhdista.style.display = '';
         }
+        updateKuormaButton();
         return;
     }
     
@@ -4147,6 +4281,7 @@ function displayResults(results) {
         const btnYhdista = document.getElementById('btnYhdistaMerge');
         if (btnYhdista) btnYhdista.style.display = '';
     }
+    updateKuormaButton();
 }
 
 // Combine duplicate results (e.g., "841 x 2" instead of two "841")
@@ -4367,6 +4502,7 @@ function displayMergedResults(dataArray) {
 
     const btnYhdista = document.getElementById('btnYhdistaMerge');
     if (btnYhdista) btnYhdista.style.display = '';
+    updateKuormaButton();
 }
 
 // Copy results to clipboard
@@ -6468,6 +6604,13 @@ function transferResults() {
     }
     const yhdistettyCheck = document.getElementById('transferYhdistetty');
     if (yhdistettyCheck) yhdistettyCheck.checked = false;
+    const koeRow = document.getElementById('transferKoeJobRow');
+    const koeCheck = document.getElementById('transferKoeJob');
+    const showKoeJob = !!(window.KuormaKapasiteetti
+        && typeof KuormaKapasiteetti.isShownInProduction === 'function'
+        && KuormaKapasiteetti.isShownInProduction());
+    if (koeRow) koeRow.style.display = showKoeJob ? '' : 'none';
+    if (koeCheck) koeCheck.checked = false;
 
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
     modal.show();
@@ -6508,6 +6651,18 @@ function mergeMeasurementItems(existingItems, incomingItems) {
     return result.concat(nonParseable);
 }
 
+function sumKuormaMinutes(existing, incoming) {
+    const keys = ['saha', 'hitsaus', 'maalaus', 'kokoonpano'];
+    const out = {};
+    keys.forEach((key) => {
+        const left = existing && typeof existing[key] === 'number' ? existing[key] : null;
+        const right = incoming && typeof incoming[key] === 'number' ? incoming[key] : null;
+        if (left == null && right == null) out[key] = null;
+        else out[key] = (left || 0) + (right || 0);
+    });
+    return out;
+}
+
 function mergeResults(existing, incoming) {
     function withTs(inputs, ts) {
         if (!inputs) return null;
@@ -6530,6 +6685,9 @@ function mergeResults(existing, incoming) {
         inputsHistory: inputsHistory.length > 0 ? inputsHistory : undefined,
         data: JSON.parse(JSON.stringify(existing.data || []))
     };
+    if (existing.kuorma || incoming.kuorma) {
+        merged.kuorma = sumKuormaMinutes(existing.kuorma, incoming.kuorma);
+    }
 
     const existingSize = (existing.lasilistaSize || '').trim();
     const incomingSize = (incoming.lasilistaSize || '').trim();
@@ -6713,6 +6871,30 @@ function confirmTransferToMitat() {
             results.inputsHistory = [...existingHistory];
         }
     }
+
+    const quoteParts = (results.inputsHistory && results.inputsHistory.length)
+        ? results.inputsHistory
+        : (results.inputs ? [results.inputs] : []);
+    if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.loadQuote === 'function') {
+        results.kuorma = KuormaKapasiteetti.loadQuote(quoteParts);
+    }
+
+    const koeTransfer = !!document.getElementById('transferKoeJob')?.checked
+        && !!(window.KuormaKapasiteetti
+            && typeof KuormaKapasiteetti.isShownInProduction === 'function'
+            && KuormaKapasiteetti.isShownInProduction());
+    if (koeTransfer && !isKuormaKoeJob(jobNumber)) {
+        let existingJobs = {};
+        try {
+            existingJobs = JSON.parse(localStorage.getItem('mittatData') || '{}');
+        } catch (error) {
+            existingJobs = {};
+        }
+        if (existingJobs[jobNumber] || loadedActiveItemNames.has(String(jobNumber)) || mitatJobDocIds.has(String(jobNumber))) {
+            showToast('Tämä työnumero on jo käytössä. Koetyö tarvitsee uuden numeron.', 'warning');
+            return;
+        }
+    }
     
     const itemCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferItemCount')?.value) || 1));
 
@@ -6754,9 +6936,13 @@ function confirmTransferToMitat() {
     
     // Save to localStorage
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
-    dualWriteMitatState(jobNumber);
-    syncMitatInputsToFirestore(jobNumber);
-    noteMissingPaint(jobNumber, lasilistaColor);
+    if (koeTransfer) {
+        markKuormaKoeJob(jobNumber);
+    } else {
+        dualWriteMitatState(jobNumber);
+        syncMitatInputsToFirestore(jobNumber);
+        noteMissingPaint(jobNumber, lasilistaColor);
+    }
     
     // Close modal
     const modal = bootstrap.Modal.getInstance(document.getElementById('transferToMittatModal'));
@@ -6830,7 +7016,7 @@ function collectVisibleProductionItems(filterJobNumber) {
         Object.keys(jobData).forEach((itemName) => {
             const key = `${jobNumber}-${itemName}`;
             if (hiddenMitatItems[key] || packedMitat[key]) return;
-            items.push({ key, item: jobData[itemName] });
+            items.push({ key, jobNumber, item: jobData[itemName] });
         });
     });
     return items;
@@ -8088,6 +8274,7 @@ function jobHasPaintColor(jobNumber, color) {
 
 function noteMissingPaint(jobNumber, color) {
     const job = String(jobNumber || '').trim();
+    if (isKuormaKoeJob(job)) return;
     const name = collapsePaintName(color);
     if (!job || !name || paintColorInStock(name)) return;
     const notices = loadMaaliHuomiot();
@@ -9073,7 +9260,8 @@ function collectProductionLasilistaMetersBySize(jobNumber) {
     const sahatutBySize = {};
     const sahaamattomatBySize = {};
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
-    collectVisibleProductionItems(jobNumber).forEach(({ key, item }) => {
+    collectVisibleProductionItems(jobNumber).forEach(({ key, jobNumber: sourceJob, item }) => {
+        if (!jobNumber && isKuormaKoeJob(sourceJob)) return;
         (item?.data || []).forEach((section) => {
             if (!isLasilistaSectionTitle(section.title)) return;
             const displayTitle = getLasilistaSectionTitle(section.title, item);
@@ -10528,8 +10716,11 @@ function loadMittatView() {
     applyTuotantoContentViewUi();
     if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView) return;
     
-    // Check if empty
-    if (Object.keys(mittatData).length === 0) {
+    const showKoeJobs = !!(window.KuormaKapasiteetti
+        && typeof KuormaKapasiteetti.isShownInProduction === 'function'
+        && KuormaKapasiteetti.isShownInProduction());
+    const visibleSourceJobs = Object.keys(mittatData).filter((jobNumber) => showKoeJobs || !isKuormaKoeJob(jobNumber));
+    if (visibleSourceJobs.length === 0) {
         showMitatSplitMessage('Ei tallennettuja mittoja. Käytä laskimessa "Siirrä"-nappia siirtääksesi tuloksia tänne.');
         return;
     }
@@ -10561,7 +10752,7 @@ function loadMittatView() {
         return Number.isFinite(latestTimestamp) ? latestTimestamp : fallbackTimestamp;
     };
 
-    const jobNumbers = Object.keys(mittatData).sort((a, b) => {
+    const jobNumbers = visibleSourceJobs.sort((a, b) => {
         const aShip = getJobEffectiveShipDate(a, jobShipDatesAll, jobBlocksAll);
         const bShip = getJobEffectiveShipDate(b, jobShipDatesAll, jobBlocksAll);
         if (aShip !== bShip) {
@@ -10858,6 +11049,11 @@ function loadMittatView() {
                 html += `<li class="mt-1">`;
                 html += `<button class="btn btn-sm btn-outline-secondary w-100" onclick="showMitatItemInputs('${safeJobAttr}', '${safeItemAttr}')">Syötteet</button>`;
                 html += `</li>`;
+                if (isKuormaKoeJob(jobNumber)) {
+                    html += `<li class="mt-1">`;
+                    html += `<button class="btn btn-sm btn-outline-secondary w-100" type="button" onclick="showMitatItemKuorma('${safeJobAttr}', '${safeItemAttr}')">Kuorma</button>`;
+                    html += `</li>`;
+                }
                 html += `<li class="mt-1">`;
                 html += `<button class="btn btn-sm btn-outline-warning w-100" onclick="renameMitatItem('${safeJobAttr}', '${safeItemAttr}', this)">Muokkaa nimeä</button>`;
                 html += `</li>`;
@@ -15055,6 +15251,30 @@ async function saveEditedMitatLasilistaMeta(jobNumber, itemName, formEl, context
     }
 }
 
+function formatKuormaMinutes(amount) {
+    return typeof amount === 'number' ? (amount + ' min') : '—';
+}
+
+function showMitatItemKuorma(jobNumber, itemName) {
+    if (!isKuormaKoeJob(jobNumber)) return;
+    const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    const item = mittatData[jobNumber] && mittatData[jobNumber][itemName];
+    if (!item) {
+        showToast('Mittaa ei löytynyt.', 'warning');
+        return;
+    }
+    const kuorma = item.kuorma || {};
+    const rows = [
+        { label: 'Saha', value: formatKuormaMinutes(kuorma.saha) },
+        { label: 'Hitsaus', value: formatKuormaMinutes(kuorma.hitsaus) },
+        { label: 'Maalaus', value: formatKuormaMinutes(kuorma.maalaus) },
+        { label: 'Kokoonpano', value: formatKuormaMinutes(kuorma.kokoonpano) }
+    ];
+    document.getElementById('mitatInputsTitle').textContent = `Kuorma — ${itemName}`;
+    document.getElementById('mitatInputsBody').innerHTML = `<div class="mitat-inputs-list">${renderInputsRows(rows)}</div>`;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('mitatInputsModal')).show();
+}
+
 function showMitatItemInputs(jobNumber, itemName, editEntryIdx = -1, editMeta = false) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber] && mittatData[jobNumber][itemName];
@@ -15457,8 +15677,12 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
-    dualWriteMitatState(jobNumber, { forceDelete: true });
-    syncMitatInputsToFirestore(jobNumber);
+    if (isKuormaKoeJob(jobNumber)) {
+        forgetKuormaKoeJob(jobNumber);
+    } else {
+        dualWriteMitatState(jobNumber, { forceDelete: true });
+        syncMitatInputsToFirestore(jobNumber);
+    }
     paketitJobCache.delete(String(jobNumber));
 
     if (selectedPackingJobNumber === jobNumber) {
@@ -15654,6 +15878,7 @@ function deleteMitta(jobNumber, itemName) {
                 localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
             }
             deleteJobShipDate(jobNumber);
+            if (isKuormaKoeJob(jobNumber)) forgetKuormaKoeJob(jobNumber);
         }
 
         dualWriteMitatState(jobNumber);

@@ -3939,6 +3939,27 @@ body.dark-mode .scan-pdf-preview-canvas {
     margin-top: 0;
 }
 
+.kk-load-preview {
+    margin: -8px 0 16px auto;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-primary);
+    max-width: 280px;
+}
+
+.kk-load-preview-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.kk-load-preview-row + .kk-load-preview-row {
+    margin-top: 4px;
+}
+
 .kuorma-kapasiteetti-view {
     padding: 4px 0 20px;
 }
@@ -4243,4 +4264,8 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     width: 0;
     height: 100%;
     background: var(--accent-color);
+}
+
+.kk-meter-fill.is-over {
+    background: var(--danger-color);
 }
