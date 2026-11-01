@@ -52,6 +52,8 @@
     let state = loadState();
     let pageView = 'asetukset';
     let selectedWeekKey = null;
+    let openDayKey = null;
+    let pendingDayFocusId = null;
 
     function defaultState() {
         const kapasiteetti = {};
@@ -407,6 +409,10 @@
             week.hidden = pageView !== 'viikko';
             if (pageView === 'viikko') renderWeek();
         }
+        if (pageView !== 'viikko') {
+            openDayKey = null;
+            removeDayScreen();
+        }
         document.querySelectorAll('.kk-view-tab').forEach((button) => {
             const active = button.dataset.kkView === pageView;
             button.classList.toggle('is-active', active);
@@ -528,17 +534,16 @@
         return typeof normalizeShipDate === 'function' ? normalizeShipDate(jobShipDates[jobNumber]) : '';
     }
 
-    function productionLoadMinutes(department, date) {
+    function productionDayItems(department, date) {
         const day = isoFromDate(date);
         const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
-        if (!jobs.length || !day) return null;
+        if (!jobs.length || !day) return [];
         const mittatData = readStorageMap('mittatData');
         const packed = readStorageMap('packedMitat');
         const jobShipDates = readStorageMap('jobShipDates');
         const jobBlocks = readStorageMap('jobBlocks');
         const itemBlocks = readStorageMap('itemBlocks');
-        let sum = 0;
-        let any = false;
+        const rows = [];
         jobs.forEach((jobNumber) => {
             const items = mittatData[jobNumber];
             if (!items || typeof items !== 'object') return;
@@ -549,12 +554,22 @@
                 if (packed[jobNumber + '-' + itemName]) return;
                 if (shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks) !== day) return;
                 const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
-                if (typeof amount !== 'number') return;
-                sum += amount;
-                any = true;
+                rows.push({
+                    jobNumber: String(jobNumber),
+                    itemName: String(itemName),
+                    minutes: typeof amount === 'number' ? amount : null
+                });
             });
         });
-        return any ? sum : null;
+        return rows;
+    }
+
+    function productionLoadMinutes(department, date) {
+        const known = productionDayItems(department, date)
+            .map((item) => item.minutes)
+            .filter((minutes) => typeof minutes === 'number');
+        if (!known.length) return null;
+        return known.reduce((sum, minutes) => sum + minutes, 0);
     }
 
     function formatLoadMinutes(minutes) {
@@ -571,76 +586,214 @@
         const today = new Date();
         host.appendChild(buildWeekControls(renderWeek));
 
-        DEPARTMENTS.forEach((department) => {
-            host.appendChild(renderDepartmentWeek(department, monday, today));
-        });
+        host.appendChild(renderWeekTable(monday, today));
+        removeDayScreen();
+        const screen = renderOpenDay(monday);
+        if (screen) document.body.appendChild(screen);
     }
 
-    function renderDepartmentWeek(department, monday, today) {
-        const section = document.createElement('section');
-        section.className = 'kk-dept';
-        const heading = document.createElement('h3');
-        heading.className = 'kk-dept-title';
-        heading.textContent = DEPARTMENT_LABELS[department];
-        section.appendChild(heading);
+    function removeDayScreen() {
+        const existing = document.getElementById('kkDayScreen');
+        if (existing) existing.remove();
+    }
 
+    function closeDayScreen() {
+        openDayKey = null;
+        renderWeek();
+    }
+
+    function loadRatio(minutes, hours) {
+        if (typeof minutes !== 'number' || minutes <= 0) return null;
+        return hours > 0 ? (minutes / 60) / hours : Infinity;
+    }
+
+    function formatRatio(ratio) {
+        if (ratio === null) return '';
+        if (!Number.isFinite(ratio)) return 'Ei kapasiteettia';
+        return Math.round(ratio * 100) + ' %';
+    }
+
+    function dayFact(word, amount, extraClass) {
+        const line = document.createElement('div');
+        line.className = 'kk-day-line';
+        const label = document.createElement('span');
+        label.className = 'kk-day-kicker';
+        label.textContent = word;
+        const value = document.createElement('span');
+        value.className = 'kk-day-amount' + (extraClass ? ' ' + extraClass : '');
+        value.textContent = amount;
+        line.append(label, value);
+        return line;
+    }
+
+    function buildMeter(ratio) {
+        const meter = document.createElement('div');
+        meter.className = 'kk-meter';
+        meter.setAttribute('aria-hidden', 'true');
+        const fill = document.createElement('div');
+        fill.className = 'kk-meter-fill';
+        if (ratio !== null) {
+            fill.style.width = Math.min(100, ratio * 100) + '%';
+            if (ratio > 1) fill.classList.add('is-over');
+        }
+        meter.appendChild(fill);
+        return meter;
+    }
+
+    function weekdayIndex(date) {
+        const day = date.getDay();
+        return day === 0 ? 6 : day - 1;
+    }
+
+    function namedWorkers(department) {
+        const workers = (state.kapasiteetti[department] && state.kapasiteetti[department].workers) || [];
+        return workers
+            .filter((worker) => String(worker.name || '').trim())
+            .slice()
+            .sort((a, b) => String(a.name).trim().localeCompare(String(b.name).trim(), 'fi'));
+    }
+
+    function hoursToAdd(minutes, capacityHours) {
+        if (typeof minutes !== 'number' || minutes <= 0) return 0;
+        const deficit = Math.round(((minutes / 60) - capacityHours) * 10) / 10;
+        return deficit > 0 ? deficit : 0;
+    }
+
+    function renderOpenDay(monday) {
+        if (!openDayKey) return null;
+        const split = openDayKey.indexOf('|');
+        if (split < 1) return null;
+        const department = openDayKey.slice(0, split);
+        const iso = openDayKey.slice(split + 1);
+        if (!DEPARTMENT_LABELS[department]) return null;
+        let date = null;
+        for (let index = 0; index < 7; index += 1) {
+            const candidate = addDays(monday, index);
+            if (isoFromDate(candidate) === iso) date = candidate;
+        }
+        if (!date) return null;
+        return renderDayScreen(department, date);
+    }
+
+    function renderWeekTable(monday, today) {
         const scroll = document.createElement('div');
         scroll.className = 'kk-week-scroll';
         const grid = document.createElement('div');
         grid.className = 'kk-timetable';
 
+        const corner = document.createElement('div');
+        corner.className = 'kk-corner';
+        corner.textContent = 'Osasto';
+        grid.appendChild(corner);
+
         for (let index = 0; index < 7; index += 1) {
             const date = addDays(monday, index);
-            const weekend = index >= 5;
             const head = document.createElement('div');
-            head.className = 'kk-day-head' + (weekend ? ' is-weekend' : '') + (sameDay(date, today) ? ' is-today' : '');
+            head.className = 'kk-day-head' + (index >= 5 ? ' is-weekend' : '') + (sameDay(date, today) ? ' is-today' : '');
+            const name = document.createElement('span');
+            name.className = 'kk-day-name';
             const shortName = WEEKDAYS[index];
-            head.textContent = shortName.charAt(0).toUpperCase() + shortName.slice(1);
+            name.textContent = shortName.charAt(0).toUpperCase() + shortName.slice(1);
+            const num = document.createElement('span');
+            num.className = 'kk-day-num';
+            num.textContent = formatDayMonth(date);
+            head.append(name, num);
             grid.appendChild(head);
         }
-        for (let index = 0; index < 7; index += 1) {
-            const date = addDays(monday, index);
-            const weekend = index >= 5;
-            const hours = departmentDayHours(department, WEEKDAYS[index]);
-            const hoursText = formatSum(hours);
-            const minutes = productionLoadMinutes(department, date);
-            const loadText = formatLoadMinutes(minutes);
-            const cell = document.createElement('div');
-            cell.className = 'kk-day' + (weekend ? ' is-weekend' : '') + (sameDay(date, today) ? ' is-today' : '');
-            const loadLabel = typeof minutes === 'number' ? ('Kuorma ' + loadText + '.') : 'Kuormaa ei ole.';
-            cell.setAttribute('aria-label', WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. ' + loadLabel);
 
-            const dateLine = document.createElement('div');
-            dateLine.className = 'kk-day-date';
-            dateLine.textContent = formatDayMonth(date);
+        DEPARTMENTS.forEach((department) => {
+            const label = document.createElement('div');
+            label.className = 'kk-dept-label';
+            const deptName = document.createElement('span');
+            deptName.className = 'kk-dept-name';
+            deptName.textContent = DEPARTMENT_LABELS[department];
+            const deptSub = document.createElement('span');
+            deptSub.className = 'kk-dept-sub';
+            label.append(deptName, deptSub);
+            grid.appendChild(label);
 
-            const capacityRow = meterRow('Kapasiteetti', hoursText);
-            const loadRow = meterRow('Kuorma', loadText);
+            let weekHours = 0;
+            let weekMinutes = 0;
+            let weekHasLoad = false;
 
-            const meter = document.createElement('div');
-            meter.className = 'kk-meter';
-            meter.setAttribute('aria-hidden', 'true');
-            const fill = document.createElement('div');
-            fill.className = 'kk-meter-fill';
-            if (typeof minutes === 'number' && minutes > 0) {
-                const ratio = hours > 0 ? (minutes / 60) / hours : 2;
-                fill.style.width = Math.min(100, ratio * 100) + '%';
-                if (ratio > 1) fill.classList.add('is-over');
+            for (let index = 0; index < 7; index += 1) {
+                const date = addDays(monday, index);
+                const hours = departmentDayHours(department, WEEKDAYS[index]);
+                const minutes = productionLoadMinutes(department, date);
+                const ratio = loadRatio(minutes, hours);
+                weekHours += hours;
+                if (typeof minutes === 'number') {
+                    weekMinutes += minutes;
+                    weekHasLoad = true;
+                }
+                const hoursText = formatSum(hours);
+                const loadText = formatLoadMinutes(minutes);
+                const dayKey = department + '|' + isoFromDate(date);
+
+                const cell = document.createElement('button');
+                cell.type = 'button';
+                cell.className = 'kk-day'
+                    + (index >= 5 ? ' is-weekend' : '')
+                    + (sameDay(date, today) ? ' is-today' : '')
+                    + (openDayKey === dayKey ? ' is-open' : '');
+                const loadLabel = typeof minutes === 'number' ? ('Kuorma ' + loadText + '.') : 'Kuormaa ei ole.';
+                cell.setAttribute('aria-haspopup', 'dialog');
+                cell.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', ' + WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. ' + loadLabel);
+                cell.addEventListener('click', () => {
+                    openDayKey = dayKey;
+                    renderWeek();
+                });
+
+                cell.append(
+                    dayFact('Kuorma', loadText, typeof minutes === 'number' ? '' : 'is-empty'),
+                    dayFact('Kapasiteetti', hoursText, '')
+                );
+                if (ratio !== null) {
+                    const quota = document.createElement('div');
+                    quota.className = 'kk-day-ratio' + (ratio > 1 ? ' is-over' : '');
+                    quota.textContent = Number.isFinite(ratio)
+                        ? ('=' + Math.round(ratio * 100) + '% kiintiö')
+                        : 'Ei kapasiteettia';
+                    cell.appendChild(quota);
+                }
+                cell.appendChild(buildMeter(ratio));
+                grid.appendChild(cell);
             }
-            meter.appendChild(fill);
 
-            cell.append(dateLine, capacityRow, loadRow, meter);
-            grid.appendChild(cell);
-        }
+            deptSub.textContent = formatLoadMinutes(weekHasLoad ? weekMinutes : null) + ' / ' + formatSum(weekHours);
+        });
 
         scroll.appendChild(grid);
-        section.appendChild(scroll);
-        return section;
+        return scroll;
     }
 
-    function meterRow(label, value) {
+    function statCard(label, value, extraClass) {
+        const card = document.createElement('div');
+        card.className = 'kk-stat';
+        const name = document.createElement('div');
+        name.className = 'kk-stat-label';
+        name.textContent = label;
+        const amount = document.createElement('div');
+        amount.className = 'kk-stat-value' + (extraClass ? ' ' + extraClass : '');
+        amount.textContent = value;
+        card.append(name, amount);
+        return card;
+    }
+
+    function sectionHeading(label, meta) {
+        const heading = document.createElement('div');
+        heading.className = 'kk-day-section';
+        const title = document.createElement('h4');
+        title.textContent = label;
+        const info = document.createElement('span');
+        info.textContent = meta;
+        heading.append(title, info);
+        return heading;
+    }
+
+    function listRow(label, value) {
         const row = document.createElement('div');
-        row.className = 'kk-meter-row';
+        row.className = 'kk-list-row';
         const name = document.createElement('span');
         name.textContent = label;
         const amount = document.createElement('span');
@@ -649,7 +802,186 @@
         return row;
     }
 
+    function emptyNote(text) {
+        const empty = document.createElement('p');
+        empty.className = 'kk-day-empty';
+        empty.textContent = text;
+        return empty;
+    }
+
+    function renderDayScreen(department, date) {
+        const dayIndex = weekdayIndex(date);
+        const dayKey = WEEKDAYS[dayIndex];
+        const hours = departmentDayHours(department, dayKey);
+        const minutes = productionLoadMinutes(department, date);
+        const ratio = loadRatio(minutes, hours);
+
+        const screen = document.createElement('div');
+        screen.id = 'kkDayScreen';
+        screen.className = 'kk-day-screen';
+        screen.addEventListener('click', (event) => {
+            if (event.target === screen) closeDayScreen();
+        });
+
+        const sheet = document.createElement('div');
+        sheet.className = 'kk-day-sheet';
+        sheet.tabIndex = -1;
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-labelledby', 'kkDayTitle');
+        sheet.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            closeDayScreen();
+        });
+
+        const head = document.createElement('header');
+        head.className = 'kk-day-sheet-head';
+        const titles = document.createElement('div');
+        const eyebrow = document.createElement('div');
+        eyebrow.className = 'kk-day-eyebrow';
+        eyebrow.textContent = DEPARTMENT_LABELS[department];
+        const title = document.createElement('h3');
+        title.id = 'kkDayTitle';
+        title.className = 'kk-day-title';
+        const weekdayName = WEEKDAY_NAMES[dayIndex];
+        title.textContent = weekdayName.charAt(0).toUpperCase() + weekdayName.slice(1) + ' ' + formatDayMonth(date);
+        titles.append(eyebrow, title);
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'kk-day-close';
+        close.textContent = 'Sulje';
+        close.addEventListener('click', closeDayScreen);
+        head.append(titles, close);
+
+        const body = document.createElement('div');
+        body.className = 'kk-day-body';
+
+        const stats = document.createElement('div');
+        stats.className = 'kk-day-stats';
+        const over = ratio !== null && ratio > 1;
+        stats.append(
+            statCard('Kuorma', formatLoadMinutes(minutes)),
+            statCard('Kapasiteetti', formatSum(hours)),
+            statCard('Käyttöaste', ratio === null ? '—' : formatRatio(ratio), over ? 'is-over' : '')
+        );
+        const statsMeter = document.createElement('div');
+        statsMeter.className = 'kk-day-stats-meter';
+        statsMeter.appendChild(buildMeter(ratio));
+        stats.appendChild(statsMeter);
+
+        const columns = document.createElement('div');
+        columns.className = 'kk-day-columns';
+
+        const workerCol = document.createElement('section');
+        const weekKey = activeWeekKey();
+        const workers = namedWorkers(department);
+        const activeCount = workers.filter((worker) => (daysFor(worker, weekKey)[dayKey] || 0) > 0).length;
+        workerCol.appendChild(sectionHeading('Työntekijät', activeCount ? String(activeCount) : ''));
+        if (!workers.length) {
+            workerCol.appendChild(emptyNote('Ei aktiivisia työntekijöitä.'));
+        } else {
+            const list = document.createElement('div');
+            list.className = 'kk-list';
+            workers.forEach((worker) => list.appendChild(workerHourRow(worker, dayKey, weekdayName)));
+            workerCol.appendChild(list);
+        }
+        const gap = hoursToAdd(minutes, hours);
+        if (gap > 0) workerCol.appendChild(gapNote(gap));
+
+        const productCol = document.createElement('section');
+        const items = productionDayItems(department, date);
+        productCol.appendChild(sectionHeading('Tuotteet', items.length ? items.length + ' kpl' : ''));
+        if (!items.length) {
+            productCol.appendChild(emptyNote('Ei tuotteita tälle päivälle.'));
+        } else {
+            const groups = new Map();
+            items.forEach((item) => {
+                if (!groups.has(item.jobNumber)) groups.set(item.jobNumber, []);
+                groups.get(item.jobNumber).push(item);
+            });
+            [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
+                const jobItems = groups.get(jobNumber);
+                const known = jobItems.map((item) => item.minutes).filter((value) => typeof value === 'number');
+                const jobMinutes = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+                const job = document.createElement('div');
+                job.className = 'kk-job';
+                const jobHead = document.createElement('div');
+                jobHead.className = 'kk-job-head';
+                const jobName = document.createElement('span');
+                jobName.textContent = 'Työ ' + jobNumber;
+                const jobLoad = document.createElement('span');
+                jobLoad.textContent = formatLoadMinutes(jobMinutes);
+                jobHead.append(jobName, jobLoad);
+                job.appendChild(jobHead);
+                jobItems
+                    .slice()
+                    .sort((a, b) => a.itemName.localeCompare(b.itemName, 'fi', { numeric: true }))
+                    .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes))));
+                productCol.appendChild(job);
+            });
+        }
+
+        columns.append(workerCol, productCol);
+        body.append(stats, columns);
+        sheet.append(head, body);
+        screen.appendChild(sheet);
+        const focusId = pendingDayFocusId;
+        pendingDayFocusId = null;
+        setTimeout(() => {
+            const field = focusId ? sheet.querySelector('[data-kk-worker="' + focusId + '"]') : null;
+            if (field) {
+                field.focus();
+                field.select();
+                return;
+            }
+            sheet.focus();
+        }, 0);
+        return screen;
+    }
+
+    function gapNote(hours) {
+        const note = document.createElement('p');
+        note.className = 'kk-day-gap';
+        note.textContent = 'Lisää työntekijöille yhteensä ' + formatSum(hours) + '.';
+        return note;
+    }
+
+    function workerHourRow(worker, dayKey, weekdayName) {
+        const weekKey = activeWeekKey();
+        const current = daysFor(worker, weekKey)[dayKey] || 0;
+        const row = document.createElement('div');
+        row.className = 'kk-list-row';
+        const name = document.createElement('span');
+        name.textContent = String(worker.name || '').trim();
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'kk-day-hours';
+        input.min = '0';
+        input.max = '24';
+        input.step = '0.5';
+        input.value = String(current);
+        input.dataset.kkWorker = worker.id;
+        input.setAttribute('aria-label', name.textContent + ', ' + weekdayName + ', tunteina');
+        input.addEventListener('change', () => {
+            const parsed = clampDayHours(input.value);
+            const stored = daysFor(worker, weekKey)[dayKey] || 0;
+            if (parsed === null || parsed === stored) {
+                input.value = String(stored);
+                return;
+            }
+            writeDay(worker, weekKey, dayKey, parsed);
+            save();
+            pendingDayFocusId = worker.id;
+            renderWeek();
+        });
+        row.append(name, input);
+        return row;
+    }
+
     function unmount(host) {
+        openDayKey = null;
+        removeDayScreen();
         if (!host || host.dataset.kkReady !== '1') return;
         host.dataset.kkReady = '';
         host.replaceChildren();

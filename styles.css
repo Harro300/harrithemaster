@@ -4179,82 +4179,182 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     margin-bottom: 18px;
 }
 
-.kk-dept {
-    margin-bottom: 22px;
-}
-
-.kk-dept-title {
-    margin: 0 0 8px;
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
 .kk-week-scroll {
     overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--bg-secondary);
+    box-shadow: 0 1px 3px var(--card-shadow);
 }
 
 .kk-timetable {
     display: grid;
-    grid-template-columns: repeat(7, minmax(108px, 1fr));
-    gap: 8px;
-    min-width: 760px;
+    grid-template-columns: 172px repeat(7, minmax(168px, 1fr));
+    min-width: 1350px;
+    font-variant-numeric: tabular-nums;
+}
+
+.kk-corner,
+.kk-day-head {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 12px 14px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.kk-corner {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .kk-day-head {
-    padding: 6px 8px;
-    border-radius: 10px;
-    background: var(--bg-tertiary);
+    border-left: 1px solid var(--border-color);
+}
+
+.kk-day-name {
     color: var(--text-secondary);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    text-align: center;
+}
+
+.kk-day-num {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.kk-day-head.is-weekend .kk-day-num {
+    color: var(--text-secondary);
+}
+
+.kk-day-head.is-today {
+    box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+
+.kk-day-head.is-today .kk-day-name {
+    color: var(--text-primary);
+}
+
+.kk-dept-label {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.kk-timetable > .kk-dept-label:nth-child(9) {
+    border-top: 0;
+}
+
+.kk-dept-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.kk-dept-sub {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
 }
 
 .kk-day {
-    min-height: 118px;
-    padding: 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 96px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 0;
+    border-top: 1px solid var(--border-color);
+    border-left: 1px solid var(--border-color);
+    border-radius: 0;
+    background: transparent;
     color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
 }
 
-.kk-day-head.is-weekend,
+.kk-timetable > .kk-day:nth-child(-n + 16) {
+    border-top: 0;
+}
+
+.kk-day:hover {
+    background: var(--bg-primary);
+}
+
+.kk-day:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
+
 .kk-day.is-weekend {
-    opacity: 0.72;
+    background: color-mix(in srgb, var(--bg-tertiary) 55%, transparent);
 }
 
-.kk-day-head.is-today,
 .kk-day.is-today {
-    border: 1px solid var(--accent-color);
-    opacity: 1;
+    background: color-mix(in srgb, var(--accent-color) 4%, transparent);
 }
 
-.kk-day-date {
-    margin-bottom: 8px;
-    font-size: 0.8rem;
+.kk-day.is-open {
+    box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
+.kk-day-line {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.kk-day-kicker {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.kk-day-amount {
+    color: var(--text-primary);
+    font-size: 0.84rem;
     font-weight: 700;
 }
 
-.kk-meter-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
+.kk-day-amount.is-empty {
+    color: var(--text-muted);
+    font-weight: 500;
 }
 
-.kk-meter-row span:last-child {
-    color: var(--text-primary);
-    font-weight: 650;
+.kk-day-ratio {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.kk-day-ratio.is-over {
+    color: var(--danger-color);
 }
 
 .kk-meter {
-    height: 6px;
-    margin-top: 10px;
+    height: 4px;
+    margin-top: 6px;
     border-radius: 999px;
     background: var(--bg-tertiary);
     overflow: hidden;
@@ -4263,9 +4363,286 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
 .kk-meter-fill {
     width: 0;
     height: 100%;
+    border-radius: inherit;
     background: var(--accent-color);
 }
 
 .kk-meter-fill.is-over {
     background: var(--danger-color);
+}
+
+.kk-day-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1060;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(12, 12, 12, 0.46);
+    backdrop-filter: blur(3px);
+    animation: kk-fade-in 0.16s ease-out;
+}
+
+.kk-day-sheet {
+    display: flex;
+    flex-direction: column;
+    width: min(1180px, 100%);
+    height: 100%;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+    font-variant-numeric: tabular-nums;
+    animation: kk-sheet-in 0.2s ease-out;
+}
+
+.kk-day-sheet:focus {
+    outline: none;
+}
+
+@keyframes kk-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes kk-sheet-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.99); }
+    to { opacity: 1; transform: none; }
+}
+
+.kk-day-sheet-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 22px 28px 18px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.kk-day-eyebrow {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.kk-day-title {
+    margin: 2px 0 0;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+}
+
+.kk-day-close {
+    flex-shrink: 0;
+    padding: 6px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.kk-day-close:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
+}
+
+.kk-day-close:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.kk-day-body {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding: 24px 28px 32px;
+}
+
+.kk-day-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.kk-stat {
+    padding: 14px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--bg-primary);
+}
+
+.kk-stat-label {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.kk-stat-value {
+    margin-top: 4px;
+    font-size: 1.65rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.kk-stat-value.is-over {
+    color: var(--danger-color);
+}
+
+.kk-day-stats-meter {
+    grid-column: 1 / -1;
+}
+
+.kk-day-stats-meter .kk-meter {
+    height: 8px;
+    margin-top: 0;
+}
+
+.kk-day-columns {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+    gap: 28px;
+    align-items: start;
+}
+
+.kk-day-section {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.kk-day-section h4 {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.kk-day-section span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.kk-list,
+.kk-job {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.kk-job + .kk-job {
+    margin-top: 12px;
+}
+
+.kk-job-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-primary);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.kk-job-head span:last-child {
+    color: var(--text-secondary);
+}
+
+.kk-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 14px;
+    font-size: 0.92rem;
+}
+
+.kk-day-hours {
+    width: 4.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    text-align: right;
+    padding: 4px 8px;
+    font: inherit;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.kk-day-hours:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
+.kk-day-gap {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--danger-color) 10%, var(--bg-secondary));
+    color: var(--danger-color);
+    font-size: 0.85rem;
+    font-weight: 650;
+}
+
+.kk-list-row + .kk-list-row {
+    border-top: 1px solid var(--border-color);
+}
+
+.kk-list-row span:last-child {
+    flex-shrink: 0;
+    font-weight: 650;
+}
+
+.kk-day-empty {
+    margin: 0;
+    padding: 14px;
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+@media (max-width: 800px) {
+    .kk-day-screen {
+        padding: 12px;
+    }
+
+    .kk-day-sheet-head,
+    .kk-day-body {
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    .kk-day-stats,
+    .kk-day-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kk-day-screen,
+    .kk-day-sheet {
+        animation: none;
+    }
 }
