@@ -7179,6 +7179,15 @@ function deleteLapivientiForJob(jobNumber) {
     }
 }
 
+function forgetKoeLapivientiEvents() {
+    if (typeof isKuormaKoeJob !== 'function') return;
+    const jobs = new Set();
+    getLapivientiEvents().forEach((event) => {
+        if (isKuormaKoeJob(event.jobNumber)) jobs.add(String(event.jobNumber));
+    });
+    jobs.forEach((jobNumber) => deleteLapivientiForJob(jobNumber));
+}
+
 function normalizeLapivientiEvent(event) {
     if (!event || typeof event !== 'object') return null;
     const itemKey = String(event.itemKey || '');
@@ -7470,6 +7479,7 @@ function aggregateLapivientiRows(weekKey) {
     const grouped = new Map();
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     getLapivientiEvents().forEach((event) => {
+        if (isKuormaKoeJob(event.jobNumber)) return;
         if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
         const userName = lapivientiTekijaName(event);
         const key = `${event.dayKey}|${event.jobNumber}|${userName}`;
@@ -7521,6 +7531,7 @@ function listLapivientiDetailRows(weekKey) {
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const rows = [];
     getLapivientiEvents().forEach((event) => {
+        if (isKuormaKoeJob(event.jobNumber)) return;
         if (dayKeyToIsoWeekKey(event.dayKey) !== weekKey) return;
         const itemName = lapivientiItemNameFromEvent(event);
         const liveItem = itemName ? mittatData[event.jobNumber]?.[itemName] : null;
@@ -7556,6 +7567,7 @@ function listLapivientiDetailRows(weekKey) {
 }
 
 function buildLapivientiTableHtml() {
+    forgetKoeLapivientiEvents();
     const showIds = lapivientiShowIdentifiers;
     const weekKey = resolveLapivientiWeek();
     const weeks = collectLapivientiWeekKeys(weekKey);
@@ -15563,7 +15575,7 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     }
     if (isDone) {
         doneMitat[checkKey] = true;
-        recordLapivientiEvent(checkKey, jobNumber, item);
+        if (!isKuormaKoeJob(jobNumber)) recordLapivientiEvent(checkKey, jobNumber, item);
     } else {
         delete doneMitat[checkKey];
         // If item is no longer "done", remove packed marker as well.
