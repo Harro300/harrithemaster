@@ -53,7 +53,6 @@
     let pageView = 'asetukset';
     let selectedWeekKey = null;
     let openDayKey = null;
-    let pendingDayFocusId = null;
 
     function defaultState() {
         const kapasiteetti = {};
@@ -540,6 +539,7 @@
         if (!jobs.length || !day) return [];
         const mittatData = readStorageMap('mittatData');
         const packed = readStorageMap('packedMitat');
+        const done = readStorageMap('doneMitat');
         const jobShipDates = readStorageMap('jobShipDates');
         const jobBlocks = readStorageMap('jobBlocks');
         const itemBlocks = readStorageMap('itemBlocks');
@@ -557,7 +557,8 @@
                 rows.push({
                     jobNumber: String(jobNumber),
                     itemName: String(itemName),
-                    minutes: typeof amount === 'number' ? amount : null
+                    minutes: typeof amount === 'number' ? amount : null,
+                    done: !!done[jobNumber + '-' + itemName]
                 });
             });
         });
@@ -566,6 +567,7 @@
 
     function productionLoadMinutes(department, date) {
         const known = productionDayItems(department, date)
+            .filter((item) => !item.done)
             .map((item) => item.minutes)
             .filter((minutes) => typeof minutes === 'number');
         if (!known.length) return null;
@@ -767,7 +769,7 @@
         return scroll;
     }
 
-    function statCard(label, value, extraClass) {
+    function statCard(label, value, extraClass, key) {
         const card = document.createElement('div');
         card.className = 'kk-stat';
         const name = document.createElement('div');
@@ -776,6 +778,7 @@
         const amount = document.createElement('div');
         amount.className = 'kk-stat-value' + (extraClass ? ' ' + extraClass : '');
         amount.textContent = value;
+        if (key) amount.dataset.kkStat = key;
         card.append(name, amount);
         return card;
     }
@@ -791,14 +794,23 @@
         return heading;
     }
 
-    function listRow(label, value) {
+    function listRow(label, value, done) {
         const row = document.createElement('div');
         row.className = 'kk-list-row';
         const name = document.createElement('span');
         name.textContent = label;
+        const tail = document.createElement('span');
+        tail.className = 'kk-list-tail';
         const amount = document.createElement('span');
         amount.textContent = value;
-        row.append(name, amount);
+        tail.appendChild(amount);
+        if (done) {
+            const mark = document.createElement('span');
+            mark.className = 'kk-done-mark';
+            mark.textContent = 'Tehty';
+            tail.appendChild(mark);
+        }
+        row.append(name, tail);
         return row;
     }
 
@@ -862,8 +874,8 @@
         const over = ratio !== null && ratio > 1;
         stats.append(
             statCard('Kuorma', formatLoadMinutes(minutes)),
-            statCard('Kapasiteetti', formatSum(hours)),
-            statCard('Käyttöaste', ratio === null ? '—' : formatRatio(ratio), over ? 'is-over' : '')
+            statCard('Kapasiteetti', formatSum(hours), '', 'kapasiteetti'),
+            statCard('Käyttöaste', ratio === null ? '—' : formatRatio(ratio), over ? 'is-over' : '', 'kayttoaste')
         );
         const statsMeter = document.createElement('div');
         statsMeter.className = 'kk-day-stats-meter';
@@ -877,7 +889,10 @@
         const weekKey = activeWeekKey();
         const workers = namedWorkers(department);
         const activeCount = workers.filter((worker) => (daysFor(worker, weekKey)[dayKey] || 0) > 0).length;
-        workerCol.appendChild(sectionHeading('Työntekijät', activeCount ? String(activeCount) : ''));
+        const workerHeading = sectionHeading('Työntekijät', activeCount ? String(activeCount) : '');
+        const activeMeta = workerHeading.querySelector('span');
+        if (activeMeta) activeMeta.dataset.kkActive = '1';
+        workerCol.appendChild(workerHeading);
         if (!workers.length) {
             workerCol.appendChild(emptyNote('Ei aktiivisia työntekijöitä.'));
         } else {
@@ -885,9 +900,13 @@
             list.className = 'kk-list';
             workers.forEach((worker) => list.appendChild(workerHourRow(worker, dayKey, weekdayName)));
             workerCol.appendChild(list);
+            workerCol.appendChild(saveHoursButton(sheet, workers, department, dayKey, date));
         }
+        const gapHost = document.createElement('div');
+        gapHost.dataset.kkGap = '1';
         const gap = hoursToAdd(minutes, hours);
-        if (gap > 0) workerCol.appendChild(gapNote(gap));
+        if (gap > 0) gapHost.appendChild(gapNote(gap));
+        workerCol.appendChild(gapHost);
 
         const productCol = document.createElement('section');
         const items = productionDayItems(department, date);
@@ -902,7 +921,7 @@
             });
             [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
                 const jobItems = groups.get(jobNumber);
-                const known = jobItems.map((item) => item.minutes).filter((value) => typeof value === 'number');
+                const known = jobItems.filter((item) => !item.done).map((item) => item.minutes).filter((value) => typeof value === 'number');
                 const jobMinutes = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
                 const job = document.createElement('div');
                 job.className = 'kk-job';
@@ -917,7 +936,7 @@
                 jobItems
                     .slice()
                     .sort((a, b) => a.itemName.localeCompare(b.itemName, 'fi', { numeric: true }))
-                    .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes))));
+                    .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes), item.done)));
                 productCol.appendChild(job);
             });
         }
@@ -926,18 +945,73 @@
         body.append(stats, columns);
         sheet.append(head, body);
         screen.appendChild(sheet);
-        const focusId = pendingDayFocusId;
-        pendingDayFocusId = null;
-        setTimeout(() => {
-            const field = focusId ? sheet.querySelector('[data-kk-worker="' + focusId + '"]') : null;
-            if (field) {
-                field.focus();
-                field.select();
-                return;
-            }
-            sheet.focus();
-        }, 0);
+        setTimeout(() => sheet.focus(), 0);
         return screen;
+    }
+
+    function saveHoursButton(sheet, workers, department, dayKey, date) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'kk-day-save';
+        button.textContent = 'Tallenna tunnit';
+        let resetTimer = 0;
+        button.addEventListener('click', () => {
+            const weekKey = activeWeekKey();
+            let changed = false;
+            workers.forEach((worker) => {
+                const input = sheet.querySelector('[data-kk-worker="' + worker.id + '"]');
+                if (!input) return;
+                const stored = daysFor(worker, weekKey)[dayKey] || 0;
+                const parsed = clampDayHours(input.value);
+                if (parsed === null) {
+                    input.value = String(stored);
+                    return;
+                }
+                input.value = String(parsed);
+                if (parsed === stored) return;
+                writeDay(worker, weekKey, dayKey, parsed);
+                changed = true;
+            });
+            if (changed) save();
+            refreshDayCapacity(sheet, department, dayKey, date);
+            button.textContent = 'Tallennettu';
+            window.clearTimeout(resetTimer);
+            resetTimer = window.setTimeout(() => {
+                button.textContent = 'Tallenna tunnit';
+            }, 1200);
+        });
+        return button;
+    }
+
+    function refreshDayCapacity(sheet, department, dayKey, date) {
+        const weekKey = activeWeekKey();
+        const hours = departmentDayHours(department, dayKey);
+        const minutes = productionLoadMinutes(department, date);
+        const ratio = loadRatio(minutes, hours);
+        const over = ratio !== null && ratio > 1;
+        const capacity = sheet.querySelector('[data-kk-stat="kapasiteetti"]');
+        if (capacity) capacity.textContent = formatSum(hours);
+        const rate = sheet.querySelector('[data-kk-stat="kayttoaste"]');
+        if (rate) {
+            rate.textContent = ratio === null ? '—' : formatRatio(ratio);
+            rate.classList.toggle('is-over', over);
+        }
+        const fill = sheet.querySelector('.kk-day-stats-meter .kk-meter-fill');
+        if (fill) {
+            fill.style.width = ratio !== null ? (Math.min(100, ratio * 100) + '%') : '0';
+            fill.classList.toggle('is-over', over);
+        }
+        const active = sheet.querySelector('[data-kk-active]');
+        if (active) {
+            const count = namedWorkers(department).filter((worker) => (daysFor(worker, weekKey)[dayKey] || 0) > 0).length;
+            active.textContent = count ? String(count) : '';
+        }
+        const gapHost = sheet.querySelector('[data-kk-gap]');
+        if (gapHost) {
+            gapHost.replaceChildren();
+            const gap = hoursToAdd(minutes, hours);
+            if (gap > 0) gapHost.appendChild(gapNote(gap));
+        }
     }
 
     function gapNote(hours) {
@@ -966,14 +1040,7 @@
         input.addEventListener('change', () => {
             const parsed = clampDayHours(input.value);
             const stored = daysFor(worker, weekKey)[dayKey] || 0;
-            if (parsed === null || parsed === stored) {
-                input.value = String(stored);
-                return;
-            }
-            writeDay(worker, weekKey, dayKey, parsed);
-            save();
-            pendingDayFocusId = worker.id;
-            renderWeek();
+            input.value = parsed === null ? String(stored) : String(parsed);
         });
         row.append(name, input);
         return row;

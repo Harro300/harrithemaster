@@ -4464,6 +4464,27 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     outline-offset: 2px;
 }
 
+.kk-day-save {
+    margin-top: 10px;
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent-color);
+    color: var(--bg-secondary);
+    font-size: 0.82rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.kk-day-save:hover {
+    filter: brightness(1.15);
+}
+
+.kk-day-save:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
 .kk-day-body {
     display: flex;
     flex-direction: column;
@@ -4612,6 +4633,18 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
 .kk-list-row span:last-child {
     flex-shrink: 0;
     font-weight: 650;
+}
+
+.kk-list-tail {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kk-done-mark {
+    color: #198754;
+    font-size: 0.75rem;
+    font-weight: 700;
 }
 
 .kk-day-empty {
