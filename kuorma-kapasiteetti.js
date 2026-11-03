@@ -32,6 +32,11 @@
         { key: 'ruutu', label: '+1 ruutu' },
         { key: 'potkupelti', label: '+potkupelti' }
     ];
+    const UMPIOVI_TIME_FIELDS = [
+        { key: 'umpiovi', label: 'Umpiovi' },
+        { key: 'umpioviPotkupelti', label: '+potkupelti' },
+        { key: 'umpioviTiivistekynnys', label: '+tiivistekynnys' }
+    ];
     const PRODUCTS = [
         { id: 'janisol_kayntiovi', label: 'Janisol käyntiovi', kind: 'ovi' },
         { id: 'janisol_pariovi', label: 'Janisol pariovi', kind: 'ovi' },
@@ -63,12 +68,15 @@
             enabled: false,
             selectedDoc: DEFAULT_DOC,
             kapasiteetti,
-            kuorma: { kokoonpano: defaultKokoonpanoTimes() }
+            kuorma: { kokoonpano: defaultKokoonpanoTimes() },
+            kuormaSets: {},
+            activeKuormaSet: ''
         };
     }
 
     function timeFieldsFor(product) {
-        return product.kind === 'ikkuna' ? WINDOW_TIME_FIELDS : DOOR_TIME_FIELDS;
+        if (product.kind === 'ikkuna') return WINDOW_TIME_FIELDS;
+        return DOOR_TIME_FIELDS.concat(UMPIOVI_TIME_FIELDS);
     }
 
     function emptyProductTimes(product) {
@@ -80,11 +88,25 @@
     }
 
     function defaultKokoonpanoTimes() {
+        return normalizeKokoonpanoTimes(null);
+    }
+
+    function normalizeKokoonpanoTimes(source) {
         const kokoonpano = {};
         PRODUCTS.forEach((product) => {
-            kokoonpano[product.id] = emptyProductTimes(product);
+            const saved = source && source[product.id];
+            const times = emptyProductTimes(product);
+            timeFieldsFor(product).forEach((field) => {
+                const minutes = clampMinutes(saved && saved[field.key]);
+                times[field.key] = minutes === null ? 0 : minutes;
+            });
+            kokoonpano[product.id] = times;
         });
         return kokoonpano;
+    }
+
+    function cloneKokoonpanoTimes(source) {
+        return normalizeKokoonpanoTimes(source);
     }
 
     function clampMinutes(value) {
@@ -120,16 +142,22 @@
                 absence: normalizeAbsence(worker)
             }));
         });
-        const savedTimes = parsed.kuorma && parsed.kuorma.kokoonpano;
-        PRODUCTS.forEach((product) => {
-            const saved = savedTimes && savedTimes[product.id];
-            const times = emptyProductTimes(product);
-            timeFieldsFor(product).forEach((field) => {
-                const minutes = clampMinutes(saved && saved[field.key]);
-                times[field.key] = minutes === null ? 0 : minutes;
+        next.kuorma.kokoonpano = normalizeKokoonpanoTimes(parsed.kuorma && parsed.kuorma.kokoonpano);
+        const sets = {};
+        const rawSets = parsed.kuormaSets;
+        if (rawSets && typeof rawSets === 'object' && !Array.isArray(rawSets)) {
+            Object.keys(rawSets).forEach((name) => {
+                const trimmed = String(name || '').trim();
+                if (!trimmed || trimmed.length > 80) return;
+                sets[trimmed] = normalizeKokoonpanoTimes(rawSets[name]);
             });
-            next.kuorma.kokoonpano[product.id] = times;
-        });
+        }
+        next.kuormaSets = sets;
+        const active = typeof parsed.activeKuormaSet === 'string' ? parsed.activeKuormaSet.trim() : '';
+        next.activeKuormaSet = sets[active] ? active : '';
+        if (next.activeKuormaSet) {
+            next.kuorma.kokoonpano = cloneKokoonpanoTimes(sets[next.activeKuormaSet]);
+        }
         return next;
     }
 
@@ -138,7 +166,9 @@
             enabled: next.enabled === true,
             selectedDoc: next.selectedDoc,
             kapasiteetti: next.kapasiteetti,
-            kuorma: next.kuorma
+            kuorma: next.kuorma,
+            kuormaSets: next.kuormaSets || {},
+            activeKuormaSet: next.activeKuormaSet || ''
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     }
@@ -1284,12 +1314,13 @@
         note.className = 'kk-note';
         note.textContent = product.kind === 'ikkuna'
             ? 'Standardi on ikkuna, jossa on 1 ruutu eikä potkupeltiä. +1 ruutu lisätään jokaista ruutua kohti ensimmäisen jälkeen.'
-            : 'Standardi on ovi ilman potkupeltiä, tiivistekynnystä, umpiovea ja umpivasikkaa. +1 ruutu lisätään jokaista ruutua kohti ensimmäisen jälkeen.';
+            : 'Standardi on ovi ilman potkupeltiä, tiivistekynnystä, umpiovea ja umpivasikkaa. +1 ruutu lisätään jokaista ruutua kohti ensimmäisen jälkeen. Kun umpiovi on päällä, kuorma lasketaan umpioven kentistä.';
         const table = document.createElement('table');
         table.className = 'kk-table';
         const tbody = document.createElement('tbody');
         timeFieldsFor(product).forEach((field) => {
             const row = document.createElement('tr');
+            if (field.key === 'umpiovi') row.className = 'kk-time-group';
             const labelCell = document.createElement('td');
             labelCell.textContent = field.label;
             const valueCell = document.createElement('td');
@@ -1300,6 +1331,9 @@
             input.min = '0';
             input.step = '1';
             input.value = String(times[field.key]);
+            input.dataset.kkProduct = product.id;
+            input.dataset.kkField = field.key;
+            input.dataset.kkDraft = String(times[field.key]);
             input.setAttribute('aria-label', product.label + ', ' + field.label + ', minuutteina');
             const unit = document.createElement('span');
             unit.className = 'kk-unit';
@@ -1307,12 +1341,11 @@
             input.addEventListener('change', () => {
                 const minutes = clampMinutes(input.value);
                 if (minutes === null) {
-                    input.value = String(times[field.key]);
+                    input.value = input.dataset.kkDraft || '0';
                     return;
                 }
-                times[field.key] = minutes;
+                input.dataset.kkDraft = String(minutes);
                 input.value = String(minutes);
-                save();
             });
             valueCell.append(input, unit);
             row.append(labelCell, valueCell);
@@ -1324,8 +1357,114 @@
         return wrap;
     }
 
+    function collectKokoonpanoDraft(root) {
+        const draft = cloneKokoonpanoTimes(state.kuorma.kokoonpano);
+        root.querySelectorAll('.kk-minutes').forEach((input) => {
+            const productId = input.dataset.kkProduct;
+            const field = input.dataset.kkField;
+            if (!draft[productId] || !Object.prototype.hasOwnProperty.call(draft[productId], field)) return;
+            const minutes = clampMinutes(input.value);
+            if (minutes === null) return;
+            draft[productId][field] = minutes;
+        });
+        return draft;
+    }
+
+    function openKuormaNameDialog(root) {
+        if (root.querySelector('.kk-name-dialog')) return;
+        const dialog = document.createElement('form');
+        dialog.className = 'kk-name-dialog';
+        const label = document.createElement('label');
+        label.textContent = 'Anna nimi kuorma-asetukselle';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 80;
+        input.required = true;
+        input.className = 'form-control form-control-sm';
+        input.value = state.activeKuormaSet || '';
+        input.setAttribute('aria-label', 'Kuorma-asetuksen nimi');
+        const error = document.createElement('p');
+        error.className = 'kk-name-error';
+        error.hidden = true;
+        error.textContent = 'Anna nimi.';
+        const actions = document.createElement('div');
+        actions.className = 'kk-name-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'kk-day-close';
+        cancel.textContent = 'Peruuta';
+        cancel.addEventListener('click', () => dialog.remove());
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'submit';
+        saveBtn.className = 'kk-day-save kk-set-save';
+        saveBtn.textContent = 'Tallenna';
+        actions.append(cancel, saveBtn);
+        dialog.append(label, input, error, actions);
+        dialog.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const name = input.value.trim();
+            if (!name) {
+                error.hidden = false;
+                input.focus();
+                return;
+            }
+            const draft = collectKokoonpanoDraft(root);
+            state.kuormaSets[name] = draft;
+            state.kuorma.kokoonpano = cloneKokoonpanoTimes(draft);
+            state.activeKuormaSet = name;
+            save();
+            renderDocument();
+        });
+        const bar = root.querySelector('.kk-set-bar');
+        if (bar) bar.after(dialog);
+        else root.prepend(dialog);
+        input.focus();
+        input.select();
+    }
+
+    function renderKuormaSetBar(root) {
+        const bar = document.createElement('div');
+        bar.className = 'kk-set-bar';
+        const label = document.createElement('label');
+        label.htmlFor = 'kkActiveKuormaSet';
+        label.textContent = 'Aktiivinen kuorma-asetus';
+        const select = document.createElement('select');
+        select.id = 'kkActiveKuormaSet';
+        select.className = 'form-select form-select-sm kk-set-select';
+        const names = Object.keys(state.kuormaSets).sort((a, b) => a.localeCompare(b, 'fi'));
+        if (!state.activeKuormaSet) {
+            const empty = document.createElement('option');
+            empty.value = '';
+            empty.textContent = 'Ei nimettyä asetusta';
+            select.appendChild(empty);
+        }
+        names.forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            select.appendChild(option);
+        });
+        select.value = state.activeKuormaSet || '';
+        select.addEventListener('change', () => {
+            const name = select.value;
+            if (!name || !state.kuormaSets[name]) return;
+            state.kuorma.kokoonpano = cloneKokoonpanoTimes(state.kuormaSets[name]);
+            state.activeKuormaSet = name;
+            save();
+            renderDocument();
+        });
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'kk-day-save kk-set-save';
+        button.textContent = 'Tallenna kuorma-asetukset';
+        button.addEventListener('click', () => openKuormaNameDialog(root));
+        bar.append(label, select, button);
+        return bar;
+    }
+
     function renderLoad(department) {
         const wrap = document.createElement('div');
+        if (department === 'kokoonpano') wrap.appendChild(renderKuormaSetBar(wrap));
         PRODUCTS.forEach((product) => {
             const item = document.createElement('div');
             item.className = 'admin-accordion-item';
@@ -1371,6 +1510,12 @@
         const product = PRODUCTS.find((item) => item.id === productId);
         const times = productId && state.kuorma.kokoonpano[productId];
         if (!product || !times) return null;
+        if (product.kind === 'ovi' && inputs.umpioviEnabled) {
+            let total = times.umpiovi || 0;
+            if (inputs.kickPlateEnabled) total += times.umpioviPotkupelti || 0;
+            if (inputs.sealThresholdEnabled) total += times.umpioviTiivistekynnys || 0;
+            return total;
+        }
         const panes = parseInt(inputs.paneCount, 10);
         const paneCount = Number.isFinite(panes) && panes >= 1 ? panes : 1;
         let total = (times.standardi || 0) + Math.max(0, paneCount - 1) * (times.ruutu || 0);

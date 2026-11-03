@@ -4464,6 +4464,53 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     outline-offset: 2px;
 }
 
+.kk-time-group td {
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.kk-set-bar,
+.kk-name-dialog {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    margin-bottom: 16px;
+}
+
+.kk-set-bar label,
+.kk-name-dialog label {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 650;
+}
+
+.kk-set-select,
+.kk-name-dialog input {
+    width: auto;
+    min-width: 220px;
+    flex: 1;
+}
+
+.kk-name-dialog {
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-primary);
+}
+
+.kk-name-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.kk-name-error {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--danger-color);
+    font-size: 0.82rem;
+}
+
 .kk-day-save {
     margin-top: 10px;
     padding: 6px 14px;
@@ -4483,6 +4530,10 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
 .kk-day-save:focus-visible {
     outline: 2px solid var(--accent-color);
     outline-offset: 2px;
+}
+
+.kk-set-save {
+    margin-top: 0;
 }
 
 .kk-day-body {
