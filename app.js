@@ -13110,7 +13110,7 @@ function getMitatItemBlockGroups(jobNumber, visibleItemNames, jobBlockList, item
         }
     });
     if (unassigned.length > 0) {
-        groups.push({ id: null, name: 'Ei lohkoa', shipDate: '', items: unassigned });
+        groups.push({ id: null, name: 'Ei lohkoa', shipDate: getJobOwnShipDate(jobNumber), items: unassigned });
     }
     return sortBlockGroupsByShipDate(groups);
 }
