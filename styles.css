@@ -4839,8 +4839,28 @@ button.kk-move-day {
     font-variant-numeric: tabular-nums;
 }
 
-.kk-move-day.is-open,
-.kk-move-day.is-drop {
+.kk-move-field {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.kk-move-field > .kk-move-day {
+    flex: 1;
+    width: auto;
+}
+
+.kk-move-here {
+    align-self: center;
+    margin-top: 0;
+    white-space: nowrap;
+}
+
+.kk-move-here[hidden] {
+    display: none !important;
+}
+
+.kk-move-day.is-open {
     border-color: var(--accent-color);
     box-shadow: inset 0 0 0 1px var(--accent-color);
 }
@@ -4854,25 +4874,38 @@ button.kk-move-day {
     margin-top: 8px;
 }
 
-.kk-move-pick {
-    margin-bottom: 8px;
-    border: 1px solid var(--accent-color);
-    border-radius: 12px;
-    cursor: grab;
-    background: var(--bg-secondary);
-    touch-action: none;
+.kk-review-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
-.kk-move-pick.is-dragging {
-    cursor: grabbing;
-    user-select: none;
+.kk-review-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
 }
 
-.kk-move-hint {
-    margin: 0;
-    padding: 8px 12px 0;
-    color: var(--text-secondary);
-    font-size: 0.78rem;
+.kk-review-done {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #198754;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.kk-move-products .mitat-item-section.is-selected {
+    border-color: var(--accent-color);
+}
+
+.kk-move-select.is-chosen {
+    border-color: var(--accent-color);
+    background: var(--bg-tertiary);
 }
 
 .kk-move-product {

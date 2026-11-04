@@ -61,9 +61,6 @@
     let weekPanel = 'viikko';
     let reviewDayIndex = null;
     let reviewSelection = new Set();
-    let reviewDragging = false;
-    let reviewPointer = null;
-    let reviewSuppressClick = false;
 
     function defaultState() {
         const kapasiteetti = {};
@@ -718,7 +715,6 @@
     }
 
     function closeDayScreen() {
-        endReviewDrag();
         openDayKey = null;
         reviewDayIndex = null;
         reviewSelection.clear();
@@ -969,6 +965,14 @@
         return String(item.jobNumber || '') + '|' + String(item.itemName || '');
     }
 
+    function syncMoveHereButtons() {
+        const hasSelection = reviewSelection.size > 0 && reviewDayIndex !== null;
+        document.querySelectorAll('.kk-move-here').forEach((button) => {
+            const sameDay = Number(button.dataset.kkDay) === reviewDayIndex;
+            button.hidden = !hasSelection || sameDay;
+        });
+    }
+
     function nextEraName(blocks) {
         let max = 1;
         (blocks || []).forEach((block) => {
@@ -1017,7 +1021,53 @@
         if (typeof showToast === 'function') showToast('Tuotteet siirretty', 'success');
     }
 
-    function renderReviewProducts(department, day, suggestedKeys) {
+    function toggleReviewPanel(header, panel, icon) {
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? '' : 'none';
+        header.setAttribute('aria-expanded', open ? 'true' : 'false');
+        icon.textContent = open ? '▲' : '▼';
+        icon.classList.toggle('rotated', open);
+    }
+
+    function renderReviewMeasures(record) {
+        const details = document.createElement('div');
+        details.className = 'mitat-details';
+        details.style.display = 'none';
+        const sections = record && Array.isArray(record.data) ? record.data : [];
+        let shown = false;
+        sections.forEach((section) => {
+            const rows = section && Array.isArray(section.items) ? section.items : [];
+            if (!rows.length) return;
+            shown = true;
+            const block = document.createElement('div');
+            block.className = 'mitat-result-section';
+            const title = document.createElement('h6');
+            const rawTitle = section.title || '';
+            title.textContent = typeof getLasilistaSectionTitle === 'function'
+                ? getLasilistaSectionTitle(rawTitle, record)
+                : String(rawTitle);
+            const list = document.createElement('div');
+            list.className = 'mitat-result-items';
+            rows.forEach((resultItem) => {
+                const line = document.createElement('div');
+                line.className = 'mitat-result-item';
+                const label = document.createElement('span');
+                label.className = 'mitat-result-label';
+                label.textContent = resultItem && resultItem.label != null ? String(resultItem.label) : '';
+                const value = document.createElement('span');
+                value.className = 'mitat-result-value';
+                value.textContent = resultItem && resultItem.value != null ? String(resultItem.value) : '';
+                line.append(label, value);
+                list.appendChild(line);
+            });
+            block.append(title, list);
+            details.appendChild(block);
+        });
+        if (!shown) details.appendChild(emptyNote('Ei mittoja.'));
+        return details;
+    }
+
+    function renderReviewProducts(department, day) {
         const host = document.createElement('div');
         host.className = 'kk-move-products';
         const items = productionDayItems(department, day.date);
@@ -1025,66 +1075,119 @@
             host.appendChild(emptyNote('Ei tuotteita tälle päivälle.'));
             return host;
         }
-        const selected = [];
-        const rest = [];
+        const mittatData = readStorageMap('mittatData');
+        const byJob = new Map();
         items.forEach((item) => {
-            if (reviewSelection.has(reviewItemKey(item))) selected.push(item);
-            else rest.push(item);
+            if (!byJob.has(item.jobNumber)) byJob.set(item.jobNumber, []);
+            byJob.get(item.jobNumber).push(item);
         });
-        const appendRow = (parent, item) => {
-            const key = reviewItemKey(item);
-            const row = document.createElement('div');
-            row.className = 'kk-move-product' + (suggestedKeys.has(key) ? ' is-suggested' : '');
-            const text = document.createElement('span');
-            text.className = 'kk-move-product-name';
-            const title = document.createElement('span');
-            title.textContent = item.itemName;
-            const job = document.createElement('span');
-            job.className = 'kk-move-product-job';
-            job.textContent = 'Työ ' + item.jobNumber;
-            text.append(title, job);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'kk-day-close kk-move-select';
-            const chosen = reviewSelection.has(key);
-            button.textContent = chosen ? 'Valittu' : 'Valitse';
-            button.addEventListener('click', () => {
-                if (reviewSelection.has(key)) reviewSelection.delete(key);
-                else reviewSelection.add(key);
-                refreshDeptReview();
-            });
-            row.append(text, button);
-            parent.appendChild(row);
-        };
-        if (selected.length) {
-            const bundle = document.createElement('div');
-            bundle.className = 'kk-move-pick';
-            bundle.addEventListener('pointerdown', (event) => {
-                if (event.button !== 0) return;
-                if (event.target.closest('.kk-move-select')) return;
-                event.preventDefault();
-                reviewDragging = true;
-                reviewPointer = {
-                    sourceIndex: day.index,
-                    department: department,
-                    sourceDate: day.date,
-                    x: event.clientX,
-                    y: event.clientY
+        const nameSort = (a, b) => a.localeCompare(b, 'fi', { numeric: true, sensitivity: 'base' });
+        Array.from(byJob.keys()).sort(nameSort).forEach((jobNumber) => {
+            const products = byJob.get(jobNumber).slice().sort((a, b) => nameSort(a.itemName, b.itemName));
+            const section = document.createElement('div');
+            section.className = 'mitat-job-section';
+            const header = document.createElement('div');
+            header.className = 'mitat-job-header';
+            header.setAttribute('role', 'button');
+            header.tabIndex = 0;
+            header.setAttribute('aria-expanded', 'false');
+            header.setAttribute('aria-label', 'Avaa/sulje työ ' + jobNumber);
+            const heading = document.createElement('div');
+            heading.className = 'mitat-job-heading';
+            const title = document.createElement('h4');
+            title.className = 'mitat-job-title';
+            const prefix = document.createElement('span');
+            prefix.textContent = 'Työ ';
+            const number = document.createElement('span');
+            number.className = 'mitat-job-number-text';
+            number.textContent = jobNumber;
+            title.append(prefix, number);
+            heading.appendChild(title);
+            const expand = document.createElement('span');
+            expand.className = 'mitat-job-expand-btn';
+            const icon = document.createElement('span');
+            icon.className = 'mitat-toggle-icon';
+            icon.textContent = '▼';
+            expand.appendChild(icon);
+            header.append(heading, expand);
+
+            const jobItems = document.createElement('div');
+            jobItems.className = 'mitat-job-items';
+            jobItems.style.display = 'none';
+            const records = mittatData[jobNumber] && typeof mittatData[jobNumber] === 'object' ? mittatData[jobNumber] : {};
+            products.forEach((item) => {
+                const record = records[item.itemName] || {};
+                const product = document.createElement('div');
+                product.className = 'mitat-item-section';
+                const productHeader = document.createElement('div');
+                productHeader.className = 'mitat-item-header';
+                productHeader.setAttribute('role', 'button');
+                productHeader.tabIndex = 0;
+                productHeader.setAttribute('aria-expanded', 'false');
+                productHeader.setAttribute('aria-label', 'Avaa/sulje ' + item.itemName + (item.done ? ', tehty' : ''));
+                const main = document.createElement('div');
+                main.className = 'mitat-item-header-main';
+                const titleWrap = document.createElement('div');
+                titleWrap.className = 'kk-review-title';
+                const productTitle = document.createElement('h5');
+                productTitle.className = 'mitat-item-title';
+                productTitle.textContent = '- ' + item.itemName;
+                titleWrap.appendChild(productTitle);
+                if (item.done) {
+                    const done = document.createElement('span');
+                    done.className = 'kk-review-done';
+                    done.textContent = 'Tehty';
+                    titleWrap.appendChild(done);
+                }
+                const actions = document.createElement('div');
+                actions.className = 'kk-review-actions';
+                const pick = document.createElement('button');
+                pick.type = 'button';
+                pick.className = 'kk-day-close kk-move-select';
+                const key = reviewItemKey(item);
+                const paintPick = () => {
+                    const chosen = reviewSelection.has(key);
+                    pick.textContent = chosen ? 'Valittu' : 'Valitse';
+                    pick.classList.toggle('is-chosen', chosen);
+                    product.classList.toggle('is-selected', chosen);
                 };
-                bundle.classList.add('is-dragging');
-                bundle.setPointerCapture(event.pointerId);
-                document.addEventListener('pointermove', onReviewPointerMove);
-                document.addEventListener('pointerup', onReviewPointerUp);
-                document.addEventListener('wheel', onReviewWheel, { passive: false });
+                paintPick();
+                pick.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    if (reviewSelection.has(key)) reviewSelection.delete(key);
+                    else reviewSelection.add(key);
+                    paintPick();
+                    syncMoveHereButtons();
+                });
+                const productIcon = document.createElement('span');
+                productIcon.className = 'mitat-toggle-icon';
+                productIcon.textContent = '▼';
+                actions.append(pick, productIcon);
+                main.append(titleWrap, actions);
+                productHeader.appendChild(main);
+                const color = String(record.lasilistaColor || '').trim();
+                const unitPhrase = typeof formatItemUnitPhrase === 'function' ? formatItemUnitPhrase(record) : '';
+                const metaParts = [];
+                if (color) metaParts.push(color);
+                if (unitPhrase) metaParts.push(unitPhrase);
+                if (metaParts.length) {
+                    const meta = document.createElement('div');
+                    meta.className = 'mitat-item-header-secondary';
+                    meta.textContent = metaParts.join(' / ');
+                    productHeader.appendChild(meta);
+                }
+                const details = renderReviewMeasures(record);
+                productHeader.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    toggleReviewPanel(productHeader, details, productIcon);
+                });
+                product.append(productHeader, details);
+                jobItems.appendChild(product);
             });
-            const hint = document.createElement('p');
-            hint.className = 'kk-move-hint';
-            hint.textContent = 'Raahaa toiselle päivälle';
-            bundle.appendChild(hint);
-            selected.forEach((item) => appendRow(bundle, item));
-            host.appendChild(bundle);
-        }
-        rest.forEach((item) => appendRow(host, item));
+            header.addEventListener('click', () => toggleReviewPanel(header, jobItems, icon));
+            section.append(header, jobItems);
+            host.appendChild(section);
+        });
         return host;
     }
 
@@ -1154,78 +1257,16 @@
         return { days: days, suggestions: suggestions };
     }
 
-    function endReviewDrag() {
-        reviewDragging = false;
-        reviewPointer = null;
-        document.querySelectorAll('.kk-move-day.is-drop').forEach((row) => row.classList.remove('is-drop'));
-        document.querySelectorAll('.kk-move-pick.is-dragging').forEach((bundle) => bundle.classList.remove('is-dragging'));
-        document.removeEventListener('pointermove', onReviewPointerMove);
-        document.removeEventListener('pointerup', onReviewPointerUp);
-        document.removeEventListener('wheel', onReviewWheel);
-    }
-
-    function reviewDayAt(x, y) {
-        const node = document.elementFromPoint(x, y);
-        const row = node && node.closest ? node.closest('.kk-move-day') : null;
-        if (!row || !reviewPointer) return null;
-        if (Number(row.dataset.kkDay) === reviewPointer.sourceIndex) return null;
-        return row;
-    }
-
-    function markReviewDrop() {
-        document.querySelectorAll('.kk-move-day.is-drop').forEach((row) => row.classList.remove('is-drop'));
-        if (!reviewPointer) return;
-        const row = reviewDayAt(reviewPointer.x, reviewPointer.y);
-        if (row) row.classList.add('is-drop');
-    }
-
-    function onReviewPointerMove(event) {
-        if (!reviewPointer) return;
-        reviewPointer.x = event.clientX;
-        reviewPointer.y = event.clientY;
-        markReviewDrop();
-    }
-
-    function onReviewWheel(event) {
-        if (!reviewDragging) return;
-        const sheet = document.querySelector('#kkDayScreen .kk-day-sheet');
-        if (!sheet) return;
-        let amount = event.deltaY;
-        if (event.deltaMode === 1) amount *= 16;
-        else if (event.deltaMode === 2) amount *= sheet.clientHeight || 0;
-        sheet.scrollTop += amount;
-        event.preventDefault();
-        markReviewDrop();
-    }
-
-    function onReviewPointerUp(event) {
-        if (!reviewPointer) return;
-        reviewPointer.x = event.clientX;
-        reviewPointer.y = event.clientY;
-        const row = reviewDayAt(event.clientX, event.clientY);
-        const drag = reviewPointer;
-        endReviewDrag();
-        reviewSuppressClick = true;
-        setTimeout(() => { reviewSuppressClick = false; }, 0);
-        if (!row) return;
-        const chosen = productionDayItems(drag.department, drag.sourceDate)
-            .filter((item) => reviewSelection.has(reviewItemKey(item)));
-        if (!chosen.length) return;
-        moveReviewedItems(chosen, row.dataset.kkIso);
-    }
-
     function buildDeptReviewBody(department, review) {
         const body = document.createElement('div');
         body.className = 'kk-day-body';
-        const suggestedKeys = new Set();
-        review.suggestions.forEach((suggestion) => {
-            suggestion.items.forEach((item) => suggestedKeys.add(reviewItemKey(item)));
-        });
         const days = document.createElement('div');
         days.className = 'kk-move-days';
         review.days.forEach((day) => {
             const slot = document.createElement('div');
             slot.className = 'kk-move-slot';
+            const field = document.createElement('div');
+            field.className = 'kk-move-field';
             const row = document.createElement('button');
             row.type = 'button';
             row.className = 'kk-move-day' + (reviewDayIndex === day.index ? ' is-open' : '');
@@ -1235,16 +1276,28 @@
             value.textContent = formatLoadMinutes(day.minutes) + ' / ' + formatSum(day.hours);
             if (!day.past && day.overload > 0) value.classList.add('is-over');
             row.append(name, value);
-            row.dataset.kkDay = String(day.index);
-            row.dataset.kkIso = isoFromDate(day.date);
             row.addEventListener('click', () => {
-                if (reviewDragging || reviewSuppressClick) return;
                 reviewSelection.clear();
                 reviewDayIndex = reviewDayIndex === day.index ? null : day.index;
                 refreshDeptReview();
             });
-            slot.appendChild(row);
-            if (reviewDayIndex === day.index) slot.appendChild(renderReviewProducts(department, day, suggestedKeys));
+            const moveHere = document.createElement('button');
+            moveHere.type = 'button';
+            moveHere.className = 'kk-day-save kk-move-here';
+            moveHere.textContent = 'Siirrä tähän';
+            moveHere.dataset.kkDay = String(day.index);
+            moveHere.hidden = reviewSelection.size === 0 || reviewDayIndex === day.index;
+            moveHere.addEventListener('click', () => {
+                if (reviewDayIndex === null || reviewDayIndex === day.index) return;
+                const source = review.days[reviewDayIndex];
+                if (!source) return;
+                const chosen = productionDayItems(department, source.date)
+                    .filter((item) => reviewSelection.has(reviewItemKey(item)));
+                moveReviewedItems(chosen, isoFromDate(day.date));
+            });
+            field.append(row, moveHere);
+            slot.appendChild(field);
+            if (reviewDayIndex === day.index) slot.appendChild(renderReviewProducts(department, day));
             days.appendChild(slot);
         });
         body.appendChild(days);
@@ -1570,7 +1623,6 @@
     }
 
     function unmount(host) {
-        endReviewDrag();
         weekPanel = 'viikko';
         openDayKey = null;
         reviewDayIndex = null;
