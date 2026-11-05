@@ -17047,6 +17047,37 @@ function scanner_parse(tokens, W, H) {
         }
     }
 
+    // Eri korkuiset ruudut: pystymitat samassa pystylinjassa (Δnx < 0.02), ylhäältä alas.
+    // Ei aseta isMultiPanea, jotta leveys- ja pariovihaarat pysyvät ennallaan.
+    // Linja, jolla on ulkomitta >= 1400 mm (esim. 2090), hylätään kokonaan.
+    let paneHeights = null;
+    if (!isMultiPane) {
+        const colCands = norm
+            .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
+            .map(t => ({ v: parseInt(t.text, 10), nx: t.nx, ny: t.ny }))
+            .filter(o => o.v >= 200 && o.v <= 4000);
+        colCands.sort((a, b) => a.nx - b.nx || a.ny - b.ny);
+        const heightCols = [];
+        colCands.forEach(o => {
+            const col = heightCols.find(c => Math.abs(c.nx - o.nx) < 0.02);
+            if (col) col.items.push(o);
+            else heightCols.push({ nx: o.nx, items: [o] });
+        });
+        const paneCols = heightCols.filter(c =>
+            c.items.length >= 2 && c.items.length <= 12 && c.items.every(o => o.v < 1400)
+        );
+        paneCols.sort((a, b) => {
+            if (b.items.length !== a.items.length) return b.items.length - a.items.length;
+            const span = items => Math.max(...items.map(o => o.ny)) - Math.min(...items.map(o => o.ny));
+            return span(b.items) - span(a.items);
+        });
+        if (paneCols.length) {
+            paneHeights = paneCols[0].items.slice().sort((a, b) => a.ny - b.ny).map(o => o.v);
+            paneCount = paneHeights.length;
+            conf.paneCount = 'ok';
+        }
+    }
+
     // Pariovi: isPariByRL TAI moniruutu-pariovi (vahvistettu kahdella leveydella).
     // Moniruutu-kayntiovi: katisyys-L + alaosan 990 ei saa tehda pariovea.
     const isPariByRL = rlTok != null && _kayntiWidths.length > 0 && _lisaWidths.length > 0;
@@ -17232,6 +17263,9 @@ function scanner_parse(tokens, W, H) {
     if (isMultiPane && multiPaneHeight != null) {
         paneHeight = multiPaneHeight;
         conf.paneHeight = 'ok';
+    } else if (paneHeights && paneHeights.length) {
+        paneHeight = paneHeights[0];
+        conf.paneHeight = 'ok';
     } else {
         let phCands = norm
             .filter(t => t.vertical && t.nx > phMinNx && t.nx < phMaxNx && /^\d{3,4}$/.test(t.text.trim()))
@@ -17370,7 +17404,7 @@ function scanner_parse(tokens, W, H) {
     }
 
     // --- Ruutumaara (teksti) — moniruutu-haara asettaa paneCount jo aiemmin ---
-    if (!isMultiPane) {
+    if (!isMultiPane && !(paneHeights && paneHeights.length)) {
         const pcm = all.match(/\b(\d{1,2})\s*ruut/i);
         if (pcm) {
             const v = parseInt(pcm[1], 10);
@@ -17400,7 +17434,7 @@ function scanner_parse(tokens, W, H) {
     let windowCalculator = '';
     conf.windowWidth = 'low';
     conf.windowHeight = 'low';
-    if (!isWindow && !isMultiPane) {
+    if (!isWindow && !isMultiPane && !(paneHeights && paneHeights.length)) {
         const winNyMax = isLandscape ? 0.38 : 0.32;
         const winNyMin = isLandscape ? 0.12 : 0.08;
         const doorLeafSet = new Set(
@@ -17515,7 +17549,7 @@ function scanner_parse(tokens, W, H) {
     return {
         calculator, gapOption, lasilistaSize,
         kickPlateEnabled, kickPlateHeight,
-        mainDoorWidth, sideDoorWidth, paneHeight,
+        mainDoorWidth, sideDoorWidth, paneHeight, paneHeights,
         paneCount, umpioviEnabled, umpivasikkaEnabled, sealThresholdEnabled,
         jobNumber, itemName, quantity, color,
         isDoorWindow, windowWidth, windowHeight, windowCalculator,
@@ -17619,7 +17653,10 @@ function showScanReview(parsed, canvas) {
     setV('scanKickHeight', parsed.kickPlateHeight);
     const _pc = parsed.paneCount || 1;
     const _ph = parsed.paneHeight;
-    updateScanPaneInputs(_pc, Array.from({ length: _pc }, () => _ph));
+    const _heights = (parsed.paneHeights && parsed.paneHeights.length)
+        ? parsed.paneHeights
+        : Array.from({ length: _pc }, () => _ph);
+    updateScanPaneInputs(_pc, _heights);
     setV('scanJobNumber', parsed.jobNumber);
     setV('scanItemName', parsed.itemName);
     setV('scanQuantity', parsed.quantity || 1);
