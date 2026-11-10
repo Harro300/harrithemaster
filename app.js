@@ -1013,6 +1013,38 @@ function isKuormaKoeJob(jobNumber) {
     return loadKuormaKoeJobs().includes(key);
 }
 
+function isKuormaShownInProduction() {
+    return !!(window.KuormaKapasiteetti
+        && typeof KuormaKapasiteetti.isShownInProduction === 'function'
+        && KuormaKapasiteetti.isShownInProduction());
+}
+
+function isHashKoeJobNumber(jobNumber) {
+    return isKuormaShownInProduction() && String(jobNumber || '').trim().startsWith('#');
+}
+
+function koeJobNumberTaken(jobNumber) {
+    const key = String(jobNumber || '').trim();
+    if (!key || isKuormaKoeJob(key)) return false;
+    let existingJobs = {};
+    try {
+        existingJobs = JSON.parse(localStorage.getItem('mittatData') || '{}');
+    } catch (error) {
+        existingJobs = {};
+    }
+    return !!(existingJobs[key] || loadedActiveItemNames.has(key) || mitatJobDocIds.has(key));
+}
+
+function syncTransferKoeFromJobNumber() {
+    const koeCheck = document.getElementById('transferKoeJob');
+    const jobInput = document.getElementById('transferJobNumber');
+    if (!koeCheck || !jobInput || !isKuormaShownInProduction()) return;
+    const hashKoe = jobInput.value.trim().startsWith('#');
+    if (hashKoe) koeCheck.checked = true;
+    else if (koeCheck.dataset.hashForced === '1') koeCheck.checked = false;
+    koeCheck.dataset.hashForced = hashKoe ? '1' : '0';
+}
+
 function markKuormaKoeJob(jobNumber) {
     const key = String(jobNumber || '').trim();
     if (!key) return;
@@ -6573,6 +6605,8 @@ function transferResults() {
     if (jobInput && !jobInput.dataset.transferPrefillBound) {
         jobInput.addEventListener('input', prefillTransferFields);
         jobInput.addEventListener('change', prefillTransferFields);
+        jobInput.addEventListener('input', syncTransferKoeFromJobNumber);
+        jobInput.addEventListener('change', syncTransferKoeFromJobNumber);
         jobInput.dataset.transferPrefillBound = '1';
     }
     if (itemNameInput && !itemNameInput.dataset.autofillTrackBound) {
@@ -6606,11 +6640,13 @@ function transferResults() {
     if (yhdistettyCheck) yhdistettyCheck.checked = false;
     const koeRow = document.getElementById('transferKoeJobRow');
     const koeCheck = document.getElementById('transferKoeJob');
-    const showKoeJob = !!(window.KuormaKapasiteetti
-        && typeof KuormaKapasiteetti.isShownInProduction === 'function'
-        && KuormaKapasiteetti.isShownInProduction());
+    const showKoeJob = isKuormaShownInProduction();
     if (koeRow) koeRow.style.display = showKoeJob ? '' : 'none';
-    if (koeCheck) koeCheck.checked = false;
+    if (koeCheck) {
+        koeCheck.checked = false;
+        koeCheck.dataset.hashForced = '0';
+    }
+    syncTransferKoeFromJobNumber();
 
     const modal = new bootstrap.Modal(document.getElementById('transferToMittatModal'));
     modal.show();
@@ -6759,6 +6795,15 @@ function mergeResults(existing, incoming) {
     return merged;
 }
 
+function attachKuormaQuote(results) {
+    if (!results || !window.KuormaKapasiteetti || typeof KuormaKapasiteetti.loadQuote !== 'function') return results;
+    const parts = (results.inputsHistory && results.inputsHistory.length)
+        ? results.inputsHistory
+        : (results.inputs ? [results.inputs] : []);
+    results.kuorma = KuormaKapasiteetti.loadQuote(parts);
+    return results;
+}
+
 function confirmTransferToMitat() {
     const jobNumber = document.getElementById('transferJobNumber').value.trim();
     const itemName = document.getElementById('transferItemName').value.trim();
@@ -6872,28 +6917,14 @@ function confirmTransferToMitat() {
         }
     }
 
-    const quoteParts = (results.inputsHistory && results.inputsHistory.length)
-        ? results.inputsHistory
-        : (results.inputs ? [results.inputs] : []);
-    if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.loadQuote === 'function') {
-        results.kuorma = KuormaKapasiteetti.loadQuote(quoteParts);
-    }
+    attachKuormaQuote(results);
 
-    const koeTransfer = !!document.getElementById('transferKoeJob')?.checked
-        && !!(window.KuormaKapasiteetti
-            && typeof KuormaKapasiteetti.isShownInProduction === 'function'
-            && KuormaKapasiteetti.isShownInProduction());
-    if (koeTransfer && !isKuormaKoeJob(jobNumber)) {
-        let existingJobs = {};
-        try {
-            existingJobs = JSON.parse(localStorage.getItem('mittatData') || '{}');
-        } catch (error) {
-            existingJobs = {};
-        }
-        if (existingJobs[jobNumber] || loadedActiveItemNames.has(String(jobNumber)) || mitatJobDocIds.has(String(jobNumber))) {
-            showToast('Tämä työnumero on jo käytössä. Koetyö tarvitsee uuden numeron.', 'warning');
-            return;
-        }
+    const koeTransfer = isKuormaShownInProduction() && (
+        !!document.getElementById('transferKoeJob')?.checked || jobNumber.startsWith('#')
+    );
+    if (koeTransfer && koeJobNumberTaken(jobNumber)) {
+        showToast('Tämä työnumero on jo käytössä. Koetyö tarvitsee uuden numeron.', 'warning');
+        return;
     }
     
     const itemCount = Math.max(1, Math.min(99, parseInt(document.getElementById('transferItemCount')?.value) || 1));
@@ -15923,6 +15954,10 @@ let scanMergeUnitSignature = '';
 let scanTransferQueue = [];
 let scanTransferQueueOpen = false;
 let scanQueueIdSeq = 1;
+let scanQueueBlocks = [];
+let scanQueueBlockDraft = [];
+let scanQueueBlocksJob = null;
+let scanQueueActiveBlockId = null;
 
 function disableVerkkoModeUi() {
     verkkoEnabled = false;
@@ -16309,12 +16344,13 @@ function startScanBatch(files) {
     }
     scanBatchFiles = pdfs;
     scanBatchIndex = 0;
-    if (!scanTransferQueue.length) {
+    if (!scanTransferQueue.length && !scanQueueBlocks.length) {
         scanBatchJobNumber = null;
     } else if (!scanBatchJobNumber) {
-        scanBatchJobNumber = scanTransferQueue[0].jobNumber || null;
+        scanBatchJobNumber = (scanTransferQueue[0] && scanTransferQueue[0].jobNumber) || scanQueueBlocksJob || null;
     }
     scanBatchActive = true;
+    scanTransferQueueOpen = true;
     updateScanBatchActions();
     renderScanTransferQueue();
     processScanFile(scanBatchFiles[0]);
@@ -16442,6 +16478,106 @@ function removeFromScanTransferQueue(id) {
     renderScanTransferQueue();
 }
 
+function scanQueueBlockButtonLabel(block) {
+    const date = normalizeShipDate(block && block.shipDate);
+    if (!date) return block?.name || '';
+    const [year, month, day] = date.split('-').map(Number);
+    return `${block.name} · ${formatFinnishDate(new Date(year, month - 1, day))}`;
+}
+
+function scanQueueItemHtml(entry) {
+    const calcLabel = (entry.calculator || '').replace(/-/g, ' ');
+    const quantityLabel = entry.quantity > 1 ? ` · ${entry.quantity} kpl` : '';
+    const fileLabel = entry.fileName ? ` · ${escapeHtml(entry.fileName)}` : '';
+    const draggable = scanQueueBlocks.length ? ' draggable="true"' : '';
+    return `<div class="scan-transfer-queue-item">
+        <div class="scan-transfer-queue-item-main"${draggable} data-scan-queue-id="${entry.id}">
+            <div class="scan-transfer-queue-item-name">${escapeHtml(entry.itemName || '(nimetön)')}</div>
+            <div class="scan-transfer-queue-item-meta text-muted">${escapeHtml(calcLabel)}${quantityLabel}${fileLabel}</div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromScanTransferQueue(${entry.id})">Poista</button>
+    </div>`;
+}
+
+function scanQueueGroupHtml(blockId, title, entries, blockName) {
+    const dropId = blockId ? escapeHtml(blockId) : '';
+    const items = entries.length
+        ? entries.map(scanQueueItemHtml).join('')
+        : '<p class="scan-transfer-queue-drop-hint">Raahaa tuote tähän</p>';
+    const heading = blockId
+        ? `<div class="mitat-block-header">
+            <div class="mitat-block-heading"><span class="mitat-block-name">${escapeHtml(title)}</span></div>
+            <button type="button" class="mitat-block-delete-btn" title="Poista lohko" aria-label="Poista lohko ${escapeHtml(blockName || title)}" onclick="event.stopPropagation(); removeScanQueueBlock('${escapeHtml(blockId)}')">×</button>
+           </div>`
+        : `<div class="scan-transfer-queue-group-title">${escapeHtml(title)}</div>`;
+    return `<section class="scan-transfer-queue-group" data-scan-queue-drop="${dropId}">
+        ${heading}
+        ${items}
+    </section>`;
+}
+
+function renderScanQueueBlockButtons() {
+    const host = document.getElementById('scanTransferQueueBlockBtns');
+    if (!host) return;
+    host.innerHTML = scanQueueBlocks.map(block => {
+        const pressed = block.id === scanQueueActiveBlockId;
+        const buttonClass = pressed ? 'btn btn-sm btn-success' : 'btn btn-sm btn-outline-secondary';
+        return `<button type="button" class="${buttonClass}" aria-pressed="${pressed}" onclick="toggleScanQueueActiveBlock('${escapeHtml(block.id)}')">${escapeHtml(scanQueueBlockButtonLabel(block))}</button>`;
+    }).join('');
+}
+
+function toggleScanQueueActiveBlock(blockId) {
+    scanQueueActiveBlockId = scanQueueActiveBlockId === blockId ? null : blockId;
+    renderScanTransferQueue();
+}
+
+function removeScanQueueBlock(blockId) {
+    const block = scanQueueBlocks.find(entry => entry.id === blockId);
+    if (!block) {
+        showToast('Lohkoa ei löytynyt.', 'warning');
+        return;
+    }
+    if (!confirm(`Poistetaanko lohko ${block.name}? Tuotteet siirtyvät Ei lohkoa -listalle.`)) return;
+    scanQueueBlocks = scanQueueBlocks.filter(entry => entry.id !== blockId);
+    scanQueueBlockDraft = scanQueueBlockDraft.filter(entry => entry.id !== blockId);
+    if (scanQueueActiveBlockId === blockId) scanQueueActiveBlockId = null;
+    scanTransferQueue.forEach(entry => {
+        if (entry.blockId === blockId) entry.blockId = null;
+    });
+    renderScanTransferQueue();
+    showToast(`Lohko "${block.name}" poistettu.`, 'info');
+}
+
+function bindScanQueueDrag() {
+    const list = document.getElementById('scanTransferQueueList');
+    if (!list || !scanQueueBlocks.length) return;
+    list.querySelectorAll('[data-scan-queue-id]').forEach(row => {
+        row.addEventListener('dragstart', (event) => {
+            event.dataTransfer.setData('text/plain', row.dataset.scanQueueId || '');
+            event.dataTransfer.effectAllowed = 'move';
+        });
+    });
+    list.querySelectorAll('[data-scan-queue-drop]').forEach(zone => {
+        zone.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            zone.classList.add('is-drop-target');
+        });
+        zone.addEventListener('dragleave', (event) => {
+            if (zone.contains(event.relatedTarget)) return;
+            zone.classList.remove('is-drop-target');
+        });
+        zone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const id = Number(event.dataTransfer.getData('text/plain'));
+            const entry = scanTransferQueue.find(item => item.id === id);
+            if (!entry) return;
+            const dropId = zone.getAttribute('data-scan-queue-drop') || '';
+            entry.blockId = dropId && scanQueueBlocks.some(block => block.id === dropId) ? dropId : null;
+            renderScanTransferQueue();
+        });
+    });
+}
+
 function renderScanTransferQueue() {
     const panel = document.getElementById('scanTransferQueuePanel');
     const countEl = document.getElementById('scanTransferQueueCount');
@@ -16453,27 +16589,32 @@ function renderScanTransferQueue() {
     if (countEl) countEl.textContent = String(n);
     if (!panel) return;
 
-    const showPanel = n > 0 || (scanBatchActive && scanBatchFiles.length > 1);
+    const showPanel = n > 0 || scanQueueBlocks.length > 0 || (scanBatchActive && scanBatchFiles.length > 1);
     panel.style.display = showPanel ? '' : 'none';
     if (body) body.style.display = scanTransferQueueOpen ? '' : 'none';
     if (chevron) chevron.textContent = scanTransferQueueOpen ? '▴' : '▾';
+    renderScanQueueBlockButtons();
 
     if (list) {
-        if (!n) {
-            list.innerHTML = '<p class="text-muted small mb-0 px-3 py-2">Jono on tyhjä.</p>';
+        if (!scanQueueBlocks.length) {
+            list.innerHTML = n
+                ? scanTransferQueue.map(scanQueueItemHtml).join('')
+                : '<p class="text-muted small mb-0 px-3 py-2">Jono on tyhjä.</p>';
         } else {
-            list.innerHTML = scanTransferQueue.map(e => {
-                const calcLabel = (e.calculator || '').replace(/-/g, ' ');
-                const q = e.quantity > 1 ? ` · ${e.quantity} kpl` : '';
-                return `<div class="scan-transfer-queue-item">
-                    <div class="scan-transfer-queue-item-main">
-                        <div class="scan-transfer-queue-item-name">${escapeHtml(e.itemName || '(nimetön)')}</div>
-                        <div class="scan-transfer-queue-item-meta text-muted">${escapeHtml(calcLabel)}${q}${e.fileName ? ' · ' + escapeHtml(e.fileName) : ''}</div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromScanTransferQueue(${e.id})">Poista</button>
-                </div>`;
-            }).join('');
+            const groups = scanQueueBlocks.map(block => scanQueueGroupHtml(
+                block.id,
+                scanQueueBlockButtonLabel(block),
+                scanTransferQueue.filter(entry => entry.blockId === block.id),
+                block.name
+            ));
+            groups.push(scanQueueGroupHtml(
+                null,
+                'Ei lohkoa',
+                scanTransferQueue.filter(entry => !scanQueueBlocks.some(block => block.id === entry.blockId))
+            ));
+            list.innerHTML = groups.join('');
         }
+        bindScanQueueDrag();
     }
 
     const canBulk = n > 0 && !scanBatchActive;
@@ -16481,6 +16622,145 @@ function renderScanTransferQueue() {
         bulkBtn.style.display = canBulk ? '' : 'none';
         bulkBtn.textContent = n === 1 ? 'Siirrä 1 tuote Tuotantoon' : `Siirrä ${n} tuotetta Tuotantoon`;
     }
+}
+
+function openScanQueueBlocksModal() {
+    const field = document.getElementById('scanJobNumber');
+    const typed = field ? field.value.trim() : '';
+    const jobNumber = scanBatchJobNumber || typed;
+    if (!jobNumber) {
+        showToast('Syötä työnumero ennen lohkojen luontia.', 'warning');
+        return;
+    }
+    if (!scanBatchJobNumber) scanBatchJobNumber = jobNumber;
+    if (field) {
+        field.value = scanBatchJobNumber;
+        if (isScanBatchMode()) field.readOnly = true;
+    }
+    scanQueueBlocksJob = scanBatchJobNumber;
+    scanQueueBlockDraft = scanQueueBlocks.length
+        ? scanQueueBlocks.map(block => ({ ...block }))
+        : getJobBlocks(jobNumber).map(block => ({
+            id: block.id,
+            name: block.name || '',
+            shipDate: normalizeShipDate(block.shipDate)
+        }));
+    const countInput = document.getElementById('scanQueueBlockCount');
+    const count = Math.max(1, scanQueueBlockDraft.length);
+    if (countInput) {
+        countInput.min = String(Math.max(1, scanQueueBlockDraft.length));
+        countInput.max = '20';
+        countInput.value = String(count);
+    }
+    const container = document.getElementById('scanQueueBlockFields');
+    if (container) container.innerHTML = '';
+    renderScanQueueBlockFields();
+    const modalEl = document.getElementById('scanQueueBlocksModal');
+    if (modalEl && window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+function renderScanQueueBlockFields() {
+    const container = document.getElementById('scanQueueBlockFields');
+    const countInput = document.getElementById('scanQueueBlockCount');
+    if (!container || !countInput) return;
+
+    const minCount = Math.max(1, scanQueueBlockDraft.length);
+    countInput.min = String(minCount);
+    const parsed = parseJobBlocksCount(countInput.value);
+    if (parsed === null) return;
+    const count = Math.max(minCount, Math.min(20, parsed));
+
+    const previousNames = Array.from(container.querySelectorAll('.scan-queue-block-name'));
+    const previousDates = Array.from(container.querySelectorAll('.scan-queue-block-date'));
+    container.innerHTML = '';
+    for (let i = 0; i < count; i++) {
+        const existing = scanQueueBlockDraft[i] || {};
+        const previousName = previousNames[i];
+        const previousDate = previousDates[i];
+        const wrapper = document.createElement('div');
+        wrapper.className = 'scan-queue-block-field mb-3';
+
+        const nameLabel = document.createElement('label');
+        nameLabel.className = 'form-label';
+        nameLabel.setAttribute('for', `scanQueueBlockName_${i}`);
+        nameLabel.textContent = `Lohko ${i + 1}`;
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'form-control scan-queue-block-name mb-2';
+        nameInput.id = `scanQueueBlockName_${i}`;
+        nameInput.value = (previousName?.value || '').trim() || (existing.name || '').trim() || `ERÄ ${i + 1}`;
+        const blockId = previousName?.dataset.blockId || existing.id || '';
+        if (blockId) nameInput.dataset.blockId = blockId;
+
+        const dateLabel = document.createElement('label');
+        dateLabel.className = 'form-label';
+        dateLabel.setAttribute('for', `scanQueueBlockDate_${i}`);
+        dateLabel.textContent = 'Lähtöpvm';
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        dateInput.className = 'form-control scan-queue-block-date';
+        dateInput.id = `scanQueueBlockDate_${i}`;
+        dateInput.value = previousDate ? previousDate.value : (normalizeShipDate(existing.shipDate) || '');
+
+        wrapper.append(nameLabel, nameInput, dateLabel, dateInput);
+        container.appendChild(wrapper);
+    }
+}
+
+function commitScanQueueBlockCount() {
+    const countInput = document.getElementById('scanQueueBlockCount');
+    if (!countInput) return;
+    const minCount = Math.max(1, scanQueueBlockDraft.length);
+    const parsed = parseJobBlocksCount(countInput.value);
+    const committed = parsed === null ? minCount : Math.max(minCount, Math.min(20, parsed));
+    countInput.value = String(committed);
+    renderScanQueueBlockFields();
+}
+
+function confirmScanQueueBlocks() {
+    if (!scanBatchJobNumber) {
+        showToast('Työnumero puuttuu.', 'warning');
+        return;
+    }
+    const parsedCount = parseJobBlocksCount(document.getElementById('scanQueueBlockCount')?.value);
+    if (parsedCount === null) {
+        showToast('Anna lohkojen määrä.', 'warning');
+        return;
+    }
+    commitScanQueueBlockCount();
+    const nameInputs = Array.from(document.querySelectorAll('#scanQueueBlockFields .scan-queue-block-name'));
+    const dateInputs = Array.from(document.querySelectorAll('#scanQueueBlockFields .scan-queue-block-date'));
+    const entries = nameInputs.map((input, index) => ({
+        name: input.value.trim(),
+        id: input.dataset.blockId || '',
+        shipDate: normalizeShipDate(dateInputs[index] && dateInputs[index].value)
+    }));
+    if (!entries.length || entries.some(entry => !entry.name)) {
+        showToast('Anna kaikille lohkoille nimi.', 'warning');
+        return;
+    }
+    const uniqueNames = new Set(entries.map(entry => entry.name.toLowerCase()));
+    if (uniqueNames.size !== entries.length) {
+        showToast('Lohkojen nimien pitää olla yksilöllisiä.', 'warning');
+        return;
+    }
+    const knownIds = new Set(scanQueueBlockDraft.map(block => block.id).filter(Boolean));
+    scanQueueBlocks = entries.map(entry => {
+        const id = knownIds.has(entry.id) ? entry.id : createJobBlockId();
+        const block = { id, name: entry.name };
+        if (entry.shipDate) block.shipDate = entry.shipDate;
+        return block;
+    });
+    scanQueueBlocksJob = scanBatchJobNumber;
+    if (scanQueueActiveBlockId && !scanQueueBlocks.some(block => block.id === scanQueueActiveBlockId)) {
+        scanQueueActiveBlockId = null;
+    }
+    const modalEl = document.getElementById('scanQueueBlocksModal');
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+    renderScanTransferQueue();
+    showToast('Lohkot päivitetty siirtojonoon.', 'success');
 }
 
 function escapeHtml(s) {
@@ -16693,9 +16973,11 @@ function acceptScanToQueue() {
         }
     }
     results.unitCount = readScanUnitCount();
+    attachKuormaQuote(results);
 
     if (!scanBatchJobNumber) scanBatchJobNumber = jobNumber;
 
+    const activeBlock = scanQueueBlocks.find(block => block.id === scanQueueActiveBlockId) || null;
     const file = scanBatchFiles[scanBatchIndex];
     scanTransferQueue.push({
         id: scanQueueIdSeq++,
@@ -16706,7 +16988,8 @@ function acceptScanToQueue() {
         lasilistaSize,
         lasilistaColor: color,
         calculator: (results && results.calculator) || currentCalculator,
-        results
+        results,
+        blockId: activeBlock ? activeBlock.id : null
     });
     resetScanMerge();
 
@@ -16714,8 +16997,54 @@ function acceptScanToQueue() {
     if (card) card.style.display = 'none';
     clearScanPdfPreview();
     renderScanTransferQueue();
-    showToast(`Lisätty siirtojonoon: ${itemName}`, 'success');
+    const blockLabel = activeBlock ? ` (${activeBlock.name})` : '';
+    showToast(`Lisätty siirtojonoon: ${itemName}${blockLabel}`, 'success');
     advanceScanBatch();
+}
+
+function scanQueueSavedNames(entry) {
+    const count = Math.max(1, Math.min(99, parseInt(entry.quantity, 10) || 1));
+    if (count === 1) return [entry.itemName];
+    const names = [];
+    for (let i = 1; i <= count; i++) names.push(`${entry.itemName} (${i}.)`);
+    return names;
+}
+
+function persistScanQueueBlocks(jobNumber) {
+    if (!jobNumber || !scanQueueBlocks.length) return;
+    const jobBlocksAll = JSON.parse(localStorage.getItem('jobBlocks') || '{}');
+    const existing = Array.isArray(jobBlocksAll[jobNumber]) ? jobBlocksAll[jobNumber] : [];
+    const incomingById = new Map(scanQueueBlocks.map(block => [block.id, block]));
+    const merged = existing.map(block => {
+        const next = incomingById.get(block.id);
+        if (!next) return block;
+        incomingById.delete(block.id);
+        const updated = { id: block.id, name: next.name };
+        const date = normalizeShipDate(next.shipDate);
+        if (date) updated.shipDate = date;
+        return updated;
+    });
+    incomingById.forEach(block => {
+        const created = { id: block.id, name: block.name };
+        const date = normalizeShipDate(block.shipDate);
+        if (date) created.shipDate = date;
+        merged.push(created);
+    });
+    jobBlocksAll[jobNumber] = merged;
+    localStorage.setItem('jobBlocks', JSON.stringify(jobBlocksAll));
+
+    const itemBlocks = JSON.parse(localStorage.getItem('itemBlocks') || '{}');
+    const blockIds = new Set(merged.map(block => block.id));
+    scanTransferQueue.forEach(entry => {
+        const entryJob = entry.jobNumber || scanBatchJobNumber;
+        if (entryJob !== jobNumber) return;
+        scanQueueSavedNames(entry).forEach(name => {
+            const key = `${jobNumber}-${name}`;
+            if (entry.blockId && blockIds.has(entry.blockId)) itemBlocks[key] = entry.blockId;
+            else delete itemBlocks[key];
+        });
+    });
+    localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
 }
 
 function bulkTransferScanQueue() {
@@ -16728,8 +17057,19 @@ function bulkTransferScanQueue() {
         return;
     }
 
-    let saved = 0;
     const jobs = new Set();
+    scanTransferQueue.forEach(entry => {
+        const jobNumber = entry.jobNumber || scanBatchJobNumber;
+        if (jobNumber) jobs.add(jobNumber);
+    });
+    for (const jobNumber of jobs) {
+        if (isHashKoeJobNumber(jobNumber) && koeJobNumberTaken(jobNumber)) {
+            showToast('Tämä työnumero on jo käytössä. Koetyö tarvitsee uuden numeron.', 'warning');
+            return;
+        }
+    }
+
+    let saved = 0;
     scanTransferQueue.forEach(entry => {
         const jobNumber = entry.jobNumber || scanBatchJobNumber;
         if (!jobNumber) return;
@@ -16748,9 +17088,19 @@ function bulkTransferScanQueue() {
         return;
     }
 
+    const blockJob = scanQueueBlocksJob || scanBatchJobNumber || [...jobs][0];
+    persistScanQueueBlocks(blockJob);
+    if (blockJob) jobs.add(blockJob);
+    jobs.forEach(jobNumber => {
+        if (isHashKoeJobNumber(jobNumber)) markKuormaKoeJob(jobNumber);
+    });
     dualWriteMitatState([...jobs]);
     syncMitatInputsToFirestore([...jobs]);
     scanTransferQueue = [];
+    scanQueueBlocks = [];
+    scanQueueBlockDraft = [];
+    scanQueueBlocksJob = null;
+    scanQueueActiveBlockId = null;
     scanBatchJobNumber = null;
     scanTransferQueueOpen = false;
     renderScanTransferQueue();
@@ -17780,6 +18130,7 @@ function applyScanResult() {
         }
     }
     results.unitCount = readScanUnitCount();
+    attachKuormaQuote(results);
 
     const saved = writeMittatItems(jobNumber, itemName, quantity, results, { silentMerge: false });
     dualWriteMitatState(jobNumber);

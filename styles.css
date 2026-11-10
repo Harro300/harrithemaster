@@ -3803,6 +3803,50 @@ body.dark-mode .scan-pdf-preview-canvas {
     font-size: 0.8rem;
 }
 
+.scan-transfer-queue-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.1rem 0.35rem;
+}
+
+.scan-transfer-queue-block-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.scan-transfer-queue-group-title {
+    padding: 0.45rem 1.1rem 0.15rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.scan-transfer-queue-group.is-drop-target {
+    background: var(--bg-tertiary);
+    outline: 1px dashed var(--accent-color);
+    outline-offset: -2px;
+}
+
+.scan-transfer-queue-drop-hint {
+    margin: 0;
+    padding: 0.35rem 1.1rem 0.55rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.scan-transfer-queue-item-main[draggable="true"] {
+    cursor: grab;
+}
+
+.scan-queue-block-field .form-label {
+    margin-bottom: 0.25rem;
+}
+
 .lapivienti-view {
     margin-top: 0.5rem;
 }
