@@ -59,6 +59,8 @@
     let openDayKey = null;
     let settingsKeyHandler = null;
     let weekPanel = 'viikko';
+    let expandedWeeks = false;
+    let productionSnapshot = null;
     let reviewDayIndex = null;
     let reviewSelection = new Set();
 
@@ -321,6 +323,15 @@
         }, 0);
     }
 
+    function departmentHoursForWeek(department, weekKey) {
+        const workers = state.kapasiteetti[department].workers;
+        return WEEKDAYS.reduce((sum, dayKey) => {
+            return sum + workers.reduce((workerSum, worker) => {
+                return workerSum + (daysFor(worker, weekKey)[dayKey] || 0);
+            }, 0);
+        }, 0);
+    }
+
     function workerWeekHours(worker) {
         const days = daysFor(worker, activeWeekKey());
         return WEEKDAYS.reduce((sum, key) => sum + (days[key] || 0), 0);
@@ -513,17 +524,24 @@
     function paintWeekGrid() {
         const grid = document.getElementById('kkWeekGrid');
         if (!grid) return;
-        const monday = viewedMonday();
-        grid.replaceChildren(renderWeekTable(monday, new Date()));
-        removeDayScreen();
-        const screen = renderOpenDay(monday);
-        if (screen) document.body.appendChild(screen);
+        withProductionSnapshot(() => {
+            const monday = viewedMonday();
+            const today = new Date();
+            grid.replaceChildren(expandedWeeks ? renderSpanTable(monday, today) : renderWeekTable(monday, today));
+            removeDayScreen();
+            const screen = renderOpenDay(monday);
+            if (screen) document.body.appendChild(screen);
+        });
     }
 
     function paintWeekGridOnly() {
         const grid = document.getElementById('kkWeekGrid');
         if (!grid) return;
-        grid.replaceChildren(renderWeekTable(viewedMonday(), new Date()));
+        withProductionSnapshot(() => {
+            const monday = viewedMonday();
+            const today = new Date();
+            grid.replaceChildren(expandedWeeks ? renderSpanTable(monday, today) : renderWeekTable(monday, today));
+        });
     }
 
     function paintCapacityTables() {
@@ -635,7 +653,20 @@
             afterChange();
         });
 
-        controls.append(prev, select, next);
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'kk-span-toggle' + (expandedWeeks ? ' is-active' : '');
+        toggle.setAttribute('aria-pressed', expandedWeeks ? 'true' : 'false');
+        toggle.textContent = 'Laajennettu viikkonäkymä';
+        toggle.addEventListener('click', () => {
+            expandedWeeks = !expandedWeeks;
+            openDayKey = null;
+            reviewDayIndex = null;
+            reviewSelection.clear();
+            afterChange();
+        });
+
+        controls.append(prev, select, next, toggle);
         return controls;
     }
 
@@ -663,36 +694,67 @@
         return typeof normalizeShipDate === 'function' ? normalizeShipDate(jobShipDates[jobNumber]) : '';
     }
 
-    function productionDayItems(department, date) {
-        const day = isoFromDate(date);
-        const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
-        if (!jobs.length || !day) return [];
+    function jobIsFullyPackedFromMaps(mittatData, packed, jobNumber) {
+        const names = Object.keys(mittatData[jobNumber] || {});
+        return names.length > 0 && names.every((itemName) => packed[jobNumber + '-' + itemName]);
+    }
+
+    function buildProductionSnapshot() {
         const mittatData = readStorageMap('mittatData');
         const packed = readStorageMap('packedMitat');
         const done = readStorageMap('doneMitat');
         const jobShipDates = readStorageMap('jobShipDates');
         const jobBlocks = readStorageMap('jobBlocks');
         const itemBlocks = readStorageMap('itemBlocks');
-        const rows = [];
+        const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
+        const byKey = new Map();
         jobs.forEach((jobNumber) => {
             const items = mittatData[jobNumber];
             if (!items || typeof items !== 'object') return;
             const names = Object.keys(items);
-            if (!names.length) return;
-            if (typeof isJobFullyPacked === 'function' && isJobFullyPacked(jobNumber)) return;
+            if (!names.length || jobIsFullyPackedFromMaps(mittatData, packed, jobNumber)) return;
             names.forEach((itemName) => {
                 if (packed[jobNumber + '-' + itemName]) return;
-                if (shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks) !== day) return;
-                const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
-                rows.push({
-                    jobNumber: String(jobNumber),
-                    itemName: String(itemName),
-                    minutes: typeof amount === 'number' ? amount : null,
-                    done: !!done[jobNumber + '-' + itemName]
+                const day = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
+                if (!day) return;
+                const doneFlag = !!done[jobNumber + '-' + itemName];
+                const jobKey = String(jobNumber);
+                DEPARTMENTS.forEach((department) => {
+                    const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
+                    const key = department + '|' + day;
+                    let list = byKey.get(key);
+                    if (!list) {
+                        list = [];
+                        byKey.set(key, list);
+                    }
+                    list.push({
+                        jobNumber: jobKey,
+                        itemName: String(itemName),
+                        minutes: typeof amount === 'number' ? amount : null,
+                        done: doneFlag
+                    });
                 });
             });
         });
-        return rows;
+        return byKey;
+    }
+
+    function withProductionSnapshot(fn) {
+        const previous = productionSnapshot;
+        productionSnapshot = buildProductionSnapshot();
+        try {
+            return fn();
+        } finally {
+            productionSnapshot = previous;
+        }
+    }
+
+    function productionDayItems(department, date) {
+        const day = isoFromDate(date);
+        if (!day) return [];
+        const snapshot = productionSnapshot || buildProductionSnapshot();
+        const list = snapshot.get(department + '|' + day);
+        return list ? list.slice() : [];
     }
 
     function productionLoadMinutes(department, date) {
@@ -707,6 +769,49 @@
     function formatLoadMinutes(minutes) {
         if (typeof minutes !== 'number') return '—';
         return formatSum(minutes / 60);
+    }
+
+    function weekKeyFromMonday(monday) {
+        return typeof dateToIsoWeekKey === 'function' ? dateToIsoWeekKey(monday) : '';
+    }
+
+    function weekIsPast(monday) {
+        return startOfDay(addDays(monday, 6)).getTime() < startOfDay(new Date()).getTime();
+    }
+
+    function spanMondays(startMonday) {
+        const mondays = [];
+        for (let index = 0; index < 5; index += 1) mondays.push(addDays(startMonday, index * 7));
+        return mondays;
+    }
+
+    function spanRangeLabel(monday) {
+        const mondays = spanMondays(monday);
+        const first = parseIsoWeekKey(weekKeyFromMonday(mondays[0]));
+        const last = parseIsoWeekKey(weekKeyFromMonday(mondays[4]));
+        if (!first || !last) return 'Viikot';
+        if (first.year === last.year) return 'Viikot ' + first.week + '–' + last.week;
+        return 'Viikot ' + first.week + '/' + first.year + '–' + last.week + '/' + last.year;
+    }
+
+    function productionWeekItems(department, monday) {
+        const items = [];
+        for (let index = 0; index < 7; index += 1) {
+            const date = addDays(monday, index);
+            productionDayItems(department, date).forEach((item) => {
+                items.push(Object.assign({}, item, { date: date, dayIndex: index }));
+            });
+        }
+        return items;
+    }
+
+    function sumMinutes(items) {
+        const known = (items || [])
+            .filter((item) => !item.done)
+            .map((item) => item.minutes)
+            .filter((minutes) => typeof minutes === 'number');
+        if (!known.length) return null;
+        return known.reduce((sum, minutes) => sum + minutes, 0);
     }
 
     function removeDayScreen() {
@@ -780,6 +885,15 @@
 
     function renderOpenDay(monday) {
         if (!openDayKey) return null;
+        if (openDayKey.indexOf('span|') === 0) {
+            const parts = openDayKey.split('|');
+            const department = parts[1];
+            const weekKey = parts[2];
+            if (!DEPARTMENT_LABELS[department] || !parseIsoWeekKey(weekKey)) return null;
+            const visible = spanMondays(monday).some((day) => weekKeyFromMonday(day) === weekKey);
+            if (!visible) return null;
+            return renderSpanWeekScreen(department, weekKey);
+        }
         if (openDayKey.indexOf('dept|') === 0) {
             const department = openDayKey.slice(5);
             if (!DEPARTMENT_LABELS[department]) return null;
@@ -899,6 +1013,229 @@
         return scroll;
     }
 
+    function renderSpanTable(startMonday, today) {
+        const scroll = document.createElement('div');
+        scroll.className = 'kk-week-scroll';
+        const grid = document.createElement('div');
+        grid.className = 'kk-timetable is-span';
+        const currentKey = weekKeyFromMonday(startOfDay(today));
+
+        const corner = document.createElement('div');
+        corner.className = 'kk-corner';
+        corner.textContent = 'Osasto';
+        grid.appendChild(corner);
+
+        const mondays = spanMondays(startMonday);
+        mondays.forEach((monday) => {
+            const weekKey = weekKeyFromMonday(monday);
+            const parsed = parseIsoWeekKey(weekKey);
+            const head = document.createElement('div');
+            head.className = 'kk-day-head' + (weekKey === currentKey ? ' is-today' : '');
+            const name = document.createElement('span');
+            name.className = 'kk-day-name';
+            name.textContent = 'Viikko ' + (parsed ? parsed.week : '');
+            const num = document.createElement('span');
+            num.className = 'kk-day-num';
+            num.textContent = formatDayMonth(monday) + '–' + formatDayMonth(addDays(monday, 6));
+            head.append(name, num);
+            grid.appendChild(head);
+        });
+
+        DEPARTMENTS.forEach((department) => {
+            const deptKey = 'dept|' + department;
+            const label = document.createElement('button');
+            label.type = 'button';
+            label.className = 'kk-dept-label' + (openDayKey === deptKey ? ' is-open' : '');
+            label.setAttribute('aria-haspopup', 'dialog');
+            label.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', viikkokatsaus');
+            const deptName = document.createElement('span');
+            deptName.className = 'kk-dept-name';
+            deptName.textContent = DEPARTMENT_LABELS[department];
+            const deptSub = document.createElement('span');
+            deptSub.className = 'kk-dept-sub';
+            label.append(deptName, deptSub);
+            label.addEventListener('click', () => {
+                openDayKey = deptKey;
+                paintWeekGrid();
+            });
+            grid.appendChild(label);
+
+            let spanHours = 0;
+            let spanMinutes = 0;
+            let spanHasLoad = false;
+            mondays.forEach((monday) => {
+                const weekKey = weekKeyFromMonday(monday);
+                const items = productionWeekItems(department, monday);
+                const minutes = sumMinutes(items);
+                const hours = departmentHoursForWeek(department, weekKey);
+                const ratio = loadRatio(minutes, hours);
+                spanHours += hours;
+                if (typeof minutes === 'number') {
+                    spanMinutes += minutes;
+                    spanHasLoad = true;
+                }
+                const hoursText = formatSum(hours);
+                const loadText = formatLoadMinutes(minutes);
+                const cellKey = 'span|' + department + '|' + weekKey;
+                const parsed = parseIsoWeekKey(weekKey);
+                const cell = document.createElement('button');
+                cell.type = 'button';
+                cell.className = 'kk-day'
+                    + (weekKey === currentKey ? ' is-today' : '')
+                    + (openDayKey === cellKey ? ' is-open' : '');
+                const loadLabel = typeof minutes === 'number' ? ('Kuorma ' + loadText + '.') : 'Kuormaa ei ole.';
+                cell.setAttribute('aria-haspopup', 'dialog');
+                cell.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', viikko ' + (parsed ? parsed.week : '') + '. Kapasiteetti ' + hoursText + '. ' + loadLabel);
+                cell.addEventListener('click', () => {
+                    openDayKey = cellKey;
+                    paintWeekGrid();
+                });
+                cell.append(
+                    dayFact('Kuorma', loadText, typeof minutes === 'number' ? '' : 'is-empty'),
+                    dayFact('Kapasiteetti', hoursText, '')
+                );
+                if (ratio !== null) {
+                    const quota = document.createElement('div');
+                    quota.className = 'kk-day-ratio' + (ratio > 1 ? ' is-over' : '');
+                    quota.textContent = Number.isFinite(ratio)
+                        ? ('=' + Math.round(ratio * 100) + '% kiintiö')
+                        : 'Ei kapasiteettia';
+                    cell.appendChild(quota);
+                }
+                cell.appendChild(buildMeter(ratio));
+                grid.appendChild(cell);
+            });
+            deptSub.textContent = formatLoadMinutes(spanHasLoad ? spanMinutes : null) + ' / ' + formatSum(spanHours);
+        });
+
+        scroll.appendChild(grid);
+        return scroll;
+    }
+
+    function renderSpanWeekScreen(department, weekKey) {
+        const monday = mondayFromIsoWeekKey(weekKey);
+        const items = productionWeekItems(department, monday);
+        const minutes = sumMinutes(items);
+        const hours = departmentHoursForWeek(department, weekKey);
+        const ratio = loadRatio(minutes, hours);
+        const parsed = parseIsoWeekKey(weekKey);
+
+        const screen = document.createElement('div');
+        screen.id = 'kkDayScreen';
+        screen.className = 'kk-day-screen';
+        screen.addEventListener('click', (event) => {
+            if (event.target === screen) closeDayScreen();
+        });
+
+        const sheet = document.createElement('div');
+        sheet.className = 'kk-day-sheet';
+        sheet.tabIndex = -1;
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-labelledby', 'kkDayTitle');
+        sheet.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            closeDayScreen();
+        });
+
+        const head = document.createElement('header');
+        head.className = 'kk-day-sheet-head';
+        const titles = document.createElement('div');
+        const eyebrow = document.createElement('div');
+        eyebrow.className = 'kk-day-eyebrow';
+        eyebrow.textContent = DEPARTMENT_LABELS[department];
+        const title = document.createElement('h3');
+        title.id = 'kkDayTitle';
+        title.className = 'kk-day-title';
+        title.textContent = 'Viikko ' + (parsed ? parsed.week : '');
+        titles.append(eyebrow, title);
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'kk-day-close';
+        close.textContent = 'Sulje';
+        close.addEventListener('click', closeDayScreen);
+        head.append(titles, close);
+
+        const body = document.createElement('div');
+        body.className = 'kk-day-body';
+        const stats = document.createElement('div');
+        stats.className = 'kk-day-stats';
+        const over = ratio !== null && ratio > 1;
+        stats.append(
+            statCard('Kuorma', formatLoadMinutes(minutes)),
+            statCard('Kapasiteetti', formatSum(hours)),
+            statCard('Käyttöaste', ratio === null ? '—' : formatRatio(ratio), over ? 'is-over' : '')
+        );
+        const statsMeter = document.createElement('div');
+        statsMeter.className = 'kk-day-stats-meter';
+        statsMeter.appendChild(buildMeter(ratio));
+        stats.appendChild(statsMeter);
+
+        const columns = document.createElement('div');
+        columns.className = 'kk-day-columns';
+
+        const workerCol = document.createElement('section');
+        const workers = namedWorkers(department);
+        const activeCount = workers.filter((worker) => {
+            const days = daysFor(worker, weekKey);
+            return WEEKDAYS.some((key) => (days[key] || 0) > 0);
+        }).length;
+        workerCol.appendChild(sectionHeading('Työntekijät', activeCount ? String(activeCount) : ''));
+        if (!workers.length) {
+            workerCol.appendChild(emptyNote('Ei aktiivisia työntekijöitä.'));
+        } else {
+            const list = document.createElement('div');
+            list.className = 'kk-list';
+            workers.forEach((worker) => {
+                const days = daysFor(worker, weekKey);
+                const total = WEEKDAYS.reduce((sum, key) => sum + (days[key] || 0), 0);
+                list.appendChild(listRow(String(worker.name || '').trim(), formatSum(total), false));
+            });
+            workerCol.appendChild(list);
+        }
+        const gap = hoursToAdd(minutes, hours);
+        if (gap > 0) workerCol.appendChild(gapNote(gap));
+
+        const productCol = document.createElement('section');
+        productCol.appendChild(sectionHeading('Tuotteet', items.length ? items.length + ' kpl' : ''));
+        if (!items.length) {
+            productCol.appendChild(emptyNote('Ei tuotteita tälle viikolle.'));
+        } else {
+            const groups = new Map();
+            items.forEach((item) => {
+                if (!groups.has(item.jobNumber)) groups.set(item.jobNumber, []);
+                groups.get(item.jobNumber).push(item);
+            });
+            [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
+                const jobItems = groups.get(jobNumber);
+                const jobMinutes = sumMinutes(jobItems);
+                const job = document.createElement('div');
+                job.className = 'kk-job';
+                const jobHead = document.createElement('div');
+                jobHead.className = 'kk-job-head';
+                const jobName = document.createElement('span');
+                jobName.textContent = 'Työ ' + jobNumber;
+                const jobLoad = document.createElement('span');
+                jobLoad.textContent = formatLoadMinutes(jobMinutes);
+                jobHead.append(jobName, jobLoad);
+                job.appendChild(jobHead);
+                jobItems
+                    .slice()
+                    .sort((a, b) => a.itemName.localeCompare(b.itemName, 'fi', { numeric: true }))
+                    .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes), item.done)));
+                productCol.appendChild(job);
+            });
+        }
+
+        columns.append(workerCol, productCol);
+        body.append(stats, columns);
+        sheet.append(head, body);
+        screen.appendChild(sheet);
+        setTimeout(() => sheet.focus(), 0);
+        return screen;
+    }
+
     function statCard(label, value, extraClass, key) {
         const card = document.createElement('div');
         card.className = 'kk-stat';
@@ -984,7 +1321,7 @@
         return 'ERÄ ' + (max + 1);
     }
 
-    function moveReviewedItems(items, isoDate) {
+    function moveReviewedItems(items, isoDate, options) {
         const shipDate = typeof normalizeShipDate === 'function' ? (normalizeShipDate(isoDate) || isoDate) : isoDate;
         if (!shipDate || !items || !items.length) return;
         const groups = new Map();
@@ -1015,6 +1352,24 @@
         groups.forEach((names, jobNumber) => {
             if (typeof persistMitatBlockState === 'function') persistMitatBlockState(jobNumber);
         });
+        if (options && options.silent) return;
+        reviewSelection.clear();
+        if (typeof loadMittatView === 'function') loadMittatView();
+        paintWeekGrid();
+        if (typeof showToast === 'function') showToast('Tuotteet siirretty', 'success');
+    }
+
+    function moveItemsKeepingWeekday(items, targetMonday) {
+        const groups = new Map();
+        (items || []).forEach((item) => {
+            const offset = Number.isInteger(item.dayIndex) ? item.dayIndex : null;
+            if (offset === null || offset < 0 || offset > 6) return;
+            const target = isoFromDate(addDays(targetMonday, offset));
+            if (!groups.has(target)) groups.set(target, []);
+            groups.get(target).push(item);
+        });
+        if (!groups.size) return;
+        groups.forEach((group, isoDate) => moveReviewedItems(group, isoDate, { silent: true }));
         reviewSelection.clear();
         if (typeof loadMittatView === 'function') loadMittatView();
         paintWeekGrid();
@@ -1067,12 +1422,12 @@
         return details;
     }
 
-    function renderReviewProducts(department, day) {
+    function renderReviewProducts(department, day, presetItems) {
         const host = document.createElement('div');
         host.className = 'kk-move-products';
-        const items = productionDayItems(department, day.date);
+        const items = Array.isArray(presetItems) ? presetItems : productionDayItems(department, day.date);
         if (!items.length) {
-            host.appendChild(emptyNote('Ei tuotteita tälle päivälle.'));
+            host.appendChild(emptyNote(Array.isArray(presetItems) ? 'Ei tuotteita tälle viikolle.' : 'Ei tuotteita tälle päivälle.'));
             return host;
         }
         const mittatData = readStorageMap('mittatData');
@@ -1221,7 +1576,8 @@
         days.forEach((source, sourceIndex) => {
             if (source.past || source.overload <= 0) return;
             let remaining = source.overload;
-            for (let targetIndex = sourceIndex + 1; targetIndex < days.length && remaining > 0; targetIndex += 1) {
+            for (let targetIndex = 0; targetIndex < days.length && remaining > 0; targetIndex += 1) {
+                if (targetIndex === sourceIndex) continue;
                 const target = days[targetIndex];
                 if (target.past || target.spare <= 0) continue;
                 const picked = [];
@@ -1255,6 +1611,75 @@
             }
         });
         return { days: days, suggestions: suggestions };
+    }
+
+    function suggestSpanMoves(department, startMonday) {
+        const weeks = spanMondays(startMonday).map((monday, index) => {
+            const weekKey = weekKeyFromMonday(monday);
+            const parsed = parseIsoWeekKey(weekKey);
+            const hours = departmentHoursForWeek(department, weekKey);
+            const allItems = productionWeekItems(department, monday);
+            const minutes = sumMinutes(allItems);
+            const capacityMinutes = Math.round(hours * 60);
+            const load = typeof minutes === 'number' ? minutes : 0;
+            const products = allItems
+                .filter((item) => !item.done && typeof item.minutes === 'number' && item.minutes > 0)
+                .slice()
+                .sort((a, b) => b.minutes - a.minutes || a.itemName.localeCompare(b.itemName, 'fi'));
+            return {
+                index: index,
+                monday: monday,
+                weekKey: weekKey,
+                weekNumber: parsed ? parsed.week : index + 1,
+                name: 'Viikko ' + (parsed ? parsed.week : ''),
+                hours: hours,
+                minutes: minutes,
+                spare: capacityMinutes - load,
+                overload: load - capacityMinutes,
+                past: weekIsPast(monday),
+                allItems: allItems,
+                products: products
+            };
+        });
+        const suggestions = [];
+        const used = new Set();
+        weeks.forEach((source, sourceIndex) => {
+            if (source.past || source.overload <= 0) return;
+            let remaining = source.overload;
+            for (let targetIndex = 0; targetIndex < weeks.length && remaining > 0; targetIndex += 1) {
+                if (targetIndex === sourceIndex) continue;
+                const target = weeks[targetIndex];
+                if (target.past || target.spare <= 0) continue;
+                const picked = [];
+                let taken = 0;
+                source.products.forEach((item) => {
+                    const key = item.jobNumber + '|' + item.itemName;
+                    if (used.has(key) || taken >= remaining) return;
+                    if (item.minutes > target.spare - taken) return;
+                    picked.push(item);
+                    taken += item.minutes;
+                });
+                if (!picked.length) continue;
+                picked.forEach((item) => used.add(item.jobNumber + '|' + item.itemName));
+                target.spare -= taken;
+                remaining -= taken;
+                const byJob = new Map();
+                picked.forEach((item) => {
+                    if (!byJob.has(item.jobNumber)) byJob.set(item.jobNumber, []);
+                    byJob.get(item.jobNumber).push(item);
+                });
+                byJob.forEach((jobItems, jobNumber) => {
+                    suggestions.push({
+                        sourceWeek: source.weekNumber,
+                        targetWeek: target.weekNumber,
+                        targetMonday: target.monday,
+                        jobNumber: jobNumber,
+                        items: jobItems
+                    });
+                });
+            }
+        });
+        return { days: weeks, suggestions: suggestions };
     }
 
     function buildDeptReviewBody(department, review) {
@@ -1333,13 +1758,97 @@
         return body;
     }
 
+    function buildSpanReviewBody(department, review) {
+        const body = document.createElement('div');
+        body.className = 'kk-day-body';
+        const days = document.createElement('div');
+        days.className = 'kk-move-days';
+        review.days.forEach((week) => {
+            const slot = document.createElement('div');
+            slot.className = 'kk-move-slot';
+            const field = document.createElement('div');
+            field.className = 'kk-move-field';
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'kk-move-day' + (reviewDayIndex === week.index ? ' is-open' : '');
+            const name = document.createElement('span');
+            name.textContent = week.name;
+            const value = document.createElement('span');
+            value.textContent = formatLoadMinutes(week.minutes) + ' / ' + formatSum(week.hours);
+            if (!week.past && week.overload > 0) value.classList.add('is-over');
+            row.append(name, value);
+            row.addEventListener('click', () => {
+                reviewSelection.clear();
+                reviewDayIndex = reviewDayIndex === week.index ? null : week.index;
+                refreshDeptReview();
+            });
+            const moveHere = document.createElement('button');
+            moveHere.type = 'button';
+            moveHere.className = 'kk-day-save kk-move-here';
+            moveHere.textContent = 'Siirrä tähän';
+            moveHere.dataset.kkDay = String(week.index);
+            moveHere.hidden = reviewSelection.size === 0 || reviewDayIndex === week.index;
+            moveHere.addEventListener('click', () => {
+                if (reviewDayIndex === null || reviewDayIndex === week.index) return;
+                const source = review.days[reviewDayIndex];
+                if (!source) return;
+                const chosen = source.allItems.filter((item) => reviewSelection.has(reviewItemKey(item)));
+                moveItemsKeepingWeekday(chosen, week.monday);
+            });
+            field.append(row, moveHere);
+            slot.appendChild(field);
+            if (reviewDayIndex === week.index) slot.appendChild(renderReviewProducts(department, null, sourceItems(review, week.index)));
+            days.appendChild(slot);
+        });
+        body.appendChild(days);
+
+        if (!review.suggestions.length) {
+            body.appendChild(emptyNote('Ei siirtoehdotuksia näille viikoille.'));
+        } else {
+            review.suggestions.forEach((suggestion) => {
+                const block = document.createElement('section');
+                block.className = 'kk-move';
+                const headRow = document.createElement('div');
+                headRow.className = 'kk-move-head';
+                const lead = document.createElement('p');
+                lead.className = 'kk-move-lead';
+                lead.textContent = 'Esimerkiksi siirrä nämä tuotteet viikolta ' + suggestion.sourceWeek + ' viikolle ' + suggestion.targetWeek + '. Työ ' + suggestion.jobNumber + '.';
+                const apply = document.createElement('button');
+                apply.type = 'button';
+                apply.className = 'kk-day-save kk-move-apply';
+                apply.textContent = 'Siirrä viikolle ' + suggestion.targetWeek;
+                apply.addEventListener('click', () => moveItemsKeepingWeekday(suggestion.items, suggestion.targetMonday));
+                headRow.append(lead, apply);
+                const list = document.createElement('ul');
+                list.className = 'kk-move-items';
+                suggestion.items.forEach((item) => {
+                    const line = document.createElement('li');
+                    line.textContent = item.itemName;
+                    list.appendChild(line);
+                });
+                block.append(headRow, list);
+                body.appendChild(block);
+            });
+        }
+        return body;
+    }
+
+    function sourceItems(review, index) {
+        const week = review.days[index];
+        return week && week.allItems ? week.allItems : [];
+    }
+
     function refreshDeptReview() {
         const sheet = document.querySelector('#kkDayScreen .kk-day-sheet');
         if (!sheet || !openDayKey || openDayKey.indexOf('dept|') !== 0) return;
         const department = openDayKey.slice(5);
         if (!DEPARTMENT_LABELS[department]) return;
         const scroll = sheet.scrollTop;
-        const body = buildDeptReviewBody(department, suggestWeekMoves(department, viewedMonday()));
+        const monday = viewedMonday();
+        const body = withProductionSnapshot(() => {
+            const review = expandedWeeks ? suggestSpanMoves(department, monday) : suggestWeekMoves(department, monday);
+            return expandedWeeks ? buildSpanReviewBody(department, review) : buildDeptReviewBody(department, review);
+        });
         const current = sheet.querySelector('.kk-day-body');
         if (current) current.replaceWith(body);
         else sheet.appendChild(body);
@@ -1347,7 +1856,7 @@
     }
 
     function renderDeptWeekScreen(department, monday) {
-        const review = suggestWeekMoves(department, monday);
+        const review = expandedWeeks ? suggestSpanMoves(department, monday) : suggestWeekMoves(department, monday);
         const parsedWeek = parseIsoWeekKey(activeWeekKey());
         const screen = document.createElement('div');
         screen.id = 'kkDayScreen';
@@ -1377,7 +1886,9 @@
         const title = document.createElement('h3');
         title.id = 'kkDayTitle';
         title.className = 'kk-day-title';
-        title.textContent = parsedWeek ? 'Viikko ' + parsedWeek.week : 'Viikko';
+        title.textContent = expandedWeeks
+            ? spanRangeLabel(monday)
+            : (parsedWeek ? 'Viikko ' + parsedWeek.week : 'Viikko');
         titles.append(eyebrow, title);
         const close = document.createElement('button');
         close.type = 'button';
@@ -1386,7 +1897,7 @@
         close.addEventListener('click', closeDayScreen);
         head.append(titles, close);
 
-        const body = buildDeptReviewBody(department, review);
+        const body = expandedWeeks ? buildSpanReviewBody(department, review) : buildDeptReviewBody(department, review);
         sheet.append(head, body);
         screen.appendChild(sheet);
         if (reviewDayIndex === null) setTimeout(() => sheet.focus(), 0);

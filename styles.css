@@ -4305,7 +4305,29 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
 }
 
 .kk-week-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     margin-bottom: 18px;
+}
+
+.kk-span-toggle {
+    margin-left: 4px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.85rem;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.kk-span-toggle.is-active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--bg-secondary);
 }
 
 #kkWeekGrid[hidden],
@@ -4326,6 +4348,11 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     grid-template-columns: 172px repeat(7, minmax(168px, 1fr));
     min-width: 1350px;
     font-variant-numeric: tabular-nums;
+}
+
+.kk-timetable.is-span {
+    grid-template-columns: 172px repeat(5, minmax(168px, 1fr));
+    min-width: 1100px;
 }
 
 .kk-corner,
@@ -4413,6 +4440,10 @@ button.kk-dept-label.is-open {
     border-top: 0;
 }
 
+.kk-timetable.is-span > .kk-dept-label:nth-child(7) {
+    border-top: 0;
+}
+
 .kk-dept-name {
     font-size: 0.95rem;
     font-weight: 700;
@@ -4444,6 +4475,14 @@ button.kk-dept-label.is-open {
 }
 
 .kk-timetable > .kk-day:nth-child(-n + 16) {
+    border-top: 0;
+}
+
+.kk-timetable.is-span > .kk-day:nth-child(-n + 16) {
+    border-top: 1px solid var(--border-color);
+}
+
+.kk-timetable.is-span > .kk-day:nth-child(-n + 12) {
     border-top: 0;
 }
 
