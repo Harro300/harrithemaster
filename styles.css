@@ -4030,6 +4030,23 @@ body.dark-mode .scan-pdf-preview-canvas {
     margin-top: 28px;
 }
 
+.kk-siirtyma {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 0 0 14px;
+}
+
+.kk-siirtyma .kk-note {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+.kk-siirtyma-input {
+    width: 6.5rem;
+}
+
 .kk-settings-layer {
     position: fixed;
     inset: 0;
@@ -4529,6 +4546,61 @@ button.kk-dept-label.is-open {
 .kk-day-amount.is-empty {
     color: var(--text-muted);
     font-weight: 500;
+}
+
+.kk-day-line.is-load {
+    white-space: normal;
+    flex-wrap: wrap;
+}
+
+.kk-load-part.is-ready {
+    color: #15803d;
+}
+
+.kk-load-part.is-next {
+    color: #a16207;
+}
+
+.kk-load-part.is-total,
+.kk-load-part.is-join {
+    color: var(--text-primary);
+}
+
+.kk-load-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.kk-load-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.kk-load-line.is-ready {
+    color: #15803d;
+}
+
+.kk-load-line.is-next {
+    color: #a16207;
+}
+
+.kk-load-line.is-total {
+    color: var(--text-primary);
+}
+
+body.dark-mode .kk-load-part.is-ready,
+body.dark-mode .kk-load-line.is-ready {
+    color: #4ade80;
+}
+
+body.dark-mode .kk-load-part.is-next,
+body.dark-mode .kk-load-line.is-next {
+    color: #fbbf24;
 }
 
 .kk-day-ratio {

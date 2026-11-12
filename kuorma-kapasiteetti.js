@@ -3,6 +3,12 @@
     const DEFAULT_HOURS = 6.5;
     const DEFAULT_DOC = 'kokoonpano-kapasiteetti';
     const DEPARTMENTS = ['saha', 'hitsaus', 'maalaus', 'kokoonpano'];
+    const PREVIOUS_DEPARTMENT = {
+        hitsaus: 'saha',
+        maalaus: 'hitsaus',
+        kokoonpano: 'maalaus'
+    };
+    const SIIRTYMA_DEPARTMENTS = ['saha', 'hitsaus', 'maalaus'];
     const DEPARTMENT_LABELS = {
         saha: 'Saha',
         hitsaus: 'Hitsaus',
@@ -73,9 +79,10 @@
             enabled: false,
             selectedDoc: DEFAULT_DOC,
             kapasiteetti,
-            kuorma: { kokoonpano: defaultKokoonpanoTimes() },
+            kuorma: defaultDepartmentKuorma(),
             kuormaSets: {},
-            activeKuormaSet: ''
+            activeKuormaSet: '',
+            siirtymaAika: defaultSiirtymaAika()
         };
     }
 
@@ -114,6 +121,58 @@
         return normalizeKokoonpanoTimes(source);
     }
 
+    function defaultSiirtymaAika() {
+        return { saha: 1, hitsaus: 1, maalaus: 1 };
+    }
+
+    function clampSiirtyma(value) {
+        if (value === '' || value == null) return 1;
+        const raw = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+        if (!Number.isFinite(raw)) return 1;
+        return Math.min(30, Math.max(0, Math.round(raw)));
+    }
+
+    function normalizeSiirtymaAika(source) {
+        const next = defaultSiirtymaAika();
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return next;
+        SIIRTYMA_DEPARTMENTS.forEach((department) => {
+            if (!Object.prototype.hasOwnProperty.call(source, department)) return;
+            next[department] = clampSiirtyma(source[department]);
+        });
+        return next;
+    }
+
+    function kuormaSetIsLegacy(source) {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return false;
+        if (source.kokoonpano && typeof source.kokoonpano === 'object') return false;
+        return PRODUCTS.some((product) => source[product.id] && typeof source[product.id] === 'object');
+    }
+
+    function defaultDepartmentKuorma() {
+        const kuorma = {};
+        DEPARTMENTS.forEach((department) => {
+            kuorma[department] = defaultKokoonpanoTimes();
+        });
+        return kuorma;
+    }
+
+    function normalizeDepartmentKuorma(source) {
+        const kuorma = defaultDepartmentKuorma();
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return kuorma;
+        if (kuormaSetIsLegacy(source)) {
+            kuorma.kokoonpano = normalizeKokoonpanoTimes(source);
+            return kuorma;
+        }
+        DEPARTMENTS.forEach((department) => {
+            kuorma[department] = normalizeKokoonpanoTimes(source[department]);
+        });
+        return kuorma;
+    }
+
+    function cloneDepartmentKuorma(source) {
+        return normalizeDepartmentKuorma(source);
+    }
+
     function clampMinutes(value) {
         if (value === '' || value == null) return null;
         const raw = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
@@ -147,21 +206,22 @@
                 absence: normalizeAbsence(worker)
             }));
         });
-        next.kuorma.kokoonpano = normalizeKokoonpanoTimes(parsed.kuorma && parsed.kuorma.kokoonpano);
+        next.kuorma = normalizeDepartmentKuorma(parsed.kuorma);
+        next.siirtymaAika = normalizeSiirtymaAika(parsed.siirtymaAika);
         const sets = {};
         const rawSets = parsed.kuormaSets;
         if (rawSets && typeof rawSets === 'object' && !Array.isArray(rawSets)) {
             Object.keys(rawSets).forEach((name) => {
                 const trimmed = String(name || '').trim();
                 if (!trimmed || trimmed.length > 80) return;
-                sets[trimmed] = normalizeKokoonpanoTimes(rawSets[name]);
+                sets[trimmed] = normalizeDepartmentKuorma(rawSets[name]);
             });
         }
         next.kuormaSets = sets;
         const active = typeof parsed.activeKuormaSet === 'string' ? parsed.activeKuormaSet.trim() : '';
         next.activeKuormaSet = sets[active] ? active : '';
         if (next.activeKuormaSet) {
-            next.kuorma.kokoonpano = cloneKokoonpanoTimes(sets[next.activeKuormaSet]);
+            next.kuorma = cloneDepartmentKuorma(sets[next.activeKuormaSet]);
         }
         return next;
     }
@@ -173,7 +233,8 @@
             kapasiteetti: next.kapasiteetti,
             kuorma: next.kuorma,
             kuormaSets: next.kuormaSets || {},
-            activeKuormaSet: next.activeKuormaSet || ''
+            activeKuormaSet: next.activeKuormaSet || '',
+            siirtymaAika: next.siirtymaAika || defaultSiirtymaAika()
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     }
@@ -183,16 +244,10 @@
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return defaultState();
             const parsed = JSON.parse(raw);
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                const fresh = defaultState();
-                persist(fresh);
-                return fresh;
-            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaultState();
             return normalize(parsed);
         } catch (error) {
-            const fresh = defaultState();
-            try { persist(fresh); } catch (writeError) { /* storage may be blocked */ }
-            return fresh;
+            return defaultState();
         }
     }
 
@@ -401,7 +456,9 @@
             const heading = document.createElement('h3');
             heading.className = 'kk-capacity-heading';
             heading.textContent = DEPARTMENT_LABELS[department];
-            block.append(heading, renderLoad(department));
+            block.appendChild(heading);
+            if (department !== 'kokoonpano') block.appendChild(renderSiirtymaField(department));
+            block.appendChild(renderLoad(department));
             body.appendChild(block);
         });
     }
@@ -573,6 +630,60 @@
         return next;
     }
 
+    function dateFromIso(iso) {
+        const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const date = new Date(year, month - 1, day);
+        if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+        return date;
+    }
+
+    function isWorkday(date) {
+        const day = date.getDay();
+        return day !== 0 && day !== 6;
+    }
+
+    function shiftWorkdays(date, count) {
+        const next = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const step = count < 0 ? -1 : 1;
+        let left = Math.abs(count);
+        let guard = 0;
+        while (left > 0 && guard < 400) {
+            next.setDate(next.getDate() + step);
+            guard += 1;
+            if (isWorkday(next)) left -= 1;
+        }
+        return next;
+    }
+
+    function departmentLeadDays() {
+        const maalaus = transitionDays('maalaus');
+        const hitsaus = transitionDays('hitsaus');
+        const saha = transitionDays('saha');
+        return {
+            saha: maalaus + hitsaus + saha,
+            hitsaus: maalaus + hitsaus,
+            maalaus: maalaus,
+            kokoonpano: 0
+        };
+    }
+
+    function departmentDayIso(shipIso, lead) {
+        const ship = dateFromIso(shipIso);
+        if (!ship || !lead) return shipIso;
+        return isoFromDate(shiftWorkdays(ship, -lead));
+    }
+
+    function shipIsoForDepartmentDay(department, dayIso) {
+        const day = dateFromIso(dayIso);
+        const lead = departmentLeadDays()[department] || 0;
+        if (!day || !lead) return dayIso;
+        return isoFromDate(shiftWorkdays(day, lead));
+    }
+
     function activeWeekKey() {
         if (selectedWeekKey) return selectedWeekKey;
         return currentIsoWeekKey();
@@ -702,11 +813,17 @@
     function buildProductionSnapshot() {
         const mittatData = readStorageMap('mittatData');
         const packed = readStorageMap('packedMitat');
-        const done = readStorageMap('doneMitat');
+        const departmentDone = {
+            saha: readStorageMap('checkedSahattu'),
+            hitsaus: readStorageMap('checkedHitsattu'),
+            maalaus: readStorageMap('checkedMaalattu'),
+            kokoonpano: readStorageMap('doneMitat')
+        };
         const jobShipDates = readStorageMap('jobShipDates');
         const jobBlocks = readStorageMap('jobBlocks');
         const itemBlocks = readStorageMap('itemBlocks');
         const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
+        const leadDays = departmentLeadDays();
         const byKey = new Map();
         jobs.forEach((jobNumber) => {
             const items = mittatData[jobNumber];
@@ -715,23 +832,27 @@
             if (!names.length || jobIsFullyPackedFromMaps(mittatData, packed, jobNumber)) return;
             names.forEach((itemName) => {
                 if (packed[jobNumber + '-' + itemName]) return;
-                const day = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
-                if (!day) return;
-                const doneFlag = !!done[jobNumber + '-' + itemName];
+                const shipDay = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
+                if (!shipDay) return;
+                const checkKey = jobNumber + '-' + itemName;
                 const jobKey = String(jobNumber);
                 DEPARTMENTS.forEach((department) => {
                     const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
-                    const key = department + '|' + day;
+                    const key = department + '|' + departmentDayIso(shipDay, leadDays[department] || 0);
                     let list = byKey.get(key);
                     if (!list) {
                         list = [];
                         byKey.set(key, list);
                     }
+                    const ownDone = !!(departmentDone[department] && departmentDone[department][checkKey]);
+                    const previous = PREVIOUS_DEPARTMENT[department] || '';
+                    const previousDone = !previous || !!(departmentDone[previous] && departmentDone[previous][checkKey]);
                     list.push({
                         jobNumber: jobKey,
                         itemName: String(itemName),
                         minutes: typeof amount === 'number' ? amount : null,
-                        done: doneFlag
+                        done: ownDone,
+                        ready: !ownDone && previousDone
                     });
                 });
             });
@@ -758,12 +879,52 @@
     }
 
     function productionLoadMinutes(department, date) {
-        const known = productionDayItems(department, date)
-            .filter((item) => !item.done)
-            .map((item) => item.minutes)
-            .filter((minutes) => typeof minutes === 'number');
-        if (!known.length) return null;
-        return known.reduce((sum, minutes) => sum + minutes, 0);
+        return splitLoadMinutes(productionDayItems(department, date)).total;
+    }
+
+    function splitLoadMinutes(items) {
+        const known = (items || []).filter((item) => !item.done && typeof item.minutes === 'number');
+        if (!known.length) return { ready: null, upcoming: null, total: null };
+        const sum = (list) => list.reduce((total, item) => total + item.minutes, 0);
+        const ready = sum(known.filter((item) => item.ready));
+        const upcoming = sum(known.filter((item) => !item.ready));
+        return { ready: ready, upcoming: upcoming, total: ready + upcoming };
+    }
+
+    function loadPart(text, kind) {
+        const part = document.createElement('span');
+        part.className = 'kk-load-part ' + kind;
+        part.textContent = text;
+        return part;
+    }
+
+    function loadEquation(split) {
+        const line = document.createElement('div');
+        line.className = 'kk-day-line is-load';
+        const label = document.createElement('span');
+        label.className = 'kk-day-kicker';
+        label.textContent = 'Kuorma';
+        const value = document.createElement('span');
+        value.className = 'kk-day-amount';
+        if (split.total == null) {
+            value.classList.add('is-empty');
+            value.textContent = '—';
+        } else {
+            value.append(
+                loadPart(formatLoadMinutes(split.ready), 'is-ready'),
+                loadPart(' + ', 'is-join'),
+                loadPart(formatLoadMinutes(split.upcoming), 'is-next'),
+                loadPart(' = ', 'is-join'),
+                loadPart(formatLoadMinutes(split.total), 'is-total')
+            );
+        }
+        line.append(label, value);
+        return line;
+    }
+
+    function loadSentence(split) {
+        if (split.total == null) return 'Kuormaa ei ole.';
+        return 'Tehtävissä ' + formatLoadMinutes(split.ready) + ', tuleva ' + formatLoadMinutes(split.upcoming) + ', yhteensä ' + formatLoadMinutes(split.total) + '.';
     }
 
     function formatLoadMinutes(minutes) {
@@ -965,7 +1126,8 @@
             for (let index = 0; index < 7; index += 1) {
                 const date = addDays(monday, index);
                 const hours = departmentDayHours(department, WEEKDAYS[index]);
-                const minutes = productionLoadMinutes(department, date);
+                const split = splitLoadMinutes(productionDayItems(department, date));
+                const minutes = split.total;
                 const ratio = loadRatio(minutes, hours);
                 weekHours += hours;
                 if (typeof minutes === 'number') {
@@ -973,7 +1135,6 @@
                     weekHasLoad = true;
                 }
                 const hoursText = formatSum(hours);
-                const loadText = formatLoadMinutes(minutes);
                 const dayKey = department + '|' + isoFromDate(date);
 
                 const cell = document.createElement('button');
@@ -982,16 +1143,15 @@
                     + (index >= 5 ? ' is-weekend' : '')
                     + (sameDay(date, today) ? ' is-today' : '')
                     + (openDayKey === dayKey ? ' is-open' : '');
-                const loadLabel = typeof minutes === 'number' ? ('Kuorma ' + loadText + '.') : 'Kuormaa ei ole.';
                 cell.setAttribute('aria-haspopup', 'dialog');
-                cell.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', ' + WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. ' + loadLabel);
+                cell.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', ' + WEEKDAY_NAMES[index] + ' ' + formatDayMonth(date) + '. Kapasiteetti ' + hoursText + '. ' + loadSentence(split));
                 cell.addEventListener('click', () => {
                     openDayKey = dayKey;
                     paintWeekGrid();
                 });
 
                 cell.append(
-                    dayFact('Kuorma', loadText, typeof minutes === 'number' ? '' : 'is-empty'),
+                    loadEquation(split),
                     dayFact('Kapasiteetti', hoursText, '')
                 );
                 if (ratio !== null) {
@@ -1250,6 +1410,72 @@
         return card;
     }
 
+    function loadStatCard(split) {
+        const card = document.createElement('div');
+        card.className = 'kk-stat';
+        const name = document.createElement('div');
+        name.className = 'kk-stat-label';
+        name.textContent = 'Kuorma';
+        const amount = document.createElement('div');
+        amount.className = 'kk-load-lines';
+        if (split.total == null) {
+            const empty = document.createElement('div');
+            empty.className = 'kk-stat-value is-empty';
+            empty.textContent = '—';
+            amount.appendChild(empty);
+        } else {
+            [
+                ['Tehtävissä', split.ready, 'is-ready'],
+                ['Tuleva', split.upcoming, 'is-next'],
+                ['Yhteensä', split.total, 'is-total']
+            ].forEach((entry) => {
+                const row = document.createElement('div');
+                row.className = 'kk-load-line ' + entry[2];
+                const word = document.createElement('span');
+                word.textContent = entry[0];
+                const value = document.createElement('span');
+                value.textContent = formatLoadMinutes(entry[1]);
+                row.append(word, value);
+                amount.appendChild(row);
+            });
+        }
+        card.append(name, amount);
+        return card;
+    }
+
+    function appendProductSection(host, title, items, emptyText) {
+        host.appendChild(sectionHeading(title, items.length ? items.length + ' kpl' : ''));
+        if (!items.length) {
+            if (emptyText) host.appendChild(emptyNote(emptyText));
+            return;
+        }
+        const groups = new Map();
+        items.forEach((item) => {
+            if (!groups.has(item.jobNumber)) groups.set(item.jobNumber, []);
+            groups.get(item.jobNumber).push(item);
+        });
+        [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
+            const jobItems = groups.get(jobNumber);
+            const known = jobItems.filter((item) => !item.done).map((item) => item.minutes).filter((value) => typeof value === 'number');
+            const jobMinutes = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+            const job = document.createElement('div');
+            job.className = 'kk-job';
+            const jobHead = document.createElement('div');
+            jobHead.className = 'kk-job-head';
+            const jobName = document.createElement('span');
+            jobName.textContent = 'Työ ' + jobNumber;
+            const jobLoad = document.createElement('span');
+            jobLoad.textContent = formatLoadMinutes(jobMinutes);
+            jobHead.append(jobName, jobLoad);
+            job.appendChild(jobHead);
+            jobItems
+                .slice()
+                .sort((a, b) => a.itemName.localeCompare(b.itemName, 'fi', { numeric: true }))
+                .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes), item.done)));
+            host.appendChild(job);
+        });
+    }
+
     function sectionHeading(label, meta) {
         const heading = document.createElement('div');
         heading.className = 'kk-day-section';
@@ -1322,7 +1548,9 @@
     }
 
     function moveReviewedItems(items, isoDate, options) {
-        const shipDate = typeof normalizeShipDate === 'function' ? (normalizeShipDate(isoDate) || isoDate) : isoDate;
+        const department = options && options.department;
+        const sourceIso = department ? shipIsoForDepartmentDay(department, isoDate) : isoDate;
+        const shipDate = typeof normalizeShipDate === 'function' ? (normalizeShipDate(sourceIso) || sourceIso) : sourceIso;
         if (!shipDate || !items || !items.length) return;
         const groups = new Map();
         items.forEach((item) => {
@@ -1359,7 +1587,7 @@
         if (typeof showToast === 'function') showToast('Tuotteet siirretty', 'success');
     }
 
-    function moveItemsKeepingWeekday(items, targetMonday) {
+    function moveItemsKeepingWeekday(items, targetMonday, department) {
         const groups = new Map();
         (items || []).forEach((item) => {
             const offset = Number.isInteger(item.dayIndex) ? item.dayIndex : null;
@@ -1369,7 +1597,7 @@
             groups.get(target).push(item);
         });
         if (!groups.size) return;
-        groups.forEach((group, isoDate) => moveReviewedItems(group, isoDate, { silent: true }));
+        groups.forEach((group, isoDate) => moveReviewedItems(group, isoDate, { silent: true, department: department }));
         reviewSelection.clear();
         if (typeof loadMittatView === 'function') loadMittatView();
         paintWeekGrid();
@@ -1718,7 +1946,7 @@
                 if (!source) return;
                 const chosen = productionDayItems(department, source.date)
                     .filter((item) => reviewSelection.has(reviewItemKey(item)));
-                moveReviewedItems(chosen, isoFromDate(day.date));
+                moveReviewedItems(chosen, isoFromDate(day.date), { department: department });
             });
             field.append(row, moveHere);
             slot.appendChild(field);
@@ -1742,7 +1970,7 @@
                 apply.type = 'button';
                 apply.className = 'kk-day-save kk-move-apply';
                 apply.textContent = 'Siirrä ' + dayAllative(suggestion.dayName);
-                apply.addEventListener('click', () => moveReviewedItems(suggestion.items, isoFromDate(suggestion.targetDate)));
+                apply.addEventListener('click', () => moveReviewedItems(suggestion.items, isoFromDate(suggestion.targetDate), { department: department }));
                 headRow.append(lead, apply);
                 const list = document.createElement('ul');
                 list.className = 'kk-move-items';
@@ -1793,7 +2021,7 @@
                 const source = review.days[reviewDayIndex];
                 if (!source) return;
                 const chosen = source.allItems.filter((item) => reviewSelection.has(reviewItemKey(item)));
-                moveItemsKeepingWeekday(chosen, week.monday);
+                moveItemsKeepingWeekday(chosen, week.monday, department);
             });
             field.append(row, moveHere);
             slot.appendChild(field);
@@ -1817,7 +2045,7 @@
                 apply.type = 'button';
                 apply.className = 'kk-day-save kk-move-apply';
                 apply.textContent = 'Siirrä viikolle ' + suggestion.targetWeek;
-                apply.addEventListener('click', () => moveItemsKeepingWeekday(suggestion.items, suggestion.targetMonday));
+                apply.addEventListener('click', () => moveItemsKeepingWeekday(suggestion.items, suggestion.targetMonday, department));
                 headRow.append(lead, apply);
                 const list = document.createElement('ul');
                 list.className = 'kk-move-items';
@@ -1908,7 +2136,9 @@
         const dayIndex = weekdayIndex(date);
         const dayKey = WEEKDAYS[dayIndex];
         const hours = departmentDayHours(department, dayKey);
-        const minutes = productionLoadMinutes(department, date);
+        const items = productionDayItems(department, date);
+        const split = splitLoadMinutes(items);
+        const minutes = split.total;
         const ratio = loadRatio(minutes, hours);
 
         const screen = document.createElement('div');
@@ -1956,7 +2186,7 @@
         stats.className = 'kk-day-stats';
         const over = ratio !== null && ratio > 1;
         stats.append(
-            statCard('Kuorma', formatLoadMinutes(minutes)),
+            loadStatCard(split),
             statCard('Kapasiteetti', formatSum(hours), '', 'kapasiteetti'),
             statCard('Käyttöaste', ratio === null ? '—' : formatRatio(ratio), over ? 'is-over' : '', 'kayttoaste')
         );
@@ -1992,36 +2222,16 @@
         workerCol.appendChild(gapHost);
 
         const productCol = document.createElement('section');
-        const items = productionDayItems(department, date);
         productCol.appendChild(sectionHeading('Tuotteet', items.length ? items.length + ' kpl' : ''));
         if (!items.length) {
             productCol.appendChild(emptyNote('Ei tuotteita tälle päivälle.'));
         } else {
-            const groups = new Map();
-            items.forEach((item) => {
-                if (!groups.has(item.jobNumber)) groups.set(item.jobNumber, []);
-                groups.get(item.jobNumber).push(item);
-            });
-            [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
-                const jobItems = groups.get(jobNumber);
-                const known = jobItems.filter((item) => !item.done).map((item) => item.minutes).filter((value) => typeof value === 'number');
-                const jobMinutes = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
-                const job = document.createElement('div');
-                job.className = 'kk-job';
-                const jobHead = document.createElement('div');
-                jobHead.className = 'kk-job-head';
-                const jobName = document.createElement('span');
-                jobName.textContent = 'Työ ' + jobNumber;
-                const jobLoad = document.createElement('span');
-                jobLoad.textContent = formatLoadMinutes(jobMinutes);
-                jobHead.append(jobName, jobLoad);
-                job.appendChild(jobHead);
-                jobItems
-                    .slice()
-                    .sort((a, b) => a.itemName.localeCompare(b.itemName, 'fi', { numeric: true }))
-                    .forEach((item) => job.appendChild(listRow(item.itemName, formatLoadMinutes(item.minutes), item.done)));
-                productCol.appendChild(job);
-            });
+            const readyItems = items.filter((item) => !item.done && item.ready);
+            const upcomingItems = items.filter((item) => !item.done && !item.ready);
+            const doneItems = items.filter((item) => item.done);
+            appendProductSection(productCol, 'Tehtävissä', readyItems, 'Ei tehtävissä olevaa kuormaa.');
+            appendProductSection(productCol, 'Tuleva', upcomingItems, 'Ei tulevaa kuormaa.');
+            if (doneItems.length) appendProductSection(productCol, 'Tehty', doneItems, '');
         }
 
         columns.append(workerCol, productCol);
@@ -2348,8 +2558,39 @@
         }
     }
 
-    function renderTimeTable(product) {
-        const times = state.kuorma.kokoonpano[product.id];
+    function renderSiirtymaField(department) {
+        const row = document.createElement('div');
+        row.className = 'kk-siirtyma';
+        const label = document.createElement('label');
+        label.htmlFor = 'kkSiirtyma-' + department;
+        label.textContent = 'Siirtymäaika';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.id = 'kkSiirtyma-' + department;
+        input.className = 'form-control form-control-sm kk-siirtyma-input';
+        input.min = '0';
+        input.max = '30';
+        input.step = '1';
+        input.value = String(state.siirtymaAika[department]);
+        input.setAttribute('aria-label', DEPARTMENT_LABELS[department] + ', siirtymäaika, päivinä');
+        const unit = document.createElement('span');
+        unit.className = 'kk-unit';
+        unit.textContent = 'pv';
+        const note = document.createElement('p');
+        note.className = 'kk-note';
+        note.textContent = 'Päiviä ennen seuraavaa osastoa.';
+        input.addEventListener('change', () => {
+            const days = clampSiirtyma(input.value);
+            state.siirtymaAika[department] = days;
+            input.value = String(days);
+            save();
+        });
+        row.append(label, input, unit, note);
+        return row;
+    }
+
+    function renderTimeTable(department, product) {
+        const times = state.kuorma[department][product.id];
         const note = document.createElement('p');
         note.className = 'kk-note';
         note.textContent = product.kind === 'ikkuna'
@@ -2371,6 +2612,7 @@
             input.min = '0';
             input.step = '1';
             input.value = String(times[field.key]);
+            input.dataset.kkDepartment = department;
             input.dataset.kkProduct = product.id;
             input.dataset.kkField = field.key;
             input.dataset.kkDraft = String(times[field.key]);
@@ -2397,15 +2639,17 @@
         return wrap;
     }
 
-    function collectKokoonpanoDraft(root) {
-        const draft = cloneKokoonpanoTimes(state.kuorma.kokoonpano);
+    function collectKuormaDraft(root) {
+        const draft = cloneDepartmentKuorma(state.kuorma);
         root.querySelectorAll('.kk-minutes').forEach((input) => {
+            const department = input.dataset.kkDepartment;
             const productId = input.dataset.kkProduct;
             const field = input.dataset.kkField;
-            if (!draft[productId] || !Object.prototype.hasOwnProperty.call(draft[productId], field)) return;
+            if (!draft[department] || !draft[department][productId]) return;
+            if (!Object.prototype.hasOwnProperty.call(draft[department][productId], field)) return;
             const minutes = clampMinutes(input.value);
             if (minutes === null) return;
-            draft[productId][field] = minutes;
+            draft[department][productId][field] = minutes;
         });
         return draft;
     }
@@ -2448,9 +2692,9 @@
                 input.focus();
                 return;
             }
-            const draft = collectKokoonpanoDraft(root);
+            const draft = collectKuormaDraft(root);
             state.kuormaSets[name] = draft;
-            state.kuorma.kokoonpano = cloneKokoonpanoTimes(draft);
+            state.kuorma = cloneDepartmentKuorma(draft);
             state.activeKuormaSet = name;
             save();
             renderSettings();
@@ -2488,7 +2732,7 @@
         select.addEventListener('change', () => {
             const name = select.value;
             if (!name || !state.kuormaSets[name]) return;
-            state.kuorma.kokoonpano = cloneKokoonpanoTimes(state.kuormaSets[name]);
+            state.kuorma = cloneDepartmentKuorma(state.kuormaSets[name]);
             state.activeKuormaSet = name;
             save();
             renderSettings();
@@ -2520,14 +2764,7 @@
             header.append(label, icon);
             const content = document.createElement('div');
             content.className = 'admin-accordion-content';
-            if (department === 'kokoonpano') {
-                content.appendChild(renderTimeTable(product));
-            } else {
-                const text = document.createElement('p');
-                text.className = 'kk-note mb-0';
-                text.textContent = 'Tekoaikojen säännöt määritellään myöhemmin.';
-                content.appendChild(text);
-            }
+            content.appendChild(renderTimeTable(department, product));
             const toggle = () => {
                 if (typeof toggleAdminAccordion === 'function') toggleAdminAccordion(header);
             };
@@ -2543,11 +2780,11 @@
         return wrap;
     }
 
-    function kokoonpanoMinutesForInputs(inputs) {
+    function departmentMinutesForInputs(department, inputs) {
         if (!inputs || inputs.pystypaneliEnabled) return null;
         const productId = CALCULATOR_PRODUCT_IDS[inputs.calculator];
         const product = PRODUCTS.find((item) => item.id === productId);
-        const times = productId && state.kuorma.kokoonpano[productId];
+        const times = productId && state.kuorma[department] && state.kuorma[department][productId];
         if (!product || !times) return null;
         if (product.kind === 'ovi' && inputs.umpioviEnabled) {
             let total = times.umpiovi || 0;
@@ -2564,14 +2801,21 @@
     }
 
     function loadQuote(parts) {
-        const minutes = (Array.isArray(parts) ? parts : []).map(kokoonpanoMinutesForInputs);
-        const known = minutes.filter((value) => typeof value === 'number');
-        return {
-            saha: null,
-            hitsaus: null,
-            maalaus: null,
-            kokoonpano: known.length ? known.reduce((sum, value) => sum + value, 0) : null
-        };
+        const list = Array.isArray(parts) ? parts : [];
+        const quote = {};
+        DEPARTMENTS.forEach((department) => {
+            const known = list
+                .map((inputs) => departmentMinutesForInputs(department, inputs))
+                .filter((value) => typeof value === 'number');
+            quote[department] = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+        });
+        return quote;
+    }
+
+    function transitionDays(department) {
+        if (!SIIRTYMA_DEPARTMENTS.includes(department)) return 0;
+        const days = state.siirtymaAika && state.siirtymaAika[department];
+        return typeof days === 'number' ? days : 1;
     }
 
     function open() {
@@ -2585,6 +2829,7 @@
         mount,
         unmount,
         loadQuote,
+        transitionDays,
         isShownInProduction: function () { return state.enabled === true; }
     };
 })();

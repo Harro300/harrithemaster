@@ -204,6 +204,9 @@ function getMitatStateFromLocalStorage() {
         checkedMitat: JSON.parse(localStorage.getItem('checkedMitat') || '{}'),
         checkedKulmalistat: JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}'),
         checkedPaneelit: JSON.parse(localStorage.getItem('checkedPaneelit') || '{}'),
+        checkedSahattu: JSON.parse(localStorage.getItem('checkedSahattu') || '{}'),
+        checkedHitsattu: JSON.parse(localStorage.getItem('checkedHitsattu') || '{}'),
+        checkedMaalattu: JSON.parse(localStorage.getItem('checkedMaalattu') || '{}'),
         doneMitat: JSON.parse(localStorage.getItem('doneMitat') || '{}'),
         packedMitat: JSON.parse(localStorage.getItem('packedMitat') || '{}'),
         packedPackageNumbers: JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}'),
@@ -221,6 +224,9 @@ function applyMitatStateToLocalStorage(state) {
     localStorage.setItem('checkedMitat', JSON.stringify(state.checkedMitat || {}));
     localStorage.setItem('checkedKulmalistat', JSON.stringify(state.checkedKulmalistat || {}));
     localStorage.setItem('checkedPaneelit', JSON.stringify(state.checkedPaneelit || {}));
+    localStorage.setItem('checkedSahattu', JSON.stringify(state.checkedSahattu || {}));
+    localStorage.setItem('checkedHitsattu', JSON.stringify(state.checkedHitsattu || {}));
+    localStorage.setItem('checkedMaalattu', JSON.stringify(state.checkedMaalattu || {}));
     localStorage.setItem('doneMitat', JSON.stringify(state.doneMitat || {}));
     localStorage.setItem('packedMitat', JSON.stringify(state.packedMitat || {}));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(state.packedPackageNumbers || {}));
@@ -245,6 +251,9 @@ function emptyMitatState() {
         checkedMitat: {},
         checkedKulmalistat: {},
         checkedPaneelit: {},
+        checkedSahattu: {},
+        checkedHitsattu: {},
+        checkedMaalattu: {},
         doneMitat: {},
         packedMitat: {},
         packedPackageNumbers: {},
@@ -261,6 +270,9 @@ const JOB_ITEM_STATE_MAPS = [
     'checkedMitat',
     'checkedKulmalistat',
     'checkedPaneelit',
+    'checkedSahattu',
+    'checkedHitsattu',
+    'checkedMaalattu',
     'doneMitat',
     'packedMitat',
     'packedPackageNumbers',
@@ -332,6 +344,9 @@ function absorbJobPayload(state, payload) {
     mergePrefixedJobChecks(state.checkedMitat, jobNumber, checks.lasilistat);
     mergePrefixedJobChecks(state.checkedKulmalistat, jobNumber, checks.kulmalistat);
     mergePrefixedJobChecks(state.checkedPaneelit, jobNumber, checks.paneelit);
+    mergePrefixedJobChecks(state.checkedSahattu, jobNumber, checks.sahattu);
+    mergePrefixedJobChecks(state.checkedHitsattu, jobNumber, checks.hitsattu);
+    mergePrefixedJobChecks(state.checkedMaalattu, jobNumber, checks.maalattu);
     mergePrefixedJobChecks(state.doneMitat, jobNumber, checks.done);
     mergePrefixedJobChecks(state.packedMitat, jobNumber, checks.packed);
     mergePrefixedJobChecks(state.packedPackageNumbers, jobNumber, checks.packageNumbers);
@@ -650,6 +665,9 @@ function buildTuotantoJobPayload(jobNumber) {
             lasilistat: mapJobItemValues(state.checkedMitat, jobNumber, itemNames),
             kulmalistat: mapJobItemValues(state.checkedKulmalistat, jobNumber, itemNames),
             paneelit: mapJobItemValues(state.checkedPaneelit, jobNumber, itemNames),
+            sahattu: mapJobItemValues(state.checkedSahattu, jobNumber, itemNames),
+            hitsattu: mapJobItemValues(state.checkedHitsattu, jobNumber, itemNames),
+            maalattu: mapJobItemValues(state.checkedMaalattu, jobNumber, itemNames),
             done: mapJobItemValues(state.doneMitat, jobNumber, itemNames),
             packed: mapJobItemValues(state.packedMitat, jobNumber, itemNames),
             hidden: mapJobItemValues(state.hiddenMitatItems, jobNumber, itemNames),
@@ -1380,6 +1398,9 @@ function remapJobPayloadItemName(payload, oldName, newName) {
         payload.checks && payload.checks.lasilistat,
         payload.checks && payload.checks.kulmalistat,
         payload.checks && payload.checks.paneelit,
+        payload.checks && payload.checks.sahattu,
+        payload.checks && payload.checks.hitsattu,
+        payload.checks && payload.checks.maalattu,
         payload.checks && payload.checks.done,
         payload.checks && payload.checks.packed,
         payload.checks && payload.checks.packageNumbers,
@@ -11107,7 +11128,24 @@ function loadMittatView() {
                 html += `</div>`;
             }
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            if (katselu) {
+            if (isKuormaKoeJob(jobNumber)) {
+                html += renderKoeItemCheckpoints({
+                    jobNumber,
+                    itemName,
+                    checkKey,
+                    katselu,
+                    hasLasilistat,
+                    hasKulmalistat,
+                    hasPaneelit,
+                    isChecked,
+                    isKulmalistatChecked,
+                    isPaneelitChecked,
+                    doneChecked,
+                    checkpointsOk,
+                    lasilistatOk,
+                    kulmalistatOk
+                });
+            } else if (katselu) {
                 const visibleCheckpoints = [];
                 if (hasLasilistat && isChecked) {
                     visibleCheckpoints.push({ label: 'lasilistat', aria: `Lasilistat tehty ${itemName}` });
@@ -12116,7 +12154,7 @@ async function renamePaketitItem(jobNumber, itemName, btn) {
 
         const oldKey = `${jobNumber}-${itemName}`;
         const newKey = `${jobNumber}-${trimmedName}`;
-        ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
+        ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'checkedSahattu', 'checkedHitsattu', 'checkedMaalattu', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems'].forEach((storeKey) => {
             const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
             if (oldKey in obj) {
                 obj[newKey] = obj[oldKey];
@@ -14562,7 +14600,7 @@ function renameMitatItem(jobNumber, itemName, btn) {
 
     const oldKey = `${jobNumber}-${itemName}`;
     const newKey = `${jobNumber}-${trimmedName}`;
-    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach(storeKey => {
+    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'checkedSahattu', 'checkedHitsattu', 'checkedMaalattu', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach(storeKey => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         if (oldKey in obj) {
             obj[newKey] = obj[oldKey];
@@ -14625,7 +14663,7 @@ async function renameMitatJob(jobNumber, btn) {
     delete mittatData[jobNumber];
     localStorage.setItem('mittatData', JSON.stringify(mittatData));
 
-    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach((storeKey) => {
+    ['checkedMitat', 'checkedKulmalistat', 'checkedPaneelit', 'checkedSahattu', 'checkedHitsattu', 'checkedMaalattu', 'doneMitat', 'packedMitat', 'packedPackageNumbers', 'hiddenMitatItems', 'itemBlocks'].forEach((storeKey) => {
         const obj = JSON.parse(localStorage.getItem(storeKey) || '{}');
         let changed = false;
         itemNames.forEach((itemName) => {
@@ -15497,6 +15535,136 @@ function toggleJobDetails(jobId) {
     }
 }
 
+const KOE_CHAIN_IDS = ['sahattu', 'hitsattu', 'maalattu', 'tehty'];
+const KOE_STAGE_STORES = {
+    sahattu: 'checkedSahattu',
+    hitsattu: 'checkedHitsattu',
+    maalattu: 'checkedMaalattu'
+};
+
+function readJsonMap(storeKey) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(storeKey) || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function itemDepartmentStage(jobNumber, itemName) {
+    const key = `${jobNumber}-${itemName}`;
+    return {
+        sahattu: !!readJsonMap('checkedSahattu')[key],
+        hitsattu: !!readJsonMap('checkedHitsattu')[key],
+        maalattu: !!readJsonMap('checkedMaalattu')[key],
+        tehty: !!readJsonMap('doneMitat')[key]
+    };
+}
+
+function koeVisibleStages(stage) {
+    const firstOpen = KOE_CHAIN_IDS.findIndex((id) => !stage[id]);
+    if (firstOpen === -1) return [{ id: 'tehty', checked: true }];
+    if (firstOpen === 0) return [{ id: 'sahattu', checked: false }];
+    return [
+        { id: KOE_CHAIN_IDS[firstOpen - 1], checked: true },
+        { id: KOE_CHAIN_IDS[firstOpen], checked: false }
+    ];
+}
+
+function clearDepartmentStoreKey(storeKey, checkKey) {
+    const map = readJsonMap(storeKey);
+    if (!Object.prototype.hasOwnProperty.call(map, checkKey)) return;
+    delete map[checkKey];
+    localStorage.setItem(storeKey, JSON.stringify(map));
+}
+
+function koeStageLabel(stageId) {
+    return stageId;
+}
+
+function koeStageAria(stageId, itemName) {
+    if (stageId === 'tehty') return `Tehty ${itemName}`;
+    const label = koeStageLabel(stageId);
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${itemName}`;
+}
+
+function renderKoeItemCheckpoints(ctx) {
+    const stage = itemDepartmentStage(ctx.jobNumber, ctx.itemName);
+    const visible = koeVisibleStages(stage);
+    const doneDisabled = !ctx.checkpointsOk && !ctx.doneChecked;
+    const doneTitle = ctx.checkpointsOk || ctx.doneChecked
+        ? 'Merkitse tehdyksi'
+        : (!ctx.lasilistatOk ? 'Merkitse ensin lasilistat' : (!ctx.kulmalistatOk ? 'Merkitse ensin kulmalistat' : 'Merkitse ensin paneelit'));
+    const safeKey = sanitizeForAttribute(ctx.checkKey);
+    const stageHtml = (entry) => {
+        const label = koeStageLabel(entry.id);
+        const aria = escapeHtmlText(koeStageAria(entry.id, ctx.itemName));
+        const mark = entry.checked ? '✓' : '';
+        if (ctx.katselu) {
+            const boxClass = entry.checked ? 'preset-checkbox checked' : 'preset-checkbox';
+            return `<span class="mitat-mini-label">${label}</span><div class="${boxClass} mitat-checkpoint-readonly" role="img" aria-label="${aria}">${mark}</div>`;
+        }
+        const disabled = entry.id === 'tehty' && !entry.checked && doneDisabled;
+        const boxClass = disabled
+            ? 'preset-checkbox disabled'
+            : (entry.checked ? 'preset-checkbox checked' : 'preset-checkbox');
+        const title = entry.id === 'tehty' ? ` title="${doneTitle}"` : '';
+        const tab = disabled ? '-1' : '0';
+        return `<span class="mitat-mini-label">${label}</span><div class="${boxClass}" role="checkbox" tabindex="${tab}" aria-checked="${entry.checked}" aria-disabled="${disabled}" aria-label="${aria}"${title} onclick="event.stopPropagation(); toggleKoeDepartmentCheck('${safeKey}', '${entry.id}')">${mark}</div>`;
+    };
+    const materials = [
+        ctx.hasLasilistat ? { label: 'lasilistat', checked: ctx.isChecked, aria: `Lasilistat tehty ${ctx.itemName}`, toggle: 'toggleMittatCheck' } : null,
+        ctx.hasKulmalistat ? { label: 'kulmalistat', checked: ctx.isKulmalistatChecked, aria: `Kulmalistat tehty ${ctx.itemName}`, toggle: 'toggleKulmalistatCheck' } : null,
+        ctx.hasPaneelit ? { label: 'paneelit', checked: ctx.isPaneelitChecked, aria: `Paneelit tehty ${ctx.itemName}`, toggle: 'togglePaneelitCheck' } : null
+    ].filter(Boolean).map((material) => {
+        const aria = escapeHtmlText(material.aria);
+        const mark = material.checked ? '✓' : '';
+        if (ctx.katselu) {
+            const boxClass = material.checked ? 'preset-checkbox checked' : 'preset-checkbox';
+            return `<span class="mitat-mini-label">${material.label}</span><div class="${boxClass} mitat-checkpoint-readonly" role="img" aria-label="${aria}">${mark}</div>`;
+        }
+        const boxClass = material.checked ? 'preset-checkbox checked' : 'preset-checkbox';
+        return `<span class="mitat-mini-label">${material.label}</span><div class="${boxClass}" role="checkbox" tabindex="0" aria-checked="${material.checked}" aria-label="${aria}" onclick="event.stopPropagation(); ${material.toggle}('${safeKey}', this)">${mark}</div>`;
+    });
+    const beforeDone = visible.filter((entry) => entry.id !== 'tehty').map(stageHtml);
+    const doneStage = visible.filter((entry) => entry.id === 'tehty').map(stageHtml);
+    return beforeDone.concat(materials, doneStage).join('<span class="mitat-checkpoint-separator">/</span>');
+}
+
+function toggleKoeDepartmentCheck(checkKey, stage) {
+    const jobNumber = jobNumberFromCheckKey(checkKey);
+    if (!jobNumber || !isKuormaKoeJob(jobNumber) || !KOE_CHAIN_IDS.includes(stage)) return;
+    const itemName = checkKey.slice(jobNumber.length + 1);
+    const current = itemDepartmentStage(jobNumber, itemName);
+    const entry = koeVisibleStages(current).find((item) => item.id === stage);
+    if (!entry) return;
+
+    if (!entry.checked) {
+        if (stage === 'tehty') {
+            toggleMittatDone(checkKey, jobNumber, null);
+            return;
+        }
+        const map = readJsonMap(KOE_STAGE_STORES[stage]);
+        map[checkKey] = true;
+        localStorage.setItem(KOE_STAGE_STORES[stage], JSON.stringify(map));
+        dualWriteMitatState(jobNumber);
+        loadMittatView();
+        return;
+    }
+
+    const start = KOE_CHAIN_IDS.indexOf(stage);
+    KOE_CHAIN_IDS.slice(start).forEach((id) => {
+        if (id === 'tehty') return;
+        clearDepartmentStoreKey(KOE_STAGE_STORES[id], checkKey);
+    });
+    if (KOE_CHAIN_IDS.slice(start).includes('tehty') && current.tehty) {
+        toggleMittatDone(checkKey, jobNumber, null);
+        return;
+    }
+    dualWriteMitatState(jobNumber);
+    loadMittatView();
+}
+
 // Toggle mitta checkbox (lasilistat)
 function toggleMittatCheck(checkKey, checkboxElement) {
     // Update localStorage
@@ -15592,6 +15760,10 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     const itemName = checkKey.startsWith(`${jobNumber}-`) ? checkKey.slice(jobNumber.length + 1) : '';
     const mittatData = JSON.parse(localStorage.getItem('mittatData') || '{}');
     const item = mittatData[jobNumber]?.[itemName];
+    if (isDone && isKuormaKoeJob(jobNumber) && !readJsonMap('checkedMaalattu')[checkKey]) {
+        showToast('Merkitse ensin maalattu ennen tehty-merkintää.', 'warning');
+        return;
+    }
     if (isDone && itemHasLasilistat(item) && !checkedMitat[checkKey]) {
         showToast('Merkitse ensin lasilistat ennen tehty-merkintää.', 'warning');
         return;
@@ -15672,6 +15844,9 @@ function deleteJobMitat(jobNumber) {
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
     const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
+    const checkedSahattu = JSON.parse(localStorage.getItem('checkedSahattu') || '{}');
+    const checkedHitsattu = JSON.parse(localStorage.getItem('checkedHitsattu') || '{}');
+    const checkedMaalattu = JSON.parse(localStorage.getItem('checkedMaalattu') || '{}');
     const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
     const packedMitat = JSON.parse(localStorage.getItem('packedMitat') || '{}');
     const packedPackageNumbers = JSON.parse(localStorage.getItem('packedPackageNumbers') || '{}');
@@ -15686,6 +15861,9 @@ function deleteJobMitat(jobNumber) {
         delete checkedMitat[checkKey];
         delete checkedKulmalistat[checkKey];
         delete checkedPaneelit[checkKey];
+        delete checkedSahattu[checkKey];
+        delete checkedHitsattu[checkKey];
+        delete checkedMaalattu[checkKey];
         delete doneMitat[checkKey];
         delete packedMitat[checkKey];
         delete packedPackageNumbers[checkKey];
@@ -15713,6 +15891,9 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('checkedMitat', JSON.stringify(checkedMitat));
     localStorage.setItem('checkedKulmalistat', JSON.stringify(checkedKulmalistat));
     localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
+    localStorage.setItem('checkedSahattu', JSON.stringify(checkedSahattu));
+    localStorage.setItem('checkedHitsattu', JSON.stringify(checkedHitsattu));
+    localStorage.setItem('checkedMaalattu', JSON.stringify(checkedMaalattu));
     localStorage.setItem('doneMitat', JSON.stringify(doneMitat));
     localStorage.setItem('packedMitat', JSON.stringify(packedMitat));
     localStorage.setItem('packedPackageNumbers', JSON.stringify(packedPackageNumbers));
@@ -15831,6 +16012,14 @@ function deleteMitta(jobNumber, itemName) {
             delete checkedPaneelit[checkKey];
             localStorage.setItem('checkedPaneelit', JSON.stringify(checkedPaneelit));
         }
+
+        ['checkedSahattu', 'checkedHitsattu', 'checkedMaalattu'].forEach((storeKey) => {
+            const departmentChecks = JSON.parse(localStorage.getItem(storeKey) || '{}');
+            if (Object.prototype.hasOwnProperty.call(departmentChecks, checkKey)) {
+                delete departmentChecks[checkKey];
+                localStorage.setItem(storeKey, JSON.stringify(departmentChecks));
+            }
+        });
 
         const doneMitat = JSON.parse(localStorage.getItem('doneMitat') || '{}');
         if (Object.prototype.hasOwnProperty.call(doneMitat, checkKey)) {
