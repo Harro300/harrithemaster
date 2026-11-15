@@ -1,5 +1,6 @@
 (function () {
     const STORAGE_KEY = 'kuormaKapasiteetti';
+    const SCHEDULE_KEY = 'kuormaAjoitus';
     const DEFAULT_HOURS = 6.5;
     const DEFAULT_DOC = 'kokoonpano-kapasiteetti';
     const DEPARTMENTS = ['saha', 'hitsaus', 'maalaus', 'kokoonpano'];
@@ -371,10 +372,10 @@
         worker.weeks[weekKey][dayKey] = value;
     }
 
-    function departmentDayHours(department, dayKey) {
-        const weekKey = activeWeekKey();
+    function departmentDayHours(department, dayKey, weekKey) {
+        const key = weekKey || activeWeekKey();
         return state.kapasiteetti[department].workers.reduce((sum, worker) => {
-            return sum + (daysFor(worker, weekKey)[dayKey] || 0);
+            return sum + (daysFor(worker, key)[dayKey] || 0);
         }, 0);
     }
 
@@ -677,11 +678,70 @@
         return isoFromDate(shiftWorkdays(ship, -lead));
     }
 
-    function shipIsoForDepartmentDay(department, dayIso) {
-        const day = dateFromIso(dayIso);
-        const lead = departmentLeadDays()[department] || 0;
-        if (!day || !lead) return dayIso;
-        return isoFromDate(shiftWorkdays(day, lead));
+    function cleanOffsets(source) {
+        const next = {};
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return next;
+        DEPARTMENTS.forEach((department) => {
+            const raw = source[department];
+            const count = typeof raw === 'number' ? raw : Number(raw);
+            if (!Number.isFinite(count) || count <= 0) return;
+            next[department] = Math.min(60, Math.round(count));
+        });
+        return next;
+    }
+
+    function readScheduleEntry(source) {
+        const next = cleanOffsets(source);
+        if (source && source.jaettu) next.jaettu = true;
+        return next;
+    }
+
+    function readScheduleMap() {
+        const parsed = readStorageMap(SCHEDULE_KEY);
+        const next = {};
+        Object.keys(parsed).forEach((key) => {
+            const entry = readScheduleEntry(parsed[key]);
+            if (entry.jaettu || DEPARTMENTS.some((department) => entry[department])) next[key] = entry;
+        });
+        return next;
+    }
+
+    function earlyOffset(target, minimum) {
+        if (!target || !minimum) return 0;
+        const goal = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+        let cursor = new Date(minimum.getFullYear(), minimum.getMonth(), minimum.getDate());
+        if (goal >= cursor) return 0;
+        let count = 0;
+        while (count < 60) {
+            cursor = shiftWorkdays(cursor, -1);
+            count += 1;
+            if (sameDay(cursor, goal) || cursor < goal) return count;
+        }
+        return count;
+    }
+
+    function scheduledDepartmentIso(shipDay, department, offsets) {
+        const minimum = departmentDayIso(shipDay, departmentLeadDays()[department] || 0);
+        const extra = offsets && offsets[department];
+        if (!extra) return minimum;
+        const date = dateFromIso(minimum);
+        if (!date) return minimum;
+        return isoFromDate(shiftWorkdays(date, -extra));
+    }
+
+    function slotDayIso(slot, item) {
+        if (slot && slot.date) return isoFromDate(slot.date);
+        if (slot && slot.monday && Number.isInteger(item && item.dayIndex)) {
+            return isoFromDate(addDays(slot.monday, item.dayIndex));
+        }
+        return '';
+    }
+
+    function slotAllowsGroup(slot, items) {
+        return (items || []).every((item) => {
+            const iso = slotDayIso(slot, item);
+            return !!iso && !!item.minimumDay && iso <= item.minimumDay;
+        });
     }
 
     function activeWeekKey() {
@@ -810,7 +870,125 @@
         return names.length > 0 && names.every((itemName) => packed[jobNumber + '-' + itemName]);
     }
 
-    function buildProductionSnapshot() {
+    function spreadMinutes(product) {
+        if (typeof product.minutes.kokoonpano === 'number') return product.minutes.kokoonpano;
+        return DEPARTMENTS.reduce((sum, department) => {
+            const amount = product.minutes[department];
+            return sum + (typeof amount === 'number' ? amount : 0);
+        }, 0);
+    }
+
+    function addUsedMinutes(used, department, iso, amount) {
+        if (!iso || typeof amount !== 'number' || amount <= 0) return;
+        const loadKey = department + '|' + iso;
+        used[loadKey] = (used[loadKey] || 0) + amount;
+    }
+
+    function occupySchedule(used, product) {
+        DEPARTMENTS.forEach((department) => {
+            if (product.done[department]) return;
+            const iso = scheduledDepartmentIso(product.shipDay, department, product.entry || {});
+            addUsedMinutes(used, department, iso, product.minutes[department]);
+        });
+    }
+
+    function dayCapacityMinutes(department, iso) {
+        const date = dateFromIso(iso);
+        if (!date || !isWorkday(date)) return 0;
+        const monday = addDays(date, -weekdayIndex(date));
+        const hours = departmentDayHours(department, WEEKDAYS[weekdayIndex(date)], weekKeyFromMonday(monday));
+        return Math.round(hours * 60);
+    }
+
+    function assemblyDays(shipDay, previousWeek) {
+        const ship = dateFromIso(shipDay);
+        if (!ship) return [];
+        const last = isWorkday(ship) ? new Date(ship.getTime()) : shiftWorkdays(ship, -1);
+        const monday = addDays(last, -weekdayIndex(last));
+        const start = previousWeek ? addDays(monday, -7) : monday;
+        const end = previousWeek ? addDays(start, 4) : last;
+        const days = [];
+        let cursor = start;
+        const endTime = startOfDay(end).getTime();
+        while (startOfDay(cursor).getTime() <= endTime) {
+            if (isWorkday(cursor)) days.push(new Date(cursor.getTime()));
+            cursor = addDays(cursor, 1);
+        }
+        return days;
+    }
+
+    function offsetsForAssembly(shipDay, assemblyDate) {
+        const minimum = dateFromIso(departmentDayIso(shipDay, 0));
+        const count = earlyOffset(assemblyDate, minimum);
+        const saved = { jaettu: true };
+        if (count) DEPARTMENTS.forEach((department) => {
+            saved[department] = count;
+        });
+        return saved;
+    }
+
+    function spreadAcrossDays(products, days, used) {
+        if (!days.length) return null;
+        const slots = days.map((date) => ({
+            date: date,
+            load: used['kokoonpano|' + isoFromDate(date)] || 0
+        }));
+        const placement = new Map();
+        products.slice().sort((a, b) => {
+            const loadDiff = spreadMinutes(b) - spreadMinutes(a);
+            if (loadDiff !== 0) return loadDiff;
+            return String(a.itemName).localeCompare(String(b.itemName), 'fi');
+        }).forEach((product) => {
+            let best = slots[0];
+            slots.forEach((slot) => {
+                if (slot.load < best.load) best = slot;
+            });
+            best.load += spreadMinutes(product);
+            placement.set(product.key, best.date);
+        });
+        return placement;
+    }
+
+    function upstreamFits(products, placement, shipDay, used) {
+        const extra = {};
+        let missing = false;
+        products.forEach((product) => {
+            const assemblyDate = placement.get(product.key);
+            if (!assemblyDate) missing = true;
+        });
+        if (missing) return false;
+        products.forEach((product) => {
+            const offsets = offsetsForAssembly(shipDay, placement.get(product.key));
+            ['saha', 'hitsaus'].forEach((department) => {
+                if (product.done[department]) return;
+                const amount = product.minutes[department];
+                if (typeof amount !== 'number' || amount <= 0) return;
+                const iso = scheduledDepartmentIso(shipDay, department, offsets);
+                const loadKey = department + '|' + iso;
+                extra[loadKey] = (extra[loadKey] || 0) + amount;
+            });
+        });
+        return Object.keys(extra).every((loadKey) => {
+            const split = loadKey.indexOf('|');
+            const department = loadKey.slice(0, split);
+            const iso = loadKey.slice(split + 1);
+            return (used[loadKey] || 0) + extra[loadKey] <= dayCapacityMinutes(department, iso);
+        });
+    }
+
+    function usesPreviousWeek(siblings, shipDay) {
+        const ship = dateFromIso(shipDay);
+        if (!ship) return false;
+        const last = isWorkday(ship) ? ship : shiftWorkdays(ship, -1);
+        const monday = startOfDay(addDays(last, -weekdayIndex(last)));
+        return siblings.some((product) => {
+            const iso = scheduledDepartmentIso(product.shipDay, 'kokoonpano', product.entry || {});
+            const date = dateFromIso(iso);
+            return date && startOfDay(date).getTime() < monday.getTime();
+        });
+    }
+
+    function ensureAutomaticSpread() {
         const mittatData = readStorageMap('mittatData');
         const packed = readStorageMap('packedMitat');
         const departmentDone = {
@@ -822,6 +1000,98 @@
         const jobShipDates = readStorageMap('jobShipDates');
         const jobBlocks = readStorageMap('jobBlocks');
         const itemBlocks = readStorageMap('itemBlocks');
+        const schedule = readScheduleMap();
+        const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
+        const products = [];
+        jobs.forEach((jobNumber) => {
+            const items = mittatData[jobNumber];
+            if (!items || typeof items !== 'object') return;
+            if (!Object.keys(items).length || jobIsFullyPackedFromMaps(mittatData, packed, jobNumber)) return;
+            Object.keys(items).forEach((itemName) => {
+                const key = jobNumber + '-' + itemName;
+                if (packed[key]) return;
+                const shipDay = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
+                if (!shipDay) return;
+                const kuorma = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma : {};
+                const minutes = {};
+                const done = {};
+                DEPARTMENTS.forEach((department) => {
+                    minutes[department] = kuorma[department];
+                    done[department] = !!(departmentDone[department] && departmentDone[department][key]);
+                });
+                products.push({
+                    key: key,
+                    jobNumber: String(jobNumber),
+                    itemName: String(itemName),
+                    shipDay: shipDay,
+                    minutes: minutes,
+                    done: done,
+                    sawn: done.saha,
+                    placed: !!schedule[key],
+                    entry: schedule[key] || null
+                });
+            });
+        });
+        const used = {};
+        products.forEach((product) => {
+            if (product.placed || product.sawn) occupySchedule(used, product);
+        });
+        const groups = new Map();
+        products.forEach((product) => {
+            const groupKey = product.jobNumber + '|' + product.shipDay;
+            if (!groups.has(groupKey)) groups.set(groupKey, []);
+            groups.get(groupKey).push(product);
+        });
+        const ordered = Array.from(groups.values()).sort((a, b) => {
+            const shipDiff = String(a[0].shipDay).localeCompare(String(b[0].shipDay));
+            if (shipDiff !== 0) return shipDiff;
+            return String(a[0].jobNumber).localeCompare(String(b[0].jobNumber), 'fi', { numeric: true });
+        });
+        let changed = false;
+        ordered.forEach((group) => {
+            const shipDay = group[0].shipDay;
+            const movable = group.filter((product) => !product.placed && !product.sawn);
+            if (!movable.length) return;
+            const siblings = group.filter((product) => product.placed);
+            let placement = null;
+            if (siblings.length) {
+                placement = spreadAcrossDays(movable, assemblyDays(shipDay, usesPreviousWeek(siblings, shipDay)), used);
+            } else if (movable.length >= 2) {
+                const shipPlacement = spreadAcrossDays(movable, assemblyDays(shipDay, false), used);
+                if (!shipPlacement) return;
+                placement = upstreamFits(movable, shipPlacement, shipDay, used)
+                    ? shipPlacement
+                    : spreadAcrossDays(movable, assemblyDays(shipDay, true), used);
+            }
+            if (!placement) return;
+            movable.forEach((product) => {
+                const assemblyDate = placement.get(product.key);
+                if (!assemblyDate) return;
+                const offsets = offsetsForAssembly(shipDay, assemblyDate);
+                schedule[product.key] = offsets;
+                product.entry = offsets;
+                product.placed = true;
+                occupySchedule(used, product);
+                changed = true;
+            });
+        });
+        if (changed) localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
+    }
+
+    function buildProductionSnapshot() {
+        ensureAutomaticSpread();
+        const mittatData = readStorageMap('mittatData');
+        const packed = readStorageMap('packedMitat');
+        const departmentDone = {
+            saha: readStorageMap('checkedSahattu'),
+            hitsaus: readStorageMap('checkedHitsattu'),
+            maalaus: readStorageMap('checkedMaalattu'),
+            kokoonpano: readStorageMap('doneMitat')
+        };
+        const jobShipDates = readStorageMap('jobShipDates');
+        const jobBlocks = readStorageMap('jobBlocks');
+        const itemBlocks = readStorageMap('itemBlocks');
+        const schedule = readScheduleMap();
         const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
         const leadDays = departmentLeadDays();
         const byKey = new Map();
@@ -838,7 +1108,9 @@
                 const jobKey = String(jobNumber);
                 DEPARTMENTS.forEach((department) => {
                     const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
-                    const key = department + '|' + departmentDayIso(shipDay, leadDays[department] || 0);
+                    const offsets = schedule[checkKey] || {};
+                    const minimumDay = departmentDayIso(shipDay, leadDays[department] || 0);
+                    const key = department + '|' + scheduledDepartmentIso(shipDay, department, offsets);
                     let list = byKey.get(key);
                     if (!list) {
                         list = [];
@@ -847,12 +1119,18 @@
                     const ownDone = !!(departmentDone[department] && departmentDone[department][checkKey]);
                     const previous = PREVIOUS_DEPARTMENT[department] || '';
                     const previousDone = !previous || !!(departmentDone[previous] && departmentDone[previous][checkKey]);
+                    const blockIdRaw = itemBlocks[checkKey];
+                    const jobBlockList = Array.isArray(jobBlocks[jobKey]) ? jobBlocks[jobKey] : [];
+                    const block = jobBlockList.find((entry) => entry && entry.id === blockIdRaw);
                     list.push({
                         jobNumber: jobKey,
                         itemName: String(itemName),
                         minutes: typeof amount === 'number' ? amount : null,
                         done: ownDone,
-                        ready: !ownDone && previousDone
+                        ready: !ownDone && previousDone,
+                        blockId: block ? String(block.id) : '',
+                        blockName: block ? (String(block.name || '').trim() || 'Erä') : 'Ei lohkoa',
+                        minimumDay: minimumDay
                     });
                 });
             });
@@ -1528,58 +1806,70 @@
         return String(item.jobNumber || '') + '|' + String(item.itemName || '');
     }
 
+    function blockSelectKeys(button) {
+        return String(button.dataset.kkBlockKeys || '').split('\n').filter(Boolean);
+    }
+
+    function paintReviewSelection() {
+        document.querySelectorAll('.kk-move-select[data-kk-item]').forEach((button) => {
+            const chosen = reviewSelection.has(button.dataset.kkItem);
+            button.textContent = chosen ? 'Valittu' : 'Valitse';
+            button.classList.toggle('is-chosen', chosen);
+            const product = button.closest('.mitat-item-section');
+            if (product) product.classList.toggle('is-selected', chosen);
+        });
+        document.querySelectorAll('.kk-block-select').forEach((button) => {
+            const keys = blockSelectKeys(button);
+            const all = keys.length > 0 && keys.every((key) => reviewSelection.has(key));
+            button.textContent = all ? 'Erä valittu' : 'Valitse erä';
+            button.classList.toggle('is-chosen', all);
+        });
+    }
+
     function syncMoveHereButtons() {
         const hasSelection = reviewSelection.size > 0 && reviewDayIndex !== null;
         document.querySelectorAll('.kk-move-here').forEach((button) => {
             const sameDay = Number(button.dataset.kkDay) === reviewDayIndex;
             button.hidden = !hasSelection || sameDay;
         });
-    }
-
-    function nextEraName(blocks) {
-        let max = 1;
-        (blocks || []).forEach((block) => {
-            const match = /^ERÄ\s+(\d+)$/i.exec(String(block && block.name || '').trim());
-            if (!match) return;
-            const number = parseInt(match[1], 10);
-            if (number > max) max = number;
-        });
-        return 'ERÄ ' + (max + 1);
+        paintReviewSelection();
     }
 
     function moveReviewedItems(items, isoDate, options) {
         const department = options && options.department;
-        const sourceIso = department ? shipIsoForDepartmentDay(department, isoDate) : isoDate;
-        const shipDate = typeof normalizeShipDate === 'function' ? (normalizeShipDate(sourceIso) || sourceIso) : sourceIso;
-        if (!shipDate || !items || !items.length) return;
-        const groups = new Map();
+        const target = dateFromIso(isoDate);
+        if (!DEPARTMENT_LABELS[department] || !target || !isWorkday(target) || !items || !items.length) return;
+        const jobShipDates = readStorageMap('jobShipDates');
+        const jobBlocks = readStorageMap('jobBlocks');
+        const itemBlocks = readStorageMap('itemBlocks');
+        const schedule = readScheduleMap();
+        const leadDays = departmentLeadDays();
+        let changed = false;
         items.forEach((item) => {
             const jobNumber = String(item.jobNumber || '');
             const itemName = String(item.itemName || '');
             if (!jobNumber || !itemName) return;
-            if (!groups.has(jobNumber)) groups.set(jobNumber, []);
-            const names = groups.get(jobNumber);
-            if (!names.includes(itemName)) names.push(itemName);
+            const shipDay = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
+            if (!shipDay) return;
+            const key = jobNumber + '-' + itemName;
+            const saved = cleanOffsets(schedule[key]);
+            const minimum = dateFromIso(departmentDayIso(shipDay, leadDays[department] || 0));
+            const offset = earlyOffset(target, minimum);
+            if ((saved[department] || 0) !== offset || !schedule[key] || !schedule[key].jaettu) changed = true;
+            saved.jaettu = true;
+            if (offset) saved[department] = offset;
+            else delete saved[department];
+            let previous = PREVIOUS_DEPARTMENT[department];
+            while (previous) {
+                if ((saved[previous] || 0) < offset) {
+                    saved[previous] = offset;
+                    changed = true;
+                }
+                previous = PREVIOUS_DEPARTMENT[previous];
+            }
+            schedule[key] = saved;
         });
-        if (!groups.size) return;
-        const jobBlocks = readStorageMap('jobBlocks');
-        const itemBlocks = readStorageMap('itemBlocks');
-        groups.forEach((names, jobNumber) => {
-            const blocks = Array.isArray(jobBlocks[jobNumber]) ? jobBlocks[jobNumber].slice() : [];
-            const id = typeof createJobBlockId === 'function'
-                ? createJobBlockId()
-                : ('blk_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 100000));
-            blocks.push({ id: id, name: nextEraName(blocks), shipDate: shipDate });
-            jobBlocks[jobNumber] = blocks;
-            names.forEach((itemName) => {
-                itemBlocks[jobNumber + '-' + itemName] = id;
-            });
-        });
-        localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
-        localStorage.setItem('itemBlocks', JSON.stringify(itemBlocks));
-        groups.forEach((names, jobNumber) => {
-            if (typeof persistMitatBlockState === 'function') persistMitatBlockState(jobNumber);
-        });
+        if (changed) localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
         if (options && options.silent) return;
         reviewSelection.clear();
         if (typeof loadMittatView === 'function') loadMittatView();
@@ -1698,7 +1988,41 @@
             jobItems.className = 'mitat-job-items';
             jobItems.style.display = 'none';
             const records = mittatData[jobNumber] && typeof mittatData[jobNumber] === 'object' ? mittatData[jobNumber] : {};
+            const byBlock = new Map();
             products.forEach((item) => {
+                const id = item.blockId || '';
+                if (!byBlock.has(id)) byBlock.set(id, []);
+                byBlock.get(id).push(item);
+            });
+            const blockIds = Array.from(byBlock.keys()).sort((a, b) => {
+                const aName = byBlock.get(a)[0].blockName || 'Ei lohkoa';
+                const bName = byBlock.get(b)[0].blockName || 'Ei lohkoa';
+                return String(aName).localeCompare(String(bName), 'fi');
+            });
+            blockIds.forEach((blockId) => {
+                const blockItems = byBlock.get(blockId);
+                const blockHead = document.createElement('div');
+                blockHead.className = 'kk-review-block';
+                const blockLabel = document.createElement('span');
+                blockLabel.className = 'kk-review-block-name';
+                blockLabel.textContent = blockItems[0].blockName || 'Ei lohkoa';
+                const blockPick = document.createElement('button');
+                blockPick.type = 'button';
+                blockPick.className = 'kk-day-close kk-block-select';
+                blockPick.dataset.kkBlockKeys = blockItems.map((item) => reviewItemKey(item)).join('\n');
+                blockPick.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const keys = blockSelectKeys(blockPick);
+                    const all = keys.length > 0 && keys.every((key) => reviewSelection.has(key));
+                    keys.forEach((key) => {
+                        if (all) reviewSelection.delete(key);
+                        else reviewSelection.add(key);
+                    });
+                    syncMoveHereButtons();
+                });
+                blockHead.append(blockLabel, blockPick);
+                jobItems.appendChild(blockHead);
+            blockItems.forEach((item) => {
                 const record = records[item.itemName] || {};
                 const product = document.createElement('div');
                 product.className = 'mitat-item-section';
@@ -1728,18 +2052,11 @@
                 pick.type = 'button';
                 pick.className = 'kk-day-close kk-move-select';
                 const key = reviewItemKey(item);
-                const paintPick = () => {
-                    const chosen = reviewSelection.has(key);
-                    pick.textContent = chosen ? 'Valittu' : 'Valitse';
-                    pick.classList.toggle('is-chosen', chosen);
-                    product.classList.toggle('is-selected', chosen);
-                };
-                paintPick();
+                pick.dataset.kkItem = key;
                 pick.addEventListener('click', (event) => {
                     event.stopPropagation();
                     if (reviewSelection.has(key)) reviewSelection.delete(key);
                     else reviewSelection.add(key);
-                    paintPick();
                     syncMoveHereButtons();
                 });
                 const productIcon = document.createElement('span');
@@ -1767,6 +2084,8 @@
                 product.append(productHeader, details);
                 jobItems.appendChild(product);
             });
+            });
+            paintReviewSelection();
             header.addEventListener('click', () => toggleReviewPanel(header, jobItems, icon));
             section.append(header, jobItems);
             host.appendChild(section);
@@ -1774,45 +2093,72 @@
         return host;
     }
 
-    function suggestWeekMoves(department, monday) {
-        const today = startOfDay(new Date());
-        const days = [];
-        for (let index = 0; index < 5; index += 1) {
-            const date = addDays(monday, index);
-            const hours = departmentDayHours(department, WEEKDAYS[index]);
-            const minutes = productionLoadMinutes(department, date);
-            const capacityMinutes = Math.round(hours * 60);
-            const load = typeof minutes === 'number' ? minutes : 0;
-            const products = productionDayItems(department, date)
-                .filter((item) => !item.done && typeof item.minutes === 'number' && item.minutes > 0)
-                .slice()
-                .sort((a, b) => b.minutes - a.minutes || a.itemName.localeCompare(b.itemName, 'fi'));
-            days.push({
-                index: index,
-                date: date,
-                name: WEEKDAY_NAMES[index],
-                hours: hours,
-                minutes: minutes,
-                spare: capacityMinutes - load,
-                overload: load - capacityMinutes,
-                past: startOfDay(date).getTime() < today.getTime(),
-                products: products
-            });
-        }
+    function blockGroupKey(item) {
+        return String(item.jobNumber || '') + '|' + String(item.blockId || '');
+    }
+
+    function blockLoadMinutes(items) {
+        return (items || []).reduce((sum, item) => {
+            if (item.done || typeof item.minutes !== 'number' || item.minutes <= 0) return sum;
+            return sum + item.minutes;
+        }, 0);
+    }
+
+    function groupsFromItems(items) {
+        const groups = new Map();
+        (items || []).forEach((item) => {
+            const key = blockGroupKey(item);
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(item);
+        });
+        return Array.from(groups.values()).sort((a, b) => {
+            const loadDiff = blockLoadMinutes(b) - blockLoadMinutes(a);
+            if (loadDiff !== 0) return loadDiff;
+            return String(a[0].blockName || '').localeCompare(String(b[0].blockName || ''), 'fi');
+        });
+    }
+
+    function suggestWholeBlocks(slots) {
         const suggestions = [];
         const used = new Set();
-        days.forEach((source, sourceIndex) => {
-            if (source.past || source.overload <= 0) return;
+        const remaining = slots.map((slot) => slot.overload);
+        slots.forEach((source, sourceIndex) => {
+            if (source.past || source.targetOnly || remaining[sourceIndex] <= 0) return;
+            groupsFromItems(source.pool).forEach((group) => {
+                const load = blockLoadMinutes(group);
+                if (load <= 0 || remaining[sourceIndex] <= 0) return;
+                const marker = blockGroupKey(group[0]);
+                if (used.has(marker)) return;
+                for (let targetIndex = 0; targetIndex < slots.length; targetIndex += 1) {
+                    if (targetIndex === sourceIndex) continue;
+                    const target = slots[targetIndex];
+                    if (target.past || target.spare < load || !slotAllowsGroup(target, group)) continue;
+                    used.add(marker);
+                    target.spare -= load;
+                    remaining[sourceIndex] -= load;
+                    suggestions.push({ source: source, target: target, items: group });
+                    return;
+                }
+            });
+        });
+        return suggestions;
+    }
+
+    function suggestPartialProducts(slots, describe) {
+        const suggestions = [];
+        const used = new Set();
+        slots.forEach((source, sourceIndex) => {
+            if (source.past || source.targetOnly || source.overload <= 0) return;
             let remaining = source.overload;
-            for (let targetIndex = 0; targetIndex < days.length && remaining > 0; targetIndex += 1) {
+            for (let targetIndex = 0; targetIndex < slots.length && remaining > 0; targetIndex += 1) {
                 if (targetIndex === sourceIndex) continue;
-                const target = days[targetIndex];
+                const target = slots[targetIndex];
                 if (target.past || target.spare <= 0) continue;
                 const picked = [];
                 let taken = 0;
                 source.products.forEach((item) => {
                     const key = item.jobNumber + '|' + item.itemName;
-                    if (used.has(key) || taken >= remaining) return;
+                    if (used.has(key) || taken >= remaining || !slotAllowsGroup(target, [item])) return;
                     if (item.minutes > target.spare - taken) return;
                     picked.push(item);
                     taken += item.minutes;
@@ -1827,16 +2173,83 @@
                     byJob.get(item.jobNumber).push(item);
                 });
                 byJob.forEach((jobItems, jobNumber) => {
-                    suggestions.push({
-                        sourceName: source.name,
-                        sourceIndex: source.index,
-                        dayName: target.name,
-                        targetDate: target.date,
-                        jobNumber: jobNumber,
-                        items: jobItems
-                    });
+                    suggestions.push(describe(source, target, jobNumber, jobItems));
                 });
             }
+        });
+        return suggestions;
+    }
+
+    function reviewDaySlot(department, date, weekdayIndex, weekKey, today, targetOnly) {
+        const hours = departmentDayHours(department, WEEKDAYS[weekdayIndex], weekKey);
+        const minutes = productionLoadMinutes(department, date);
+        const capacityMinutes = Math.round(hours * 60);
+        const load = typeof minutes === 'number' ? minutes : 0;
+        const items = productionDayItems(department, date);
+        const products = items
+            .filter((item) => !item.done && typeof item.minutes === 'number' && item.minutes > 0)
+            .slice()
+            .sort((a, b) => b.minutes - a.minutes || a.itemName.localeCompare(b.itemName, 'fi'));
+        return {
+            date: date,
+            name: WEEKDAY_NAMES[weekdayIndex],
+            weekLabel: targetOnly ? 'Edellinen viikko' : 'Tämä viikko',
+            targetOnly: !!targetOnly,
+            hours: hours,
+            minutes: minutes,
+            spare: capacityMinutes - load,
+            overload: load - capacityMinutes,
+            past: startOfDay(date).getTime() < today.getTime(),
+            pool: items,
+            products: products
+        };
+    }
+
+    function describeWeekMove(move, partial) {
+        return {
+            whole: !partial,
+            partial: !!partial,
+            blockId: partial ? '' : (move.items[0].blockId || ''),
+            blockName: partial ? '' : (move.items[0].blockName || 'Ei lohkoa'),
+            previousWeek: !!move.target.targetOnly,
+            sourceName: move.source.name,
+            sourceIndex: move.source.index,
+            dayName: move.target.name,
+            targetDate: move.target.date,
+            jobNumber: move.items[0].jobNumber,
+            items: move.items
+        };
+    }
+
+    function suggestWeekMoves(department, monday) {
+        const today = startOfDay(new Date());
+        const previousMonday = addDays(monday, -7);
+        const previousKey = weekKeyFromMonday(previousMonday);
+        const currentKey = weekKeyFromMonday(monday);
+        const previous = [];
+        const current = [];
+        for (let index = 0; index < 5; index += 1) {
+            previous.push(reviewDaySlot(department, addDays(previousMonday, index), index, previousKey, today, true));
+            current.push(reviewDaySlot(department, addDays(monday, index), index, currentKey, today, false));
+        }
+        const days = previous.concat(current);
+        days.forEach((day, index) => {
+            day.index = index;
+        });
+        const search = current.concat(previous.slice().reverse());
+        const whole = suggestWholeBlocks(search);
+        if (whole.length) {
+            return {
+                days: days,
+                suggestions: whole.map((move) => describeWeekMove(move, false))
+            };
+        }
+        const suggestions = suggestPartialProducts(search, (source, target, jobNumber, jobItems) => {
+            return describeWeekMove({
+                source: source,
+                target: target,
+                items: jobItems
+            }, true);
         });
         return { days: days, suggestions: suggestions };
     }
@@ -1869,44 +2282,37 @@
                 products: products
             };
         });
-        const suggestions = [];
-        const used = new Set();
-        weeks.forEach((source, sourceIndex) => {
-            if (source.past || source.overload <= 0) return;
-            let remaining = source.overload;
-            for (let targetIndex = 0; targetIndex < weeks.length && remaining > 0; targetIndex += 1) {
-                if (targetIndex === sourceIndex) continue;
-                const target = weeks[targetIndex];
-                if (target.past || target.spare <= 0) continue;
-                const picked = [];
-                let taken = 0;
-                source.products.forEach((item) => {
-                    const key = item.jobNumber + '|' + item.itemName;
-                    if (used.has(key) || taken >= remaining) return;
-                    if (item.minutes > target.spare - taken) return;
-                    picked.push(item);
-                    taken += item.minutes;
-                });
-                if (!picked.length) continue;
-                picked.forEach((item) => used.add(item.jobNumber + '|' + item.itemName));
-                target.spare -= taken;
-                remaining -= taken;
-                const byJob = new Map();
-                picked.forEach((item) => {
-                    if (!byJob.has(item.jobNumber)) byJob.set(item.jobNumber, []);
-                    byJob.get(item.jobNumber).push(item);
-                });
-                byJob.forEach((jobItems, jobNumber) => {
-                    suggestions.push({
-                        sourceWeek: source.weekNumber,
-                        targetWeek: target.weekNumber,
-                        targetMonday: target.monday,
-                        jobNumber: jobNumber,
-                        items: jobItems
-                    });
-                });
-            }
+        weeks.forEach((week) => {
+            week.pool = week.allItems;
         });
+        const whole = suggestWholeBlocks(weeks);
+        if (whole.length) {
+            return {
+                days: weeks,
+                suggestions: whole.map((move) => ({
+                    whole: true,
+                    partial: false,
+                    blockId: move.items[0].blockId || '',
+                    blockName: move.items[0].blockName || 'Ei lohkoa',
+                    sourceWeek: move.source.weekNumber,
+                    targetWeek: move.target.weekNumber,
+                    targetMonday: move.target.monday,
+                    jobNumber: move.items[0].jobNumber,
+                    items: move.items
+                }))
+            };
+        }
+        const suggestions = suggestPartialProducts(weeks, (source, target, jobNumber, jobItems) => ({
+            whole: false,
+            partial: true,
+            blockId: '',
+            blockName: '',
+            sourceWeek: source.weekNumber,
+            targetWeek: target.weekNumber,
+            targetMonday: target.monday,
+            jobNumber: jobNumber,
+            items: jobItems
+        }));
         return { days: weeks, suggestions: suggestions };
     }
 
@@ -1915,7 +2321,15 @@
         body.className = 'kk-day-body';
         const days = document.createElement('div');
         days.className = 'kk-move-days';
+        let shownWeek = '';
         review.days.forEach((day) => {
+            if (day.weekLabel && day.weekLabel !== shownWeek) {
+                shownWeek = day.weekLabel;
+                const heading = document.createElement('p');
+                heading.className = 'kk-move-week';
+                heading.textContent = day.weekLabel;
+                days.appendChild(heading);
+            }
             const slot = document.createElement('div');
             slot.className = 'kk-move-slot';
             const field = document.createElement('div');
@@ -1924,7 +2338,8 @@
             row.type = 'button';
             row.className = 'kk-move-day' + (reviewDayIndex === day.index ? ' is-open' : '');
             const name = document.createElement('span');
-            name.textContent = day.name.charAt(0).toUpperCase() + day.name.slice(1);
+            const dayLabel = day.name.charAt(0).toUpperCase() + day.name.slice(1);
+            name.textContent = day.targetOnly ? dayLabel + ' ' + formatDayMonth(day.date) : dayLabel;
             const value = document.createElement('span');
             value.textContent = formatLoadMinutes(day.minutes) + ' / ' + formatSum(day.hours);
             if (!day.past && day.overload > 0) value.classList.add('is-over');
@@ -1965,11 +2380,21 @@
                 headRow.className = 'kk-move-head';
                 const lead = document.createElement('p');
                 lead.className = 'kk-move-lead';
-                lead.textContent = 'Esimerkiksi siirrä nämä tuotteet ' + dayAblative(suggestion.sourceName) + ' ' + dayAllative(suggestion.dayName) + '. Työ ' + suggestion.jobNumber + '.';
+                const targetName = suggestion.previousWeek
+                    ? 'edellisen viikon ' + dayAllative(suggestion.dayName)
+                    : dayAllative(suggestion.dayName);
+                const route = dayAblative(suggestion.sourceName) + ' ' + targetName;
+                if (suggestion.partial) {
+                    lead.textContent = 'Esimerkiksi siirrä nämä tuotteet ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                } else if (!suggestion.blockId) {
+                    lead.textContent = 'Siirrä erättömät tuotteet ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                } else {
+                    lead.textContent = 'Siirrä erä ' + suggestion.blockName + ' ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                }
                 const apply = document.createElement('button');
                 apply.type = 'button';
                 apply.className = 'kk-day-save kk-move-apply';
-                apply.textContent = 'Siirrä ' + dayAllative(suggestion.dayName);
+                apply.textContent = 'Siirrä ' + targetName;
                 apply.addEventListener('click', () => moveReviewedItems(suggestion.items, isoFromDate(suggestion.targetDate), { department: department }));
                 headRow.append(lead, apply);
                 const list = document.createElement('ul');
@@ -2040,7 +2465,14 @@
                 headRow.className = 'kk-move-head';
                 const lead = document.createElement('p');
                 lead.className = 'kk-move-lead';
-                lead.textContent = 'Esimerkiksi siirrä nämä tuotteet viikolta ' + suggestion.sourceWeek + ' viikolle ' + suggestion.targetWeek + '. Työ ' + suggestion.jobNumber + '.';
+                const route = 'viikolta ' + suggestion.sourceWeek + ' viikolle ' + suggestion.targetWeek;
+                if (suggestion.partial) {
+                    lead.textContent = 'Esimerkiksi siirrä nämä tuotteet ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                } else if (!suggestion.blockId) {
+                    lead.textContent = 'Siirrä erättömät tuotteet ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                } else {
+                    lead.textContent = 'Siirrä erä ' + suggestion.blockName + ' ' + route + '. Työ ' + suggestion.jobNumber + '.';
+                }
                 const apply = document.createElement('button');
                 apply.type = 'button';
                 apply.className = 'kk-day-save kk-move-apply';
