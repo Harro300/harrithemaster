@@ -70,6 +70,7 @@ let isTuotantoContentView = false;
 let isLapivientiView = false;
 let isMateriaaliVarastoView = false;
 let isKuormaKapasiteettiView = false;
+let isYleistaulukkoView = false;
 let selectedLapivientiWeek = null;
 let lapivientiShowIdentifiers = false;
 let selectedMaaliVarastoWeek = null;
@@ -2253,7 +2254,7 @@ function packingShortcutJobNumber() {
     const mittatView = document.getElementById('mittatView');
     if (!mittatView || mittatView.classList.contains('d-none')) return '';
     if (isKatseluMode()) return '';
-    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView) return '';
+    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView || isYleistaulukkoView) return '';
     const openJobs = [];
     mittatView.querySelectorAll('.mitat-job-items').forEach((el) => {
         if (el.style.display === 'none') return;
@@ -2677,6 +2678,7 @@ function switchView(view) {
         isLapivientiView = false;
         isMateriaaliVarastoView = true;
         isKuormaKapasiteettiView = false;
+        isYleistaulukkoView = false;
     }
 
     if (view !== 'mitat' && isMitatPanelFullscreen) {
@@ -2756,6 +2758,7 @@ async function logout() {
     isLapivientiView = false;
     isMateriaaliVarastoView = false;
     isKuormaKapasiteettiView = false;
+    isYleistaulukkoView = false;
     currentCalculator = '';
     updateAdminAccessUI();
     
@@ -7052,6 +7055,7 @@ function setTuotantoNakyma(value) {
     isLapivientiView = value === 'lapivienti';
     isMateriaaliVarastoView = value === 'materiaali';
     isKuormaKapasiteettiView = value === 'kuorma';
+    isYleistaulukkoView = value === 'yleistaulukko';
     closeTuotantoDisplayOptionsMenu();
     showMitatForDisplayOptions();
 }
@@ -9994,17 +9998,22 @@ function buildTuotantoContentSummary(jobNumber, openSections, options) {
 }
 
 function applyTuotantoContentViewUi() {
-    const nakyma = isKuormaKapasiteettiView
-        ? 'kuorma'
-        : (isMateriaaliVarastoView
-            ? 'materiaali'
-            : (isLapivientiView ? 'lapivienti' : (isTuotantoContentView ? 'sisalto' : 'lista')));
+    const nakyma = isYleistaulukkoView
+        ? 'yleistaulukko'
+        : (isKuormaKapasiteettiView
+            ? 'kuorma'
+            : (isMateriaaliVarastoView
+                ? 'materiaali'
+                : (isLapivientiView ? 'lapivienti' : (isTuotantoContentView ? 'sisalto' : 'lista'))));
     document.querySelectorAll('input[data-tuotanto-nakyma]').forEach((input) => {
         input.checked = input.value === nakyma;
     });
-    const overlay = isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView;
+    const overlay = isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView || isYleistaulukkoView;
     const view = document.getElementById('mittatView');
-    if (view) view.classList.toggle('mittat-nakyma-overlay', overlay);
+    if (view) {
+        view.classList.toggle('mittat-nakyma-overlay', overlay);
+        view.classList.toggle('mittat-nakyma-yleistaulukko', isYleistaulukkoView);
+    }
     const kokoonpanijatBtn = document.getElementById('kokoonpanijatBtn');
     const toolbar = document.getElementById('tuotantoToolbarActions');
     const searchRow = document.getElementById('mitatSearchRow');
@@ -10013,6 +10022,7 @@ function applyTuotantoContentViewUi() {
     const lapivienti = document.getElementById('lapivientiView');
     const materiaali = document.getElementById('materiaaliVarastoView');
     const kuorma = document.getElementById('kuormaKapasiteettiView');
+    const yleistaulukko = document.getElementById('yleistaulukkoView');
     if (kokoonpanijatBtn) kokoonpanijatBtn.style.display = overlay ? 'none' : '';
     if (toolbar) toolbar.style.display = (overlay || isKatseluMode()) ? 'none' : '';
     if (searchRow) searchRow.style.display = overlay ? 'none' : '';
@@ -10080,6 +10090,15 @@ function applyTuotantoContentViewUi() {
         } else {
             kuorma.hidden = true;
             if (window.KuormaKapasiteetti) window.KuormaKapasiteetti.unmount(kuorma);
+        }
+    }
+    if (yleistaulukko) {
+        if (isYleistaulukkoView && window.Yleistaulukko) {
+            yleistaulukko.hidden = false;
+            window.Yleistaulukko.mount(yleistaulukko);
+        } else {
+            yleistaulukko.hidden = true;
+            if (window.Yleistaulukko) window.Yleistaulukko.unmount(yleistaulukko);
         }
     }
 }
@@ -10487,7 +10506,7 @@ function appendTekijaBadgesToSidebar(parent, jobNumber) {
 function renderKokoonpanijatBar() {
     const chips = document.getElementById('kokoonpanijatActiveRow');
     if (!chips) return;
-    if (isKatseluMode() || isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView) {
+    if (isKatseluMode() || isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView || isYleistaulukkoView) {
         chips.innerHTML = '';
         chips.hidden = true;
         return;
@@ -10778,7 +10797,7 @@ function loadMittatView() {
 
     renderKokoonpanijatBar();
     applyTuotantoContentViewUi();
-    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView) return;
+    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView || isKuormaKapasiteettiView || isYleistaulukkoView) return;
     
     const showKoeJobs = !!(window.KuormaKapasiteetti
         && typeof KuormaKapasiteetti.isShownInProduction === 'function'

@@ -68,6 +68,7 @@
     let weekPanel = 'viikko';
     let expandedWeeks = false;
     let productionSnapshot = null;
+    let shipJobsByDay = new Map();
     let reviewDayIndex = null;
     let reviewSelection = new Set();
 
@@ -778,6 +779,23 @@
         return date.getDate() + '.' + (date.getMonth() + 1) + '.';
     }
 
+    function formatShipLabel(iso) {
+        const date = dateFromIso(iso);
+        if (!date) return '';
+        return date.getDate() + '.' + (date.getMonth() + 1) + '.' + date.getFullYear();
+    }
+
+    function jobsShippingOn(iso) {
+        const jobs = shipJobsByDay.get(iso);
+        if (!jobs || !jobs.size) return [];
+        return [...jobs.entries()]
+            .map(([jobNumber, blocks]) => ({
+                jobNumber: jobNumber,
+                blocks: [...blocks].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true }))
+            }))
+            .sort((a, b) => a.jobNumber.localeCompare(b.jobNumber, 'fi', { numeric: true }));
+    }
+
     function sameDay(a, b) {
         return a.getFullYear() === b.getFullYear() &&
             a.getMonth() === b.getMonth() &&
@@ -1095,17 +1113,34 @@
         const jobs = typeof loadKuormaKoeJobs === 'function' ? loadKuormaKoeJobs() : [];
         const leadDays = departmentLeadDays();
         const byKey = new Map();
+        const ships = new Map();
         jobs.forEach((jobNumber) => {
             const items = mittatData[jobNumber];
             if (!items || typeof items !== 'object') return;
             const names = Object.keys(items);
             if (!names.length || jobIsFullyPackedFromMaps(mittatData, packed, jobNumber)) return;
+            const jobKey = String(jobNumber);
+            const jobBlockList = Array.isArray(jobBlocks[jobKey]) ? jobBlocks[jobKey] : [];
+            const hasBlocks = jobBlockList.length > 0;
             names.forEach((itemName) => {
                 if (packed[jobNumber + '-' + itemName]) return;
                 const shipDay = shipDateForItem(jobNumber, itemName, jobShipDates, jobBlocks, itemBlocks);
                 if (!shipDay) return;
                 const checkKey = jobNumber + '-' + itemName;
-                const jobKey = String(jobNumber);
+                const blockIdRaw = itemBlocks[checkKey];
+                const block = jobBlockList.find((entry) => entry && entry.id === blockIdRaw);
+                const blockName = block ? (String(block.name || '').trim() || 'Erä') : '';
+                let dayJobs = ships.get(shipDay);
+                if (!dayJobs) {
+                    dayJobs = new Map();
+                    ships.set(shipDay, dayJobs);
+                }
+                let blockNames = dayJobs.get(jobKey);
+                if (!blockNames) {
+                    blockNames = new Set();
+                    dayJobs.set(jobKey, blockNames);
+                }
+                if (blockName) blockNames.add(blockName);
                 DEPARTMENTS.forEach((department) => {
                     const amount = items[itemName] && items[itemName].kuorma ? items[itemName].kuorma[department] : null;
                     const offsets = schedule[checkKey] || {};
@@ -1119,9 +1154,6 @@
                     const ownDone = !!(departmentDone[department] && departmentDone[department][checkKey]);
                     const previous = PREVIOUS_DEPARTMENT[department] || '';
                     const previousDone = !previous || !!(departmentDone[previous] && departmentDone[previous][checkKey]);
-                    const blockIdRaw = itemBlocks[checkKey];
-                    const jobBlockList = Array.isArray(jobBlocks[jobKey]) ? jobBlocks[jobKey] : [];
-                    const block = jobBlockList.find((entry) => entry && entry.id === blockIdRaw);
                     list.push({
                         jobNumber: jobKey,
                         itemName: String(itemName),
@@ -1130,11 +1162,14 @@
                         ready: !ownDone && previousDone,
                         blockId: block ? String(block.id) : '',
                         blockName: block ? (String(block.name || '').trim() || 'Erä') : 'Ei lohkoa',
+                        shipDay: shipDay,
+                        hasBlocks: hasBlocks,
                         minimumDay: minimumDay
                     });
                 });
             });
         });
+        shipJobsByDay = ships;
         return byKey;
     }
 
@@ -1367,6 +1402,8 @@
             const date = addDays(monday, index);
             const head = document.createElement('div');
             head.className = 'kk-day-head' + (index >= 5 ? ' is-weekend' : '') + (sameDay(date, today) ? ' is-today' : '');
+            const main = document.createElement('div');
+            main.className = 'kk-day-main';
             const name = document.createElement('span');
             name.className = 'kk-day-name';
             const shortName = WEEKDAYS[index];
@@ -1374,7 +1411,25 @@
             const num = document.createElement('span');
             num.className = 'kk-day-num';
             num.textContent = formatDayMonth(date);
-            head.append(name, num);
+            main.append(name, num);
+            head.appendChild(main);
+            const shipping = jobsShippingOn(isoFromDate(date));
+            if (shipping.length) {
+                head.classList.add('has-ship');
+                const ships = document.createElement('div');
+                ships.className = 'kk-day-ship';
+                const label = document.createElement('span');
+                label.className = 'kk-day-ship-label';
+                label.textContent = 'näiden lähetyspvm';
+                ships.appendChild(label);
+                shipping.forEach((entry) => {
+                    const line = document.createElement('span');
+                    const blocks = entry.blocks.length ? (' (' + entry.blocks.join(', ') + ')') : '';
+                    line.textContent = entry.jobNumber + blocks;
+                    ships.appendChild(line);
+                });
+                head.appendChild(ships);
+            }
             grid.appendChild(head);
         }
 
@@ -1729,11 +1784,19 @@
         }
         const groups = new Map();
         items.forEach((item) => {
-            if (!groups.has(item.jobNumber)) groups.set(item.jobNumber, []);
-            groups.get(item.jobNumber).push(item);
+            const key = item.hasBlocks ? (item.jobNumber + '|' + (item.blockId || '')) : item.jobNumber;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(item);
         });
-        [...groups.keys()].sort((a, b) => a.localeCompare(b, 'fi', { numeric: true })).forEach((jobNumber) => {
-            const jobItems = groups.get(jobNumber);
+        [...groups.keys()].sort((a, b) => {
+            const left = groups.get(a)[0];
+            const right = groups.get(b)[0];
+            const jobDiff = String(left.jobNumber).localeCompare(String(right.jobNumber), 'fi', { numeric: true });
+            if (jobDiff) return jobDiff;
+            return String(left.blockName || '').localeCompare(String(right.blockName || ''), 'fi', { numeric: true });
+        }).forEach((key) => {
+            const jobItems = groups.get(key);
+            const sample = jobItems[0];
             const known = jobItems.filter((item) => !item.done).map((item) => item.minutes).filter((value) => typeof value === 'number');
             const jobMinutes = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
             const job = document.createElement('div');
@@ -1741,7 +1804,14 @@
             const jobHead = document.createElement('div');
             jobHead.className = 'kk-job-head';
             const jobName = document.createElement('span');
-            jobName.textContent = 'Työ ' + jobNumber;
+            jobName.appendChild(document.createTextNode('Työ ' + sample.jobNumber));
+            if (sample.hasBlocks) {
+                const block = document.createElement('span');
+                block.className = 'kk-job-block';
+                const dateLabel = formatShipLabel(sample.shipDay);
+                block.textContent = ' · ' + (sample.blockName || 'Erä') + (dateLabel ? ' · ' + dateLabel : '');
+                jobName.appendChild(block);
+            }
             const jobLoad = document.createElement('span');
             jobLoad.textContent = formatLoadMinutes(jobMinutes);
             jobHead.append(jobName, jobLoad);

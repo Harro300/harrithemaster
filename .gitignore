@@ -45,6 +45,7 @@ projects/*/*
 # <<< CURSOR MANAGED BLOCK <<<
 
 
+
 # Gradus brand assets
 !gradus-logo.svg
 !gradus-logo-dark.svg
@@ -52,3 +53,4 @@ projects/*/*
 
 # Kuorma/kapasiteetti-sivu
 !kuorma-kapasiteetti.js
+!yleistaulukko.js

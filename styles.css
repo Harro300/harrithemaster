@@ -4412,6 +4412,41 @@ body.dark-mode .kk-name-wrap .preset-checkbox.checked {
     font-weight: 700;
 }
 
+.kk-day-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.kk-day-head.has-ship {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.kk-day-ship {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    min-width: 0;
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: right;
+}
+
+.kk-day-ship-label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
 .kk-day-head.is-weekend .kk-day-num {
     color: var(--text-secondary);
 }
@@ -4901,6 +4936,11 @@ body.dark-mode .kk-load-line.is-next {
     color: var(--text-secondary);
 }
 
+.kk-job-block {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
 .kk-list-row {
     display: flex;
     align-items: center;
@@ -5165,4 +5205,184 @@ button.kk-move-day {
     .kk-day-sheet {
         animation: none;
     }
+}
+
+#mittatView.mittat-nakyma-yleistaulukko.container {
+    max-width: none;
+    width: 100%;
+}
+
+#mittatView.mittat-nakyma-yleistaulukko > .card:last-child > .card-body {
+    padding: 8px 8px 12px;
+}
+
+#mittatView.mittat-nakyma-yleistaulukko > .card:last-child > .card-body > .d-flex:first-child {
+    display: none !important;
+}
+
+.yleistaulukko-view {
+    min-height: calc(100vh - 150px);
+}
+
+.yt-page {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 150px);
+}
+
+.yt-scroll {
+    flex: 1;
+    overflow: auto;
+}
+
+.yt-sheet {
+    min-width: 100%;
+}
+
+.yt-caption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.yt-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    color: #1a1a1a;
+    font-size: 13px;
+}
+
+.yt-table th,
+.yt-table td {
+    border: 1px solid #b7b7b7;
+    padding: 4px 6px;
+    background: #fff;
+    color: #1a1a1a;
+    vertical-align: middle;
+    min-width: 78px;
+}
+
+.yt-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f3f3f3;
+    font-weight: 700;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.yt-table .yt-number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.yt-table .yt-job-number {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.yt-cell.is-green {
+    background: #92d050;
+}
+
+.yt-cell.is-yellow {
+    background: #ffff66;
+}
+
+.yt-cell.is-white {
+    background: #fff;
+}
+
+.yt-product-name {
+    padding-left: 18px;
+}
+
+.yt-block-name {
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+    font-weight: 700;
+}
+
+.yt-block-date {
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.yt-recipient {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.yt-input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+}
+
+.yt-input:focus {
+    outline: 2px solid #1a1a1a;
+    outline-offset: -2px;
+}
+
+.yt-expand {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border: 1px solid #b7b7b7;
+    background: #fff;
+    color: #1a1a1a;
+    line-height: 1;
+    padding: 0;
+}
+
+.yt-zoom {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 2px;
+    border: 1px solid #b7b7b7;
+    background: #fff;
+    color: #1a1a1a;
+}
+
+.yt-zoom-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #b7b7b7;
+    background: #fff;
+    color: #1a1a1a;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.yt-zoom-btn:disabled {
+    opacity: 0.4;
+}
+
+.yt-zoom-label {
+    min-width: 48px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.yt-empty {
+    margin: 24px 0;
+    color: #1a1a1a;
 }
