@@ -3107,12 +3107,115 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     flex-wrap: wrap;
 }
 
+.mitat-checkpoints.is-koe {
+    flex-wrap: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.koe-item-lead {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+}
+
+.koe-name-sizer {
+    visibility: hidden;
+    white-space: nowrap;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.2;
+    pointer-events: none;
+}
+
+.koe-name-sizer-chars {
+    display: inline-block;
+    width: 55ch;
+}
+
+.koe-item-lead-row {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.koe-item-lead-row .mitat-item-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.koe-item-lead-row .mitat-item-actions,
+.koe-item-lead-row .btn-note {
+    flex-shrink: 0;
+}
+
+.koe-item-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex: 0 0 auto;
+}
+
 .mitat-checkpoint-separator {
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--text-secondary);
     opacity: 0.8;
     margin: 0 0.2rem;
+}
+
+.koe-stage-bars {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+}
+
+.koe-stage-bar {
+    width: 9px;
+    height: 16px;
+    border-radius: 2px;
+    border: 1px solid #c5cad3;
+    background: #fff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+}
+
+.koe-stage-bar.is-next {
+    background: #e2b340;
+    border-color: #c4922a;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.koe-stage-bar.is-done {
+    background: #2f8f4e;
+    border-color: #257543;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+body.dark-mode .koe-stage-bar {
+    background: #fff;
+    border-color: #9aa3b2;
+    box-shadow: none;
+}
+
+body.dark-mode .koe-stage-bar.is-next {
+    background: #e2b340;
+    border-color: #f0cc6a;
+}
+
+body.dark-mode .koe-stage-bar.is-done {
+    background: #3c9a56;
+    border-color: #7dcea0;
 }
 
 .mitat-packed-label {

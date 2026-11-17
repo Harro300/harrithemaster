@@ -11788,9 +11788,16 @@ function loadMittatView() {
             html += `<div class="mitat-item-section">`;
             html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${uniqueId}" aria-label="Avaa/sulje ${itemName}">`;
             html += `<div class="mitat-item-header-main">`;
-            html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints">`;
+            const isKoeItem = isKuormaKoeJob(jobNumber);
+            html += `<div class="d-flex align-items-center gap-2 mitat-checkpoints${isKoeItem ? ' is-koe' : ''}">`;
+            if (isKoeItem) {
+                html += `<div class="koe-item-lead">`;
+                html += `<span class="koe-name-sizer" aria-hidden="true"><span class="koe-name-sizer-prefix">- </span><span class="koe-name-sizer-chars"></span></span>`;
+                html += `<div class="koe-item-lead-row">`;
+            }
             const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
-            html += `<h5 class="${itemTitleClass}">- ${itemName}</h5>`;
+            const itemTitleAttr = isKoeItem ? ` title="${escapeHtmlText(itemName)}"` : '';
+            html += `<h5 class="${itemTitleClass}"${itemTitleAttr}>- ${itemName}</h5>`;
             const safeItemAttr = sanitizeForAttribute(itemName);
             if (!katselu) {
                 html += `<div class="dropdown mitat-item-actions">`;
@@ -11821,7 +11828,9 @@ function loadMittatView() {
                 html += `</div>`;
             }
             html += `<button class="btn-note ${itemNoteClass}" onclick="event.stopPropagation(); openMittatNote('item', '${jobNumber}', '${itemName}', this)" title="Muistiinpano">📝</button>`;
-            if (isKuormaKoeJob(jobNumber)) {
+            if (isKoeItem) {
+                html += `</div></div>`;
+                html += `<div class="koe-item-stage">`;
                 html += renderKoeItemCheckpoints({
                     jobNumber,
                     itemName,
@@ -11838,6 +11847,7 @@ function loadMittatView() {
                     lasilistatOk,
                     kulmalistatOk
                 });
+                html += `</div>`;
             } else if (katselu) {
                 const visibleCheckpoints = [];
                 if (hasLasilistat && isChecked) {
@@ -16281,6 +16291,37 @@ function koeStageAria(stageId, itemName) {
     return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${itemName}`;
 }
 
+const KOE_BAR_LABELS = {
+    sahattu: 'Saha',
+    hitsattu: 'Hitsaus',
+    maalattu: 'Maalaus',
+    tehty: 'Tehty'
+};
+
+function koeStageBarStates(stage) {
+    const firstOpen = KOE_CHAIN_IDS.findIndex((id) => !stage[id]);
+    return KOE_CHAIN_IDS.map((id, index) => {
+        if (stage[id]) return 'done';
+        if (firstOpen > 0 && index === firstOpen) return 'next';
+        return 'idle';
+    });
+}
+
+function renderKoeStageBars(stage) {
+    const states = koeStageBarStates(stage);
+    const statusText = { idle: 'aloittamatta', next: 'seuraavana', done: 'valmis' };
+    const bars = KOE_CHAIN_IDS.map((id, index) => {
+        const label = KOE_BAR_LABELS[id];
+        const status = statusText[states[index]];
+        return `<span class="koe-stage-bar is-${states[index]}" title="${escapeHtmlText(`${label}, ${status}`)}"></span>`;
+    }).join('');
+    const summary = KOE_CHAIN_IDS.map((id, index) => {
+        const name = index === 0 ? KOE_BAR_LABELS[id] : KOE_BAR_LABELS[id].toLowerCase();
+        return `${name} ${statusText[states[index]]}`;
+    }).join(', ');
+    return `<span class="koe-stage-bars" role="img" aria-label="${escapeHtmlText(summary)}">${bars}</span>`;
+}
+
 function renderKoeItemCheckpoints(ctx) {
     const stage = itemDepartmentStage(ctx.jobNumber, ctx.itemName);
     const visible = koeVisibleStages(stage);
@@ -16321,7 +16362,8 @@ function renderKoeItemCheckpoints(ctx) {
     });
     const beforeDone = visible.filter((entry) => entry.id !== 'tehty').map(stageHtml);
     const doneStage = visible.filter((entry) => entry.id === 'tehty').map(stageHtml);
-    return beforeDone.concat(materials, doneStage).join('<span class="mitat-checkpoint-separator">/</span>');
+    const checksHtml = beforeDone.concat(materials, doneStage).join('<span class="mitat-checkpoint-separator">/</span>');
+    return `${renderKoeStageBars(stage)}${checksHtml}`;
 }
 
 function toggleKoeDepartmentCheck(checkKey, stage) {
