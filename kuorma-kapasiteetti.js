@@ -62,6 +62,7 @@
     };
 
     let state = loadState();
+    let applyingRemote = false;
     let selectedWeekKey = null;
     let openDayKey = null;
     let settingsKeyHandler = null;
@@ -255,6 +256,27 @@
 
     function save() {
         persist(state);
+        if (applyingRemote) return;
+        if (typeof syncKoeKuormaFromLocal === 'function') syncKoeKuormaFromLocal();
+    }
+
+    function writeSchedule(schedule) {
+        localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
+        if (applyingRemote) return;
+        if (typeof syncKoeAjoitusFromLocal === 'function') syncKoeAjoitusFromLocal();
+    }
+
+    function reloadFromStorage() {
+        const before = localStorage.getItem(SCHEDULE_KEY);
+        applyingRemote = true;
+        state = loadState();
+        persist(state);
+        if (document.getElementById('kkWeek')) renderWeekPage();
+        const layer = document.getElementById('kkSettingsLayer');
+        if (layer && !layer.hidden && !layer.contains(document.activeElement)) renderSettings();
+        applyingRemote = false;
+        const after = localStorage.getItem(SCHEDULE_KEY);
+        if (before !== after && typeof syncKoeAjoitusFromLocal === 'function') syncKoeAjoitusFromLocal();
     }
 
     function formatSum(total) {
@@ -436,11 +458,12 @@
         switchWrap.append(enabled, enabledLabel);
         const note = document.createElement('p');
         note.className = 'kk-note';
-        note.textContent = 'Kun pois, tuotantosivu pysyy ennallaan, ja tällä kierroksella kytkin ei vielä lisää tunteja tuotantoon.';
+        note.textContent = 'Oletus on pois. Silloin Viikkonäkymä ja Yleistaulukko eivät näy Näytön valinnoissa, eikä koetöitä näytetä tuotantolistassa.';
         enabled.addEventListener('change', () => {
-            state.enabled = enabled.checked;
-            save();
+            state.enabled = enabled.checked === true;
+            persist(state);
             if (typeof updateKuormaButton === 'function') updateKuormaButton();
+            if (typeof syncKoeNakymaMenu === 'function') syncKoeNakymaMenu();
         });
         section.append(switchWrap, note);
         return section;
@@ -1093,7 +1116,7 @@
                 changed = true;
             });
         });
-        if (changed) localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
+        if (changed) writeSchedule(schedule);
     }
 
     function buildProductionSnapshot() {
@@ -1939,7 +1962,7 @@
             }
             schedule[key] = saved;
         });
-        if (changed) localStorage.setItem(SCHEDULE_KEY, JSON.stringify(schedule));
+        if (changed) writeSchedule(schedule);
         if (options && options.silent) return;
         reviewSelection.clear();
         if (typeof loadMittatView === 'function') loadMittatView();
@@ -3332,6 +3355,11 @@
         unmount,
         loadQuote,
         transitionDays,
-        isShownInProduction: function () { return state.enabled === true; }
+        isShownInProduction: function () { return state.enabled === true; },
+        refresh: function () {
+            if (document.getElementById('kkWeek')) renderWeekPage();
+        },
+        reloadFromStorage: reloadFromStorage
     };
+    if (typeof syncKoeNakymaMenu === 'function') syncKoeNakymaMenu();
 })();

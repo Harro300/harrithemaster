@@ -63,6 +63,24 @@ const mitatJobDocIds = new Map();
 const loadedActiveItemNames = new Map();
 const pendingJobSyncs = new Set();
 const jobSyncChains = new Map();
+let koeStateLoaded = false;
+let koeJobsPrimed = false;
+let lastKnownKoeJobCount = -1;
+let koeJobsUnsubscribe = null;
+let koeAsetuksetUnsubscribe = null;
+let koeKapasiteettiUnsubscribe = null;
+let koeAjoitusUnsubscribe = null;
+let koeAsetuksetLoaded = false;
+let koeKapasiteettiLoaded = false;
+let koeAjoitusLoaded = false;
+let koeApplyingShared = false;
+let lastKoeAsetukset = null;
+let lastKoeKapasiteetti = null;
+let lastKoeAjoitus = null;
+const koeJobDocIds = new Map();
+const pendingKoeSyncs = new Set();
+const koeSyncChains = new Map();
+const KOE_DEPARTMENTS = ['saha', 'hitsaus', 'maalaus', 'kokoonpano'];
 
 let deepLinkHighlightTimer = null;
 let tuotantoDisplayMode = 'katselu';
@@ -1087,33 +1105,558 @@ function renameKuormaKoeJob(fromJob, toJob) {
     saveKuormaKoeJobs(jobs);
 }
 
+function readJsonStorage(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function readYleistaulukkoSheet() {
+    return readJsonStorage('yleistaulukko');
+}
+
+function sheetForKoeJob(jobNumber) {
+    const sheet = readYleistaulukkoSheet()[jobNumber];
+    if (!sheet || typeof sheet !== 'object') return { week: '', recipient: '' };
+    return {
+        week: String(sheet.week || '').trim(),
+        recipient: String(sheet.recipient || '').trim()
+    };
+}
+
+function writeYleistaulukkoSheet(sheet) {
+    localStorage.setItem('yleistaulukko', JSON.stringify(sheet || {}));
+}
+
+function buildKoeJobPayload(jobNumber) {
+    const payload = buildTuotantoJobPayload(jobNumber);
+    if (!payload) return null;
+    payload.sheet = sheetForKoeJob(jobNumber);
+    return payload;
+}
+
+function applyKoeSheet(sheet, jobNumber, payload) {
+    const next = payload && payload.sheet && typeof payload.sheet === 'object' ? payload.sheet : {};
+    const week = String(next.week || '').trim();
+    const recipient = String(next.recipient || '').trim();
+    if (week || recipient) sheet[jobNumber] = { week, recipient };
+    else delete sheet[jobNumber];
+}
+
+function removeYleistaulukkoJob(jobNumber) {
+    const sheet = readYleistaulukkoSheet();
+    if (!Object.prototype.hasOwnProperty.call(sheet, jobNumber)) return;
+    delete sheet[jobNumber];
+    writeYleistaulukkoSheet(sheet);
+}
+
+function remapYleistaulukkoJob(fromJob, toJob) {
+    const sheet = readYleistaulukkoSheet();
+    if (!Object.prototype.hasOwnProperty.call(sheet, fromJob)) return;
+    sheet[toJob] = sheet[fromJob];
+    delete sheet[fromJob];
+    writeYleistaulukkoSheet(sheet);
+}
+
+function readKoeAjoitusMap() {
+    return readJsonStorage('kuormaAjoitus');
+}
+
+function writeKoeAjoitusMap(schedule) {
+    localStorage.setItem('kuormaAjoitus', JSON.stringify(schedule || {}));
+}
+
+function removeKoeAjoitusJob(jobNumber, itemNames) {
+    const schedule = readKoeAjoitusMap();
+    const items = itemNames || Object.keys((readJsonStorage('mittatData')[jobNumber]) || {});
+    let changed = false;
+    items.forEach((itemName) => {
+        const key = `${jobNumber}-${itemName}`;
+        if (!Object.prototype.hasOwnProperty.call(schedule, key)) return;
+        delete schedule[key];
+        changed = true;
+    });
+    if (!changed) return;
+    writeKoeAjoitusMap(schedule);
+    void syncKoeAjoitusFromLocal(true);
+}
+
+function remapKoeAjoitusJob(fromJob, toJob) {
+    const schedule = readKoeAjoitusMap();
+    const items = Object.keys((readJsonStorage('mittatData')[toJob]) || {});
+    let changed = false;
+    items.forEach((itemName) => {
+        const oldKey = `${fromJob}-${itemName}`;
+        if (!Object.prototype.hasOwnProperty.call(schedule, oldKey)) return;
+        schedule[`${toJob}-${itemName}`] = schedule[oldKey];
+        delete schedule[oldKey];
+        changed = true;
+    });
+    if (!changed) return;
+    writeKoeAjoitusMap(schedule);
+    void syncKoeAjoitusFromLocal();
+}
+
+function encodeKoeSlotId(key) {
+    return encodeURIComponent(String(key)).replace(/\./g, '%2E');
+}
+
+function decodeKoeSlotId(id) {
+    try {
+        return decodeURIComponent(String(id).replace(/%2E/gi, '.'));
+    } catch (error) {
+        return String(id);
+    }
+}
+
+function encodeKoeSlots(schedule) {
+    const slots = {};
+    Object.keys(schedule || {}).forEach((key) => {
+        slots[encodeKoeSlotId(key)] = schedule[key];
+    });
+    return slots;
+}
+
+function decodeKoeSlots(slots) {
+    const schedule = {};
+    if (!slots || typeof slots !== 'object' || Array.isArray(slots)) return schedule;
+    Object.keys(slots).forEach((id) => {
+        schedule[decodeKoeSlotId(id)] = slots[id];
+    });
+    return schedule;
+}
+
+function sameKoeJson(a, b) {
+    return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+}
+
+function emptyKoeKapasiteetti() {
+    const kapasiteetti = {};
+    KOE_DEPARTMENTS.forEach((department) => {
+        kapasiteetti[department] = { workers: [] };
+    });
+    return kapasiteetti;
+}
+
+function koeDepartmentWorkers(kapasiteetti, department) {
+    const source = kapasiteetti && kapasiteetti[department];
+    return source && Array.isArray(source.workers) ? source.workers : [];
+}
+
+function koeKapasiteettiHasWorkers(kapasiteetti) {
+    return KOE_DEPARTMENTS.some((department) => koeDepartmentWorkers(kapasiteetti, department).length > 0);
+}
+
+function readKuormaKapasiteettiStorage() {
+    return readJsonStorage('kuormaKapasiteetti');
+}
+
+function koeAsetuksetFromStorage(source) {
+    const data = source || readKuormaKapasiteettiStorage();
+    return {
+        kuorma: data.kuorma || null,
+        kuormaSets: data.kuormaSets && typeof data.kuormaSets === 'object' ? data.kuormaSets : {},
+        activeKuormaSet: typeof data.activeKuormaSet === 'string' ? data.activeKuormaSet : '',
+        siirtymaAika: data.siirtymaAika || null
+    };
+}
+
+function koeAsetuksetHasContent(asetukset) {
+    if (!asetukset) return false;
+    if (asetukset.activeKuormaSet) return true;
+    if (asetukset.kuormaSets && Object.keys(asetukset.kuormaSets).length > 0) return true;
+    return /[1-9]/.test(JSON.stringify(asetukset.kuorma || {}));
+}
+
+function isKoeDataClearedAgainstKnownJobs() {
+    const data = readJsonStorage('mittatData');
+    const koeCount = loadKuormaKoeJobs().filter((jobNumber) => data[jobNumber]).length;
+    return koeCount === 0 && lastKnownKoeJobCount > 0;
+}
+
+function applyRemoteKoePayloads(payloads, dropMissing) {
+    const state = getMitatStateFromLocalStorage();
+    const sheet = readYleistaulukkoSheet();
+    const remoteNumbers = new Set();
+    (payloads || []).forEach((payload) => {
+        const key = payload && payload.jobNumber ? String(payload.jobNumber) : '';
+        if (!key || pendingKoeSyncs.has(key)) return;
+        remoteNumbers.add(key);
+        stripJobFromMitatState(state, key);
+        absorbJobPayload(state, payload);
+        applyKoeSheet(sheet, key, payload);
+    });
+    if (dropMissing) {
+        loadKuormaKoeJobs().forEach((jobNumber) => {
+            if (remoteNumbers.has(jobNumber) || pendingKoeSyncs.has(jobNumber)) return;
+            stripJobFromMitatState(state, jobNumber);
+            delete sheet[jobNumber];
+        });
+    }
+    applyMitatStateToLocalStorage(state);
+    writeYleistaulukkoSheet(sheet);
+    const kept = new Set(remoteNumbers);
+    pendingKoeSyncs.forEach((jobNumber) => kept.add(jobNumber));
+    if (!dropMissing) loadKuormaKoeJobs().forEach((jobNumber) => kept.add(jobNumber));
+    saveKuormaKoeJobs([...kept]);
+}
+
+function refreshKoeSurfaces() {
+    if (isKuormaKapasiteettiView && window.KuormaKapasiteetti && typeof KuormaKapasiteetti.refresh === 'function') {
+        KuormaKapasiteetti.refresh();
+        return;
+    }
+    if (isYleistaulukkoView && window.Yleistaulukko && typeof Yleistaulukko.refresh === 'function') {
+        Yleistaulukko.refresh();
+        return;
+    }
+    const mittatView = document.getElementById('mittatView');
+    if (!mittatView || mittatView.classList.contains('d-none')) return;
+    if (isTuotantoContentView || isLapivientiView || isMateriaaliVarastoView) return;
+    loadMittatView();
+}
+
+function patchKuormaSharedStorage(patch) {
+    const current = readKuormaKapasiteettiStorage();
+    Object.keys(patch || {}).forEach((key) => {
+        current[key] = patch[key];
+    });
+    localStorage.setItem('kuormaKapasiteetti', JSON.stringify(current));
+    if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.reloadFromStorage === 'function') {
+        KuormaKapasiteetti.reloadFromStorage();
+    }
+}
+
+function rememberKoeJobDocs(docIdToJob) {
+    koeJobDocIds.forEach((docId, jobKey) => {
+        if (docIdToJob.has(docId) && docIdToJob.get(docId) !== jobKey) {
+            koeJobDocIds.delete(jobKey);
+        }
+    });
+    docIdToJob.forEach((jobKey, docId) => {
+        koeJobDocIds.set(jobKey, docId);
+    });
+}
+
+function handleKoeJobsSnapshot(snapshot) {
+    const payloads = [];
+    const docIdToJob = new Map();
+    snapshot.forEach((jobDoc) => {
+        const data = jobDoc.data();
+        if (!data || !data.jobNumber) return;
+        payloads.push(data);
+        docIdToJob.set(jobDoc.id, String(data.jobNumber));
+    });
+    rememberKoeJobDocs(docIdToJob);
+    lastKnownKoeJobCount = payloads.length;
+    if (!koeJobsPrimed) {
+        koeJobsPrimed = true;
+        if (payloads.length > 0) applyRemoteKoePayloads(payloads, false);
+        koeStateLoaded = true;
+        const remoteNumbers = new Set(payloads.map((payload) => String(payload.jobNumber)));
+        const extra = loadKuormaKoeJobs().filter((jobNumber) => !remoteNumbers.has(jobNumber));
+        if (extra.length > 0) void syncKoeJobsToFirestore(extra);
+        refreshKoeSurfaces();
+        return;
+    }
+    applyRemoteKoePayloads(payloads, true);
+    refreshKoeSurfaces();
+}
+
+async function syncKoeJobToFirestore(jobNumber, capture, isStale) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !koeStateLoaded) return;
+    if (!jobNumber) return;
+    const forceDelete = !!(capture && capture.forceDelete);
+    if (!forceDelete && isKoeDataClearedAgainstKnownJobs()) {
+        console.warn('Koetyön synkka estetty: paikallinen koetyölista on tyhjä mutta Firestoressa oli', lastKnownKoeJobCount, 'koetyötä');
+        return;
+    }
+    const stale = () => (typeof isStale === 'function' ? isStale() : false);
+    const localPayload = capture ? capture.payload : null;
+    if (!forceDelete && !localPayload) return;
+
+    try {
+        const { db, doc, serverTimestamp, runTransaction } = window.firebase;
+        const key = String(jobNumber);
+        const docId = koeJobDocIds.get(key) || getTuotantoJobDocId(key);
+        const ref = doc(db, 'koeTyot', docId);
+        const outcome = await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(ref);
+            if (forceDelete) {
+                if (snap.exists()) transaction.delete(ref);
+                return { action: 'delete' };
+            }
+            const payload = cloneJson(localPayload);
+            payload.jobNumber = key;
+            payload.updatedBy = currentUser.email;
+            payload.updatedAt = serverTimestamp();
+            transaction.set(ref, payload);
+            return { action: 'set' };
+        });
+        if (stale() || !outcome) return;
+        if (outcome.action === 'delete') koeJobDocIds.delete(key);
+        else koeJobDocIds.set(key, docId);
+    } catch (error) {
+        console.error('❌ Koetyön synkka epäonnistui:', jobNumber, error);
+    }
+}
+
+function enqueueKoeJobSync(jobNumber, capture) {
+    const key = String(jobNumber);
+    let state = koeSyncChains.get(key);
+    if (!state) {
+        state = { tail: Promise.resolve(), revision: 0, latest: null };
+        koeSyncChains.set(key, state);
+    }
+    state.revision += 1;
+    const revision = state.revision;
+    state.latest = capture;
+    pendingKoeSyncs.add(key);
+    const run = state.tail
+        .catch(() => {})
+        .then(async () => {
+            if (state.revision !== revision) return;
+            await syncKoeJobToFirestore(key, state.latest, () => state.revision !== revision);
+        });
+    state.tail = run.finally(() => {
+        if (koeSyncChains.get(key) === state && state.revision === revision) {
+            pendingKoeSyncs.delete(key);
+            koeSyncChains.delete(key);
+        }
+    });
+    return run;
+}
+
+async function syncKoeJobsToFirestore(jobNumbers) {
+    const unique = [...new Set((jobNumbers || []).filter(Boolean).map(String))];
+    const runs = unique.map((jobNumber) => enqueueKoeJobSync(jobNumber, {
+        forceDelete: false,
+        payload: buildKoeJobPayload(jobNumber)
+    })).filter((run) => run);
+    for (const run of runs) {
+        await run;
+    }
+}
+
+function syncKoeJobFromSheet(jobNumber) {
+    if (!jobNumber || !isKuormaKoeJob(jobNumber)) return;
+    enqueueKoeJobSync(jobNumber, {
+        forceDelete: false,
+        payload: buildKoeJobPayload(jobNumber)
+    });
+}
+
+async function syncKoeJobRenameToFirestore(fromJob, toJob) {
+    if (!window.firebase || !window.firebase.db || !currentUser) return false;
+    const { db, doc, getDoc, serverTimestamp, runTransaction } = window.firebase;
+    const pending = koeSyncChains.get(fromJob);
+    if (pending) {
+        try { await pending.tail; } catch (error) { /* jonon virhe ei estä renameä */ }
+    }
+    const docId = koeJobDocIds.get(fromJob) || getTuotantoJobDocId(fromJob);
+    const ref = doc(db, 'koeTyot', docId);
+    try {
+        const existing = await getDoc(ref);
+        if (!existing.exists()) return true;
+        const localPayload = buildKoeJobPayload(toJob);
+        if (!localPayload) return false;
+        await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(ref);
+            if (!snap.exists()) return;
+            const payload = cloneJson(localPayload);
+            payload.jobNumber = toJob;
+            payload.updatedBy = currentUser.email;
+            payload.updatedAt = serverTimestamp();
+            transaction.set(ref, payload);
+        });
+        koeJobDocIds.delete(fromJob);
+        koeJobDocIds.set(toJob, docId);
+        return true;
+    } catch (error) {
+        console.error('❌ Koetyön työnumeron muokkaus epäonnistui:', fromJob, toJob, error);
+        return false;
+    }
+}
+
+function syncKoeKuormaFromLocal() {
+    void syncKoeAsetuksetFromLocal();
+    void syncKoeKapasiteettiFromLocal();
+}
+
+async function syncKoeAsetuksetFromLocal() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !koeAsetuksetLoaded || koeApplyingShared) return;
+    const local = koeAsetuksetFromStorage();
+    if (!koeAsetuksetHasContent(local) && koeAsetuksetHasContent(lastKoeAsetukset)) return;
+    if (sameKoeJson(local, lastKoeAsetukset)) return;
+    try {
+        const { db, doc, serverTimestamp, runTransaction } = window.firebase;
+        const ref = doc(db, 'koeTyot', 'asetukset');
+        const saved = await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(ref);
+            const remote = snap.exists() ? (snap.data() || {}) : {};
+            const remembered = lastKoeAsetukset || {};
+            const next = {
+                kuorma: sameKoeJson(local.kuorma, remembered.kuorma) ? (remote.kuorma || null) : local.kuorma,
+                kuormaSets: sameKoeJson(local.kuormaSets, remembered.kuormaSets) ? (remote.kuormaSets || {}) : local.kuormaSets,
+                activeKuormaSet: local.activeKuormaSet === (remembered.activeKuormaSet || '')
+                    ? (remote.activeKuormaSet || '')
+                    : local.activeKuormaSet,
+                siirtymaAika: sameKoeJson(local.siirtymaAika, remembered.siirtymaAika) ? (remote.siirtymaAika || null) : local.siirtymaAika,
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            };
+            transaction.set(ref, next);
+            return next;
+        });
+        lastKoeAsetukset = koeAsetuksetFromStorage(saved);
+    } catch (error) {
+        console.error('❌ Koetyön kuorma-asetusten synkka epäonnistui:', error);
+    }
+}
+
+async function syncKoeKapasiteettiFromLocal() {
+    if (!window.firebase || !window.firebase.db || !currentUser || !koeKapasiteettiLoaded || koeApplyingShared) return;
+    const local = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
+    if (!koeKapasiteettiHasWorkers(local) && koeKapasiteettiHasWorkers(lastKoeKapasiteetti)) return;
+    try {
+        const { db, doc, serverTimestamp, runTransaction } = window.firebase;
+        const ref = doc(db, 'koeTyot', 'kapasiteetti');
+        const saved = await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(ref);
+            const remote = snap.exists() && snap.data() ? (snap.data().kapasiteetti || {}) : {};
+            const next = {};
+            KOE_DEPARTMENTS.forEach((department) => {
+                const localWorkers = koeDepartmentWorkers(local, department);
+                const remembered = koeDepartmentWorkers(lastKoeKapasiteetti, department);
+                const workers = sameKoeJson(localWorkers, remembered)
+                    ? koeDepartmentWorkers(remote, department)
+                    : localWorkers;
+                next[department] = { workers };
+            });
+            transaction.set(ref, {
+                kapasiteetti: next,
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            });
+            return next;
+        });
+        lastKoeKapasiteetti = saved;
+    } catch (error) {
+        console.error('❌ Koetyön kapasiteetin synkka epäonnistui:', error);
+    }
+}
+
+async function syncKoeAjoitusFromLocal(allowEmpty) {
+    if (!window.firebase || !window.firebase.db || !currentUser || !koeAjoitusLoaded || koeApplyingShared) return;
+    const local = readKoeAjoitusMap();
+    const localCount = Object.keys(local).length;
+    const knownCount = lastKoeAjoitus ? Object.keys(lastKoeAjoitus).length : 0;
+    if (!allowEmpty && localCount === 0 && knownCount > 0) return;
+    if (sameKoeJson(local, lastKoeAjoitus)) return;
+    try {
+        const { db, doc, serverTimestamp, runTransaction } = window.firebase;
+        const ref = doc(db, 'koeTyot', 'ajoitus');
+        const saved = await runTransaction(db, async (transaction) => {
+            const snap = await transaction.get(ref);
+            const remote = decodeKoeSlots(snap.exists() && snap.data() ? snap.data().slots : null);
+            const remembered = lastKoeAjoitus || {};
+            const next = { ...remote };
+            Object.keys(local).forEach((key) => {
+                if (!sameKoeJson(local[key], remembered[key])) next[key] = local[key];
+            });
+            Object.keys(remembered).forEach((key) => {
+                if (!Object.prototype.hasOwnProperty.call(local, key)) delete next[key];
+            });
+            transaction.set(ref, {
+                slots: encodeKoeSlots(next),
+                updatedBy: currentUser.email,
+                updatedAt: serverTimestamp()
+            });
+            return next;
+        });
+        lastKoeAjoitus = saved;
+    } catch (error) {
+        console.error('❌ Koetyön ajoituksen synkka epäonnistui:', error);
+    }
+}
+
+function applyRemoteKoeAsetukset(data) {
+    const next = koeAsetuksetFromStorage(data || {});
+    koeApplyingShared = true;
+    try {
+        patchKuormaSharedStorage({
+            kuorma: next.kuorma,
+            kuormaSets: next.kuormaSets,
+            activeKuormaSet: next.activeKuormaSet,
+            siirtymaAika: next.siirtymaAika
+        });
+    } finally {
+        koeApplyingShared = false;
+    }
+    lastKoeAsetukset = koeAsetuksetFromStorage();
+}
+
+function applyRemoteKoeKapasiteetti(kapasiteetti) {
+    koeApplyingShared = true;
+    try {
+        patchKuormaSharedStorage({ kapasiteetti: kapasiteetti || emptyKoeKapasiteetti() });
+    } finally {
+        koeApplyingShared = false;
+    }
+    lastKoeKapasiteetti = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
+}
+
+function applyRemoteKoeAjoitus(schedule) {
+    lastKoeAjoitus = schedule || {};
+    koeApplyingShared = true;
+    try {
+        writeKoeAjoitusMap(lastKoeAjoitus);
+        if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.reloadFromStorage === 'function') {
+            KuormaKapasiteetti.reloadFromStorage();
+        }
+    } finally {
+        koeApplyingShared = false;
+    }
+    if (!sameKoeJson(readKoeAjoitusMap(), lastKoeAjoitus)) void syncKoeAjoitusFromLocal(true);
+}
+
 function dualWriteMitatState(jobNumberOrNumbers, options) {
     const jobs = Array.isArray(jobNumberOrNumbers)
         ? jobNumberOrNumbers
         : (jobNumberOrNumbers ? [jobNumberOrNumbers] : []);
-    const unique = [...new Set(jobs.filter(Boolean).map(String))]
-        .filter((jobNumber) => !isKuormaKoeJob(jobNumber));
-    if (unique.length === 0) return Promise.resolve([]);
+    const all = [...new Set(jobs.filter(Boolean).map(String))];
+    const koe = all.filter((jobNumber) => isKuormaKoeJob(jobNumber));
+    const unique = all.filter((jobNumber) => !isKuormaKoeJob(jobNumber));
     const forceDelete = !!(options && options.forceDelete);
     // Payload kaapataan heti, ennen ensimmäistä awaitia. Jonon suoritus ei
     // lue localStoragea uudelleen. Indeksimuisti päivittyy vasta kirjoituksen jälkeen.
+    const koeRuns = koe.map((jobNumber) => enqueueKoeJobSync(jobNumber, {
+        forceDelete,
+        payload: forceDelete ? null : buildKoeJobPayload(jobNumber)
+    }));
+    if (unique.length === 0) return Promise.all(koeRuns);
     const runs = unique.map((jobNumber) => enqueueJobSync(jobNumber, {
         forceDelete,
         payload: forceDelete ? null : buildTuotantoJobPayload(jobNumber)
     }));
-    return Promise.all(runs);
+    return Promise.all(koeRuns.concat(runs));
 }
 
 async function syncMitatJobRenameToFirestore(fromJob, toJob) {
-    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
-        return false;
-    }
     fromJob = String(fromJob || '');
     toJob = String(toJob || '');
     if (!fromJob || !toJob || fromJob === toJob) return false;
     if (isKuormaKoeJob(fromJob)) {
         renameKuormaKoeJob(fromJob, toJob);
-        return true;
+        remapYleistaulukkoJob(fromJob, toJob);
+        remapKoeAjoitusJob(fromJob, toJob);
+        return syncKoeJobRenameToFirestore(fromJob, toJob);
+    }
+    if (!window.firebase || !window.firebase.db || !currentUser || !mitatStateLoaded) {
+        return false;
     }
     if (isMitatDataClearedAgainstKnownJobs()) {
         console.warn('Työnumeron muokkaus-synkka estetty: mittatData on tyhjä mutta Firestoressa oli', lastKnownJobCount, 'työtä');
@@ -2164,6 +2707,86 @@ function setupRealtimeListeners() {
     } catch (error) {
         console.error('❌ Virhe läpivienti-kuuntelijan luonnissa:', error);
     }
+
+    try {
+        koeJobsUnsubscribe = onSnapshot(
+            query(collection(db, 'koeTyot'), where('jobNumber', '>', '')),
+            (snapshot) => {
+                handleKoeJobsSnapshot(snapshot);
+            },
+            (error) => {
+                console.error('❌ Koetöiden kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe koetöiden kuuntelijan luonnissa:', error);
+    }
+
+    try {
+        koeAsetuksetUnsubscribe = onSnapshot(
+            doc(db, 'koeTyot', 'asetukset'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    lastKoeAsetukset = koeAsetuksetFromStorage({});
+                    koeAsetuksetLoaded = true;
+                    if (koeAsetuksetHasContent(koeAsetuksetFromStorage())) void syncKoeAsetuksetFromLocal();
+                    return;
+                }
+                applyRemoteKoeAsetukset(docSnapshot.data() || {});
+                koeAsetuksetLoaded = true;
+            },
+            (error) => {
+                console.error('❌ Koetyön asetusten kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe koetyön asetusten kuuntelijan luonnissa:', error);
+    }
+
+    try {
+        koeKapasiteettiUnsubscribe = onSnapshot(
+            doc(db, 'koeTyot', 'kapasiteetti'),
+            (docSnapshot) => {
+                if (!docSnapshot.exists()) {
+                    lastKoeKapasiteetti = emptyKoeKapasiteetti();
+                    koeKapasiteettiLoaded = true;
+                    if (koeKapasiteettiHasWorkers(readKuormaKapasiteettiStorage().kapasiteetti)) {
+                        void syncKoeKapasiteettiFromLocal();
+                    }
+                    return;
+                }
+                applyRemoteKoeKapasiteetti((docSnapshot.data() || {}).kapasiteetti || emptyKoeKapasiteetti());
+                koeKapasiteettiLoaded = true;
+            },
+            (error) => {
+                console.error('❌ Koetyön kapasiteetin kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe koetyön kapasiteetin kuuntelijan luonnissa:', error);
+    }
+
+    try {
+        koeAjoitusUnsubscribe = onSnapshot(
+            doc(db, 'koeTyot', 'ajoitus'),
+            (docSnapshot) => {
+                const schedule = docSnapshot.exists() ? decodeKoeSlots((docSnapshot.data() || {}).slots) : {};
+                if (!docSnapshot.exists()) {
+                    lastKoeAjoitus = {};
+                    koeAjoitusLoaded = true;
+                    if (Object.keys(readKoeAjoitusMap()).length > 0) void syncKoeAjoitusFromLocal();
+                    return;
+                }
+                applyRemoteKoeAjoitus(schedule);
+                koeAjoitusLoaded = true;
+            },
+            (error) => {
+                console.error('❌ Koetyön ajoituksen kuunteluvirhe:', error);
+            }
+        );
+    } catch (error) {
+        console.error('❌ Virhe koetyön ajoituksen kuuntelijan luonnissa:', error);
+    }
     
     console.log('✅ Reaaliaikaiset kuuntelijat aktivoitu!');
 }
@@ -2219,6 +2842,23 @@ function stopRealtimeListeners() {
     lapivientiPendingOps = [];
     lapivientiSyncing = false;
     lapivientiSyncAttempts = 0;
+
+    if (koeJobsUnsubscribe) {
+        koeJobsUnsubscribe();
+        koeJobsUnsubscribe = null;
+    }
+    if (koeAsetuksetUnsubscribe) {
+        koeAsetuksetUnsubscribe();
+        koeAsetuksetUnsubscribe = null;
+    }
+    if (koeKapasiteettiUnsubscribe) {
+        koeKapasiteettiUnsubscribe();
+        koeKapasiteettiUnsubscribe = null;
+    }
+    if (koeAjoitusUnsubscribe) {
+        koeAjoitusUnsubscribe();
+        koeAjoitusUnsubscribe = null;
+    }
     
     console.log('✅ Kuuntelijat lopetettu');
 }
@@ -2726,6 +3366,19 @@ async function logout() {
     loadedActiveItemNames.clear();
     pendingJobSyncs.clear();
     jobSyncChains.clear();
+    koeStateLoaded = false;
+    koeJobsPrimed = false;
+    lastKnownKoeJobCount = -1;
+    koeAsetuksetLoaded = false;
+    koeKapasiteettiLoaded = false;
+    koeAjoitusLoaded = false;
+    koeApplyingShared = false;
+    lastKoeAsetukset = null;
+    lastKoeKapasiteetti = null;
+    lastKoeAjoitus = null;
+    koeJobDocIds.clear();
+    pendingKoeSyncs.clear();
+    koeSyncChains.clear();
     paketitIndexLoaded = false;
     paketitIndexJobs = [];
     paketitJobCache.clear();
@@ -7049,8 +7702,29 @@ function showMitatForDisplayOptions() {
     else loadMittatView();
 }
 
+function syncKoeNakymaMenu() {
+    const show = isKuormaShownInProduction();
+    document.querySelectorAll('input[data-tuotanto-nakyma]').forEach((input) => {
+        if (input.value !== 'kuorma' && input.value !== 'yleistaulukko') return;
+        const label = input.closest('label');
+        if (label) label.hidden = !show;
+    });
+    if (show || isWarehouseUser) return;
+    if (!isKuormaKapasiteettiView && !isYleistaulukkoView) return;
+    document.querySelectorAll('input[data-tuotanto-nakyma][value="lista"]').forEach((input) => {
+        input.checked = true;
+    });
+    setTuotantoNakyma('lista');
+}
+
 function setTuotantoNakyma(value) {
     if (isWarehouseUser && value !== 'materiaali') return;
+    if (!isKuormaShownInProduction() && (value === 'kuorma' || value === 'yleistaulukko')) {
+        value = 'lista';
+        document.querySelectorAll('input[data-tuotanto-nakyma][value="lista"]').forEach((input) => {
+            input.checked = true;
+        });
+    }
     isTuotantoContentView = value === 'sisalto';
     isLapivientiView = value === 'lapivienti';
     isMateriaaliVarastoView = value === 'materiaali';
@@ -15921,7 +16595,10 @@ function deleteJobMitat(jobNumber) {
     localStorage.setItem('jobBlocks', JSON.stringify(jobBlocks));
     localStorage.setItem('mittatNotes', JSON.stringify(mittatNotes));
     if (isKuormaKoeJob(jobNumber)) {
+        enqueueKoeJobSync(jobNumber, { forceDelete: true, payload: null });
         forgetKuormaKoeJob(jobNumber);
+        removeYleistaulukkoJob(jobNumber);
+        removeKoeAjoitusJob(jobNumber, itemNames);
     } else {
         dualWriteMitatState(jobNumber, { forceDelete: true });
         syncMitatInputsToFirestore(jobNumber);

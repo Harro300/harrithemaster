@@ -114,6 +114,7 @@
         if (next.week || next.recipient) sheet[jobNumber] = next;
         else delete sheet[jobNumber];
         writeSheet(sheet);
+        if (typeof syncKoeJobFromSheet === 'function') syncKoeJobFromSheet(jobNumber);
     }
 
     function buildJobs() {
@@ -418,5 +419,9 @@
         if (hostEl === host) hostEl = null;
     }
 
-    window.Yleistaulukko = { mount: mount, unmount: unmount };
+    function refresh() {
+        if (hostEl) render();
+    }
+
+    window.Yleistaulukko = { mount: mount, unmount: unmount, refresh: refresh };
 })();
