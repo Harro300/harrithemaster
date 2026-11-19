@@ -1617,6 +1617,7 @@ function applyRemoteKoeKapasiteetti(kapasiteetti) {
         koeApplyingShared = false;
     }
     lastKoeKapasiteetti = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
+    reconcileKokoonpanoRoster('hours');
 }
 
 function applyRemoteKoeAjoitus(schedule) {
@@ -2624,6 +2625,7 @@ function setupRealtimeListeners() {
                 const same = kokoonpanijatStateEqual(incoming, buildKokoonpanijatPayload());
                 if (!same) {
                     applyKokoonpanijatPayloadToLocalStorage(incoming);
+                    reconcileKokoonpanoRoster('people');
                 }
                 kokoonpanijatLoaded = true;
                 if (!same) {
@@ -11104,6 +11106,7 @@ function addKokoonpanija(name) {
     }
     list.push({ id: createKokoonpanijaId(), name: trimmed, active: false });
     saveKokoonpanijat(list);
+    reconcileKokoonpanoRoster('people');
     return true;
 }
 
@@ -11117,6 +11120,179 @@ function removeKokoonpanija(id) {
     saveJobTekijatAll(all);
     clearTekijaGreenJob(id);
     if (selectedKokoonpanijaId === id) selectedKokoonpanijaId = null;
+    removeKokoonpanoWorker(id);
+    reconcileKokoonpanoRoster('people');
+}
+
+let linkingKokoonpano = false;
+
+function kokoonpanoNameKey(name) {
+    return String(name || '').trim().toLocaleLowerCase('fi');
+}
+
+function readKokoonpanoWorkers() {
+    const data = readKuormaKapasiteettiStorage();
+    const kapasiteetti = data.kapasiteetti && typeof data.kapasiteetti === 'object' ? data.kapasiteetti : {};
+    const source = kapasiteetti.kokoonpano;
+    const workers = source && Array.isArray(source.workers) ? source.workers.slice() : [];
+    return { data, workers };
+}
+
+function defaultKokoonpanoWeekHours() {
+    const week = currentIsoWeekKey();
+    const days = { ma: 6.5, ti: 6.5, ke: 6.5, to: 6.5, pe: 6.5, la: 0, su: 0 };
+    return week ? { [week]: days } : {};
+}
+
+function writeKokoonpanoWorkers(workers) {
+    const data = readKuormaKapasiteettiStorage();
+    if (!data.kapasiteetti || typeof data.kapasiteetti !== 'object' || Array.isArray(data.kapasiteetti)) {
+        data.kapasiteetti = {};
+    }
+    const current = data.kapasiteetti.kokoonpano && Array.isArray(data.kapasiteetti.kokoonpano.workers)
+        ? data.kapasiteetti.kokoonpano.workers
+        : [];
+    if (JSON.stringify(current) === JSON.stringify(workers)) return false;
+    data.kapasiteetti.kokoonpano = Object.assign({}, data.kapasiteetti.kokoonpano, { workers: workers });
+    localStorage.setItem('kuormaKapasiteetti', JSON.stringify(data));
+    if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.reloadFromStorage === 'function') {
+        KuormaKapasiteetti.reloadFromStorage();
+    }
+    return true;
+}
+
+function removeKokoonpanoWorker(id) {
+    const workers = readKokoonpanoWorkers().workers.filter((worker) => String(worker && worker.id) !== String(id));
+    writeKokoonpanoWorkers(workers);
+}
+
+function renameKokoonpanija(id, name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return false;
+    const list = getKokoonpanijat();
+    const user = list.find((item) => item.id === id);
+    if (!user) return true;
+    if (list.some((item) => item.id !== id && namesEqualFi(item.name, trimmed))) {
+        showToast('Tämänniminen kokoonpanija on jo olemassa.', 'warning');
+        return false;
+    }
+    if (user.name !== trimmed) {
+        user.name = trimmed;
+        saveKokoonpanijat(list);
+    }
+    const workers = readKokoonpanoWorkers().workers;
+    const worker = workers.find((item) => String(item && item.id) === String(id));
+    if (worker && worker.name !== trimmed) {
+        worker.name = trimmed;
+        const changed = writeKokoonpanoWorkers(workers);
+        if (changed && !koeApplyingShared) void syncKoeKapasiteettiFromLocal();
+    }
+    return true;
+}
+
+function adoptListotusAssignments(people) {
+    const sheet = readYleistaulukkoSheet();
+    const all = getJobTekijatAll();
+    let jobsChanged = false;
+    let sheetChanged = false;
+    Object.keys(sheet).forEach((jobNumber) => {
+        const entry = sheet[jobNumber];
+        if (!entry || !Array.isArray(entry.listotus) || !entry.listotus.length) return;
+        if (typeof isKuormaKoeJob !== 'function' || isKuormaKoeJob(jobNumber)) {
+            const ids = Array.isArray(all[jobNumber]) ? all[jobNumber].map(String) : [];
+            entry.listotus.forEach((name) => {
+                const person = people.find((user) => namesEqualFi(user.name, name));
+                if (person && !ids.includes(person.id)) ids.push(person.id);
+            });
+            if (ids.length) {
+                all[jobNumber] = ids;
+                jobsChanged = true;
+            }
+        }
+        delete entry.listotus;
+        if (!entry.week && !entry.recipient && !(Array.isArray(entry.hitsaus) && entry.hitsaus.length)) {
+            delete sheet[jobNumber];
+        }
+        sheetChanged = true;
+    });
+    if (jobsChanged) saveJobTekijatAll(all);
+    if (sheetChanged) writeYleistaulukkoSheet(sheet);
+}
+
+function reconcileKokoonpanoRoster(prefer) {
+    if (linkingKokoonpano) return;
+    linkingKokoonpano = true;
+    let peopleChanged = false;
+    let workersChanged = false;
+    try {
+        const people = getKokoonpanijat();
+        const workers = readKokoonpanoWorkers().workers;
+        const peopleById = new Map(people.map((person) => [person.id, person]));
+        const peopleByName = new Map();
+        people.forEach((person) => {
+            const key = kokoonpanoNameKey(person.name);
+            if (key && !peopleByName.has(key)) peopleByName.set(key, person);
+        });
+        const usedPeople = new Set();
+        const nextWorkers = [];
+        workers.forEach((worker) => {
+            if (!worker || !worker.id) return;
+            const workerName = String(worker.name || '').trim();
+            if (!workerName) return;
+            let person = peopleById.get(String(worker.id));
+            let next = worker;
+            if (!person) {
+                const named = peopleByName.get(kokoonpanoNameKey(workerName));
+                if (named && !usedPeople.has(named.id)) {
+                    person = named;
+                    if (String(worker.id) !== String(named.id)) {
+                        next = Object.assign({}, worker, { id: named.id });
+                        workersChanged = true;
+                    }
+                }
+            }
+            if (!person) {
+                if (people.length >= KOKOONPANIJAT_MAX || peopleByName.has(kokoonpanoNameKey(workerName))) {
+                    nextWorkers.push(worker);
+                    return;
+                }
+                person = { id: String(worker.id), name: workerName, active: false };
+                people.push(person);
+                peopleById.set(person.id, person);
+                peopleByName.set(kokoonpanoNameKey(workerName), person);
+                peopleChanged = true;
+            }
+            usedPeople.add(person.id);
+            const personName = String(person.name || '').trim();
+            if (personName !== String(next.name || '').trim()) {
+                if (prefer === 'hours') {
+                    person.name = String(next.name || '').trim();
+                    peopleChanged = true;
+                } else {
+                    next = Object.assign({}, next, { name: personName });
+                    workersChanged = true;
+                }
+            }
+            nextWorkers.push(next);
+        });
+        people.forEach((person) => {
+            if (usedPeople.has(person.id)) return;
+            nextWorkers.push({
+                id: person.id,
+                name: String(person.name || '').trim(),
+                weeks: defaultKokoonpanoWeekHours(),
+                absence: {}
+            });
+            usedPeople.add(person.id);
+            workersChanged = true;
+        });
+        if (peopleChanged) saveKokoonpanijat(people);
+        if (workersChanged) writeKokoonpanoWorkers(nextWorkers);
+        adoptListotusAssignments(getKokoonpanijat());
+    } finally {
+        linkingKokoonpano = false;
+    }
+    if (workersChanged && !koeApplyingShared) void syncKoeKapasiteettiFromLocal();
 }
 
 function toggleKokoonpanijaActive(id) {

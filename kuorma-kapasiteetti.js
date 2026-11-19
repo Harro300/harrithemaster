@@ -528,6 +528,7 @@
             document.body.appendChild(layer);
         }
         layer.hidden = false;
+        if (typeof reconcileKokoonpanoRoster === 'function') reconcileKokoonpanoRoster('hours');
         renderSettings();
         if (!settingsKeyHandler) {
             settingsKeyHandler = (event) => {
@@ -2945,6 +2946,12 @@
         function addFromField() {
             const name = nameInput.value.trim();
             if (!name) return;
+            if (department === 'kokoonpano' && typeof addKokoonpanija === 'function') {
+                if (!addKokoonpanija(name)) return;
+                nameInput.value = '';
+                reloadCapacity('kkAddName-' + department);
+                return;
+            }
             const weeks = {};
             weeks[activeWeekKey()] = defaultDayHours(DEFAULT_HOURS);
             state.kapasiteetti[department].workers.push({
@@ -2981,6 +2988,12 @@
             if (!name) {
                 nameInput.value = worker.name;
                 return;
+            }
+            if (department === 'kokoonpano' && typeof renameKokoonpanija === 'function') {
+                if (!renameKokoonpanija(worker.id, name)) {
+                    nameInput.value = worker.name;
+                    return;
+                }
             }
             worker.name = name;
             nameInput.value = name;
@@ -3058,6 +3071,11 @@
         removeBtn.className = 'kk-sheet-remove';
         removeBtn.textContent = 'Poista';
         removeBtn.addEventListener('click', () => {
+            if (department === 'kokoonpano' && typeof removeKokoonpanija === 'function' && typeof getKokoonpanijat === 'function' && getKokoonpanijat().some((person) => person.id === worker.id)) {
+                removeKokoonpanija(worker.id);
+                reloadCapacity();
+                return;
+            }
             const workers = state.kapasiteetti[department].workers;
             state.kapasiteetti[department].workers = workers.filter((item) => item.id !== worker.id);
             save();

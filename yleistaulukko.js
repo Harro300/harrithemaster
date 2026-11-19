@@ -103,18 +103,69 @@
         return Number.isFinite(number) ? number : null;
     }
 
-    function saveMeta(jobNumber, field, value) {
-        const sheet = readSheet();
-        const current = sheet[jobNumber] && typeof sheet[jobNumber] === 'object' ? sheet[jobNumber] : {};
-        const next = {
-            week: String(current.week || ''),
-            recipient: String(current.recipient || '')
+    function workerList(value) {
+        if (!Array.isArray(value)) return [];
+        const seen = new Set();
+        const names = [];
+        value.forEach((item) => {
+            const name = String(item || '').trim();
+            const key = name.toLocaleLowerCase('fi');
+            if (!name || seen.has(key)) return;
+            seen.add(key);
+            names.push(name);
+        });
+        return names;
+    }
+
+    function sheetEntry(current) {
+        const source = current && typeof current === 'object' ? current : {};
+        return {
+            week: String(source.week || ''),
+            recipient: String(source.recipient || ''),
+            hitsaus: workerList(source.hitsaus),
+            listotus: workerList(source.listotus)
         };
-        next[field] = String(value || '').trim();
-        if (next.week || next.recipient) sheet[jobNumber] = next;
+    }
+
+    function storeEntry(sheet, jobNumber, entry) {
+        const stored = {
+            week: entry.week,
+            recipient: entry.recipient
+        };
+        if (entry.hitsaus.length) stored.hitsaus = entry.hitsaus;
+        if (entry.listotus.length) stored.listotus = entry.listotus;
+        if (stored.week || stored.recipient || stored.hitsaus || stored.listotus) sheet[jobNumber] = stored;
         else delete sheet[jobNumber];
         writeSheet(sheet);
+    }
+
+    function saveMeta(jobNumber, field, value) {
+        const sheet = readSheet();
+        const next = sheetEntry(sheet[jobNumber]);
+        next[field] = String(value || '').trim();
+        storeEntry(sheet, jobNumber, next);
         if (typeof syncKoeJobFromSheet === 'function') syncKoeJobFromSheet(jobNumber);
+    }
+
+    function saveWorkers(jobNumber, field, names) {
+        const sheet = readSheet();
+        const next = sheetEntry(sheet[jobNumber]);
+        next[field] = workerList(names);
+        storeEntry(sheet, jobNumber, next);
+    }
+
+    function departmentWorkers(department) {
+        const state = readMap('kuormaKapasiteetti');
+        const source = state.kapasiteetti && state.kapasiteetti[department];
+        const workers = source && Array.isArray(source.workers) ? source.workers : [];
+        return workerList(workers.map((worker) => worker && worker.name))
+            .sort((a, b) => a.localeCompare(b, 'fi'));
+    }
+
+    function matchWorker(typed, names) {
+        const key = String(typed || '').trim().toLocaleLowerCase('fi');
+        if (!key) return '';
+        return names.find((name) => name.toLocaleLowerCase('fi') === key) || '';
     }
 
     function buildJobs() {
@@ -164,6 +215,7 @@
                 jobNumber: String(jobNumber),
                 week: String(meta.week || ''),
                 recipient: String(meta.recipient || ''),
+                hitsausWorkers: workerList(meta.hitsaus),
                 ship: typeof getJobEffectiveShipDate === 'function'
                     ? getJobEffectiveShipDate(jobNumber, jobShipDates, jobBlocks)
                     : '',
@@ -219,6 +271,211 @@
 
     function stageCell(tone, text) {
         return element('td', 'yt-cell is-' + tone, text || '');
+    }
+
+    function staffCell(tone, names, jobNumber, field, department, linked) {
+        const cell = element('td', 'yt-cell yt-staff is-' + tone);
+        cell.title = 'Tuplaklikkaa lisätäksesi tekijä';
+        let assigned = names.map((item) => {
+            if (item && typeof item === 'object') {
+                return {
+                    id: String(item.id || ''),
+                    name: String(item.name || ''),
+                    green: !!item.green
+                };
+            }
+            return { id: '', name: String(item || ''), green: false };
+        }).filter((item) => item.name);
+        let editor = null;
+        let inputEl = null;
+        let paintMenu = function () {};
+        let closeWatch = null;
+        let releaseEditor = function () {};
+
+        function stopWatch() {
+            if (!closeWatch) return;
+            document.removeEventListener('mousedown', closeWatch, true);
+            closeWatch = null;
+        }
+
+        function paintTone() {
+            const active = linked && assigned.some((person) => person.green);
+            cell.classList.remove('is-white', 'is-yellow', 'is-green');
+            cell.classList.add('is-' + (active ? 'yellow' : tone));
+        }
+
+        function paint() {
+            paintTone();
+            const namesBox = element('div', 'yt-staff-names');
+            assigned.forEach((person) => {
+                const chip = element('span', 'yt-staff-chip' + (person.green ? ' is-green' : ''));
+                if (linked) {
+                    const nameBtn = document.createElement('button');
+                    nameBtn.type = 'button';
+                    nameBtn.className = 'yt-staff-name';
+                    nameBtn.textContent = person.name;
+                    nameBtn.setAttribute('aria-pressed', person.green ? 'true' : 'false');
+                    nameBtn.addEventListener('click', (event) => {
+                        event.stopPropagation();
+                        if (typeof toggleTekijaGreenJob === 'function') toggleTekijaGreenJob(person.id, jobNumber);
+                    });
+                    chip.appendChild(nameBtn);
+                } else {
+                    chip.appendChild(element('span', '', person.name));
+                }
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'yt-staff-remove';
+                remove.textContent = '×';
+                remove.setAttribute('aria-label', 'Poista ' + person.name);
+                remove.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const key = person.name.toLocaleLowerCase('fi');
+                    assigned = assigned.filter((item) => item.name.toLocaleLowerCase('fi') !== key);
+                    if (linked && typeof toggleJobTekija === 'function') toggleJobTekija(jobNumber, person.id);
+                    else saveWorkers(jobNumber, field, assigned.map((item) => item.name));
+                    paint();
+                    if (editor && inputEl) {
+                        paintMenu();
+                        inputEl.focus();
+                    }
+                });
+                chip.appendChild(remove);
+                namesBox.appendChild(chip);
+            });
+            cell.replaceChildren(namesBox);
+            if (editor) cell.appendChild(editor);
+        }
+
+        function closeEditor() {
+            releaseEditor();
+            releaseEditor = function () {};
+            stopWatch();
+            editor = null;
+            inputEl = null;
+            paintMenu = function () {};
+            paint();
+        }
+
+        function addName(raw, options) {
+            const matched = matchWorker(raw, options);
+            if (!matched) return;
+            const key = matched.toLocaleLowerCase('fi');
+            if (assigned.some((person) => person.name.toLocaleLowerCase('fi') === key)) return;
+            if (linked && typeof getKokoonpanijat === 'function' && typeof toggleJobTekija === 'function') {
+                const person = getKokoonpanijat().find((user) => user.name.toLocaleLowerCase('fi') === key);
+                if (!person) return;
+                toggleJobTekija(jobNumber, person.id);
+                assigned = assigned.concat({
+                    id: person.id,
+                    name: person.name,
+                    green: typeof isTekijaGreenOnJob === 'function' && isTekijaGreenOnJob(person.id, jobNumber)
+                });
+            } else {
+                assigned = assigned.concat({ id: '', name: matched, green: false });
+                saveWorkers(jobNumber, field, assigned.map((person) => person.name));
+            }
+            if (inputEl) inputEl.value = '';
+            paint();
+            paintMenu();
+            if (inputEl) inputEl.focus();
+        }
+
+        function openEditor() {
+            const options = linked && typeof getKokoonpanijat === 'function'
+                ? getKokoonpanijat()
+                    .map((person) => String(person.name || '').trim())
+                    .filter(Boolean)
+                    .sort((a, b) => a.localeCompare(b, 'fi'))
+                : departmentWorkers(department);
+            editor = element('div', 'yt-staff-editor');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'yt-input yt-staff-input';
+            input.setAttribute('aria-label', 'Lisää tekijä');
+            const menu = element('div', 'yt-staff-menu');
+            menu.setAttribute('role', 'listbox');
+            inputEl = input;
+
+            paintMenu = function () {
+                menu.replaceChildren();
+                const query = input.value.trim().toLocaleLowerCase('fi');
+                const taken = new Set(assigned.map((person) => person.name.toLocaleLowerCase('fi')));
+                const found = options.filter((name) => {
+                    const key = name.toLocaleLowerCase('fi');
+                    if (taken.has(key)) return false;
+                    return !query || key.includes(query);
+                });
+                if (!options.length) {
+                    menu.appendChild(element('div', 'yt-staff-empty', 'Ei työntekijöitä.'));
+                    return;
+                }
+                if (!found.length) {
+                    menu.appendChild(element('div', 'yt-staff-empty', 'Ei osumia.'));
+                    return;
+                }
+                found.forEach((name) => {
+                    const option = document.createElement('button');
+                    option.type = 'button';
+                    option.className = 'yt-staff-option';
+                    option.setAttribute('role', 'option');
+                    option.textContent = name;
+                    option.addEventListener('mousedown', (event) => {
+                        event.preventDefault();
+                        addName(name, options);
+                    });
+                    menu.appendChild(option);
+                });
+            };
+
+            input.addEventListener('input', paintMenu);
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeEditor();
+                    return;
+                }
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                addName(input.value, options);
+            });
+            editor.appendChild(input);
+            document.body.appendChild(menu);
+            const placeMenu = function () {
+                const rect = input.getBoundingClientRect();
+                menu.style.left = rect.left + 'px';
+                menu.style.top = (rect.bottom + 2) + 'px';
+                menu.style.width = Math.max(rect.width, 160) + 'px';
+            };
+            paint();
+            paintMenu();
+            placeMenu();
+            input.focus();
+            const follow = function () {
+                if (!editor) return;
+                placeMenu();
+            };
+            window.addEventListener('scroll', follow, true);
+            window.addEventListener('resize', follow);
+            releaseEditor = function () {
+                window.removeEventListener('scroll', follow, true);
+                window.removeEventListener('resize', follow);
+                if (menu.parentNode) menu.parentNode.removeChild(menu);
+            };
+            closeWatch = function (event) {
+                if (cell.contains(event.target) || menu.contains(event.target)) return;
+                closeEditor();
+            };
+            document.addEventListener('mousedown', closeWatch, true);
+        }
+
+        cell.addEventListener('dblclick', (event) => {
+            if (editor || event.target.closest('.yt-staff-remove, .yt-staff-name')) return;
+            event.preventDefault();
+            openEditor();
+        });
+        paint();
+        return cell;
     }
 
     function productStage(on, text) {
@@ -286,9 +543,16 @@
         row.appendChild(textCell(job.total, 'yt-number'));
         row.appendChild(textCell(job.units == null ? '' : job.units, 'yt-number'));
         row.appendChild(stageCell(job.stages.saha));
-        row.appendChild(stageCell(job.stages.hitsaus));
+        row.appendChild(staffCell(job.stages.hitsaus, job.hitsausWorkers, job.jobNumber, 'hitsaus', 'hitsaus'));
         row.appendChild(stageCell(job.stages.maalaus, job.color));
-        row.appendChild(stageCell(job.stages.listotus));
+        const listotusPeople = typeof getTekijatForJob === 'function'
+            ? getTekijatForJob(job.jobNumber).map((person) => ({
+                id: person.id,
+                name: person.name,
+                green: typeof isTekijaGreenOnJob === 'function' && isTekijaGreenOnJob(person.id, job.jobNumber)
+            }))
+            : [];
+        row.appendChild(staffCell(job.stages.listotus, listotusPeople, job.jobNumber, 'listotus', 'kokoonpano', true));
         row.appendChild(stageCell(job.stages.valmis));
         row.appendChild(stageCell(job.stages.pakattu, job.packedLabel));
         body.appendChild(row);
@@ -370,6 +634,7 @@
 
     function render() {
         if (!hostEl) return;
+        if (typeof reconcileKokoonpanoRoster === 'function') reconcileKokoonpanoRoster('people');
         const zoom = readZoom();
         const jobs = buildJobs();
         const page = element('div', 'yt-page');
