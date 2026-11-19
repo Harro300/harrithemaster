@@ -1527,7 +1527,30 @@ async function syncKoeAsetuksetFromLocal() {
     }
 }
 
-async function syncKoeKapasiteettiFromLocal() {
+// Kapasiteettitallennukset ajetaan yksi kerrallaan. Päällekkäiset kutsut yhdistyvät yhdeksi
+// uusintakierrokseksi, jotta tapahtuma ei osu jo päivittyneeseen dokumenttiversioon.
+let koeKapasiteettiSyncRunning = null;
+let koeKapasiteettiSyncQueued = false;
+
+function syncKoeKapasiteettiFromLocal() {
+    if (koeKapasiteettiSyncRunning) {
+        koeKapasiteettiSyncQueued = true;
+        return koeKapasiteettiSyncRunning;
+    }
+    koeKapasiteettiSyncRunning = (async () => {
+        try {
+            do {
+                koeKapasiteettiSyncQueued = false;
+                await runKoeKapasiteettiSync();
+            } while (koeKapasiteettiSyncQueued);
+        } finally {
+            koeKapasiteettiSyncRunning = null;
+        }
+    })();
+    return koeKapasiteettiSyncRunning;
+}
+
+async function runKoeKapasiteettiSync() {
     if (!window.firebase || !window.firebase.db || !currentUser || !koeKapasiteettiLoaded || koeApplyingShared) return;
     const local = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
     const keepRemoteBecauseLocalEmpty = !koeKapasiteettiHasWorkers(local) && koeKapasiteettiHasWorkers(lastKoeKapasiteetti);
@@ -3424,6 +3447,7 @@ async function logout() {
     koeApplyingShared = false;
     lastKoeAsetukset = null;
     lastKoeKapasiteetti = null;
+    koeKapasiteettiSyncQueued = false;
     lastKoeAjoitus = null;
     koeJobDocIds.clear();
     pendingKoeSyncs.clear();
