@@ -2467,6 +2467,32 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     gap: 2px;
 }
 
+.kokoonpanija-osasto {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.kokoonpanija-osasto[hidden] {
+    display: none;
+}
+
+.kokoonpanija-osasto button {
+    flex: 1;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: inherit;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.85rem;
+}
+
+.kokoonpanija-osasto button.is-selected {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border-color: var(--text-primary);
+}
+
 .kokoonpanija-modal-row {
     display: flex;
     align-items: center;

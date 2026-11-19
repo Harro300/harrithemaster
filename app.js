@@ -10813,8 +10813,6 @@ function setTuotantoDisplayMode(mode) {
     showMitatForDisplayOptions();
 }
 
-const KOKOONPANIJAT_MAX = 6;
-
 function createKokoonpanijaId() {
     return `kp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -11096,10 +11094,6 @@ function addKokoonpanija(name) {
         return false;
     }
     const list = getKokoonpanijat();
-    if (list.length >= KOKOONPANIJAT_MAX) {
-        showToast('Kokoonpanijoita voi olla enintään 6.', 'warning');
-        return false;
-    }
     if (list.some((user) => namesEqualFi(user.name, trimmed))) {
         showToast('Tämänniminen kokoonpanija on jo olemassa.', 'warning');
         return false;
@@ -11166,6 +11160,95 @@ function removeKokoonpanoWorker(id) {
     writeKokoonpanoWorkers(workers);
 }
 
+function readDepartmentWorkers(department) {
+    const data = readKuormaKapasiteettiStorage();
+    const kapasiteetti = data.kapasiteetti && typeof data.kapasiteetti === 'object' ? data.kapasiteetti : {};
+    const source = kapasiteetti[department];
+    return source && Array.isArray(source.workers) ? source.workers.slice() : [];
+}
+
+function writeDepartmentWorkers(department, workers) {
+    const data = readKuormaKapasiteettiStorage();
+    if (!data.kapasiteetti || typeof data.kapasiteetti !== 'object' || Array.isArray(data.kapasiteetti)) {
+        data.kapasiteetti = {};
+    }
+    const current = data.kapasiteetti[department] && Array.isArray(data.kapasiteetti[department].workers)
+        ? data.kapasiteetti[department].workers
+        : [];
+    if (JSON.stringify(current) === JSON.stringify(workers)) return false;
+    data.kapasiteetti[department] = Object.assign({}, data.kapasiteetti[department], { workers: workers });
+    localStorage.setItem('kuormaKapasiteetti', JSON.stringify(data));
+    if (window.KuormaKapasiteetti && typeof KuormaKapasiteetti.reloadFromStorage === 'function') {
+        KuormaKapasiteetti.reloadFromStorage();
+    }
+    return true;
+}
+
+function getHitsausWorkers() {
+    return readDepartmentWorkers('hitsaus')
+        .filter((worker) => worker && worker.id && String(worker.name || '').trim())
+        .map((worker) => ({
+            id: String(worker.id),
+            name: String(worker.name).trim(),
+            active: worker.active === true
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'fi'));
+}
+
+function addHitsausWorker(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) {
+        showToast('Anna tekijän nimi.', 'warning');
+        return false;
+    }
+    const workers = readDepartmentWorkers('hitsaus');
+    if (workers.some((worker) => namesEqualFi(worker.name, trimmed))) {
+        showToast('Tämänniminen tekijä on jo olemassa.', 'warning');
+        return false;
+    }
+    workers.push({
+        id: 'w_' + Date.now().toString(36),
+        name: trimmed,
+        active: false,
+        weeks: defaultKokoonpanoWeekHours(),
+        absence: {}
+    });
+    const changed = writeDepartmentWorkers('hitsaus', workers);
+    if (changed && !koeApplyingShared) void syncKoeKapasiteettiFromLocal();
+    return true;
+}
+
+function stripTekijaFromJobs(id) {
+    const all = getJobTekijatAll();
+    let changed = false;
+    Object.keys(all).forEach((jobNumber) => {
+        const next = (all[jobNumber] || []).filter((userId) => String(userId) !== String(id));
+        if (next.length === (all[jobNumber] || []).length) return;
+        changed = true;
+        if (next.length) all[jobNumber] = next;
+        else delete all[jobNumber];
+    });
+    if (changed) saveJobTekijatAll(all);
+    clearTekijaGreenJob(id);
+    if (selectedKokoonpanijaId === id) selectedKokoonpanijaId = null;
+}
+
+function removeHitsausWorker(id) {
+    const workers = readDepartmentWorkers('hitsaus').filter((worker) => String(worker && worker.id) !== String(id));
+    const changed = writeDepartmentWorkers('hitsaus', workers);
+    stripTekijaFromJobs(id);
+    if (changed && !koeApplyingShared) void syncKoeKapasiteettiFromLocal();
+}
+
+function toggleHitsausActive(id) {
+    const workers = readDepartmentWorkers('hitsaus');
+    const worker = workers.find((item) => String(item && item.id) === String(id));
+    if (!worker) return;
+    worker.active = worker.active !== true;
+    const changed = writeDepartmentWorkers('hitsaus', workers);
+    if (changed && !koeApplyingShared) void syncKoeKapasiteettiFromLocal();
+}
+
 function renameKokoonpanija(id, name) {
     const trimmed = String(name || '').trim();
     if (!trimmed) return false;
@@ -11197,11 +11280,18 @@ function adoptListotusAssignments(people) {
     let sheetChanged = false;
     Object.keys(sheet).forEach((jobNumber) => {
         const entry = sheet[jobNumber];
-        if (!entry || !Array.isArray(entry.listotus) || !entry.listotus.length) return;
+        const listotusNames = entry && Array.isArray(entry.listotus) ? entry.listotus : [];
+        const hitsausNames = entry && Array.isArray(entry.hitsaus) ? entry.hitsaus : [];
+        if (!listotusNames.length && !hitsausNames.length) return;
         if (typeof isKuormaKoeJob !== 'function' || isKuormaKoeJob(jobNumber)) {
             const ids = Array.isArray(all[jobNumber]) ? all[jobNumber].map(String) : [];
-            entry.listotus.forEach((name) => {
+            const hitsaus = getHitsausWorkers();
+            listotusNames.forEach((name) => {
                 const person = people.find((user) => namesEqualFi(user.name, name));
+                if (person && !ids.includes(person.id)) ids.push(person.id);
+            });
+            hitsausNames.forEach((name) => {
+                const person = hitsaus.find((user) => namesEqualFi(user.name, name));
                 if (person && !ids.includes(person.id)) ids.push(person.id);
             });
             if (ids.length) {
@@ -11210,7 +11300,8 @@ function adoptListotusAssignments(people) {
             }
         }
         delete entry.listotus;
-        if (!entry.week && !entry.recipient && !(Array.isArray(entry.hitsaus) && entry.hitsaus.length)) {
+        delete entry.hitsaus;
+        if (!entry.week && !entry.recipient) {
             delete sheet[jobNumber];
         }
         sheetChanged = true;
@@ -11252,7 +11343,7 @@ function reconcileKokoonpanoRoster(prefer) {
                 }
             }
             if (!person) {
-                if (people.length >= KOKOONPANIJAT_MAX || peopleByName.has(kokoonpanoNameKey(workerName))) {
+                if (peopleByName.has(kokoonpanoNameKey(workerName))) {
                     nextWorkers.push(worker);
                     return;
                 }
@@ -11323,6 +11414,36 @@ function jobHasSelectedTekija(jobNumber) {
     return getJobTekijaIds(jobNumber).includes(selectedKokoonpanijaId);
 }
 
+function selectedKokoonpanijaOsasto() {
+    if (!isKuormaShownInProduction()) return 'listotus';
+    return localStorage.getItem('kokoonpanijaOsasto') === 'hitsaus' ? 'hitsaus' : 'listotus';
+}
+
+function setKokoonpanijaOsasto(value) {
+    localStorage.setItem('kokoonpanijaOsasto', value === 'hitsaus' ? 'hitsaus' : 'listotus');
+    selectedKokoonpanijaId = null;
+    renderKokoonpanijatModalList();
+    loadMittatView();
+}
+
+function currentRosterPeople() {
+    return selectedKokoonpanijaOsasto() === 'hitsaus' ? getHitsausWorkers() : getKokoonpanijat();
+}
+
+function renderKokoonpanijaOsastoSwitch() {
+    const host = document.getElementById('kokoonpanijaOsasto');
+    if (!host) return;
+    const show = isKuormaShownInProduction();
+    host.hidden = !show;
+    if (!show) return;
+    const current = selectedKokoonpanijaOsasto();
+    host.querySelectorAll('[data-osasto]').forEach((btn) => {
+        const on = btn.dataset.osasto === current;
+        btn.classList.toggle('is-selected', on);
+        btn.setAttribute('aria-pressed', String(on));
+    });
+}
+
 function getTekijatForJob(jobNumber) {
     const users = getKokoonpanijat();
     return getJobTekijaIds(jobNumber)
@@ -11330,12 +11451,24 @@ function getTekijatForJob(jobNumber) {
         .filter(Boolean);
 }
 
+function getHitsausTekijatForJob(jobNumber) {
+    const users = getHitsausWorkers();
+    const ids = new Set(getJobTekijaIds(jobNumber));
+    return users.filter((user) => ids.has(user.id));
+}
+
+function getVisibleTekijatForJob(jobNumber) {
+    const users = currentRosterPeople();
+    const ids = new Set(getJobTekijaIds(jobNumber));
+    return users.filter((user) => ids.has(user.id));
+}
+
 function getTekijaNamesForJob(jobNumber) {
     return getTekijatForJob(jobNumber).map((user) => user.name);
 }
 
 function buildTekijaBadgesHtml(jobNumber) {
-    const tekijat = getTekijatForJob(jobNumber);
+    const tekijat = getVisibleTekijatForJob(jobNumber);
     if (tekijat.length === 0) return '';
     const safeJob = sanitizeForAttribute(jobNumber);
     let html = '<span class="kokoonpanija-badges">';
@@ -11349,7 +11482,7 @@ function buildTekijaBadgesHtml(jobNumber) {
 }
 
 function appendTekijaBadgesToSidebar(parent, jobNumber) {
-    const tekijat = getTekijatForJob(jobNumber);
+    const tekijat = getVisibleTekijatForJob(jobNumber);
     if (tekijat.length === 0) return;
     const wrap = document.createElement('span');
     wrap.className = 'kokoonpanija-badges kokoonpanija-badges--sidebar';
@@ -11371,7 +11504,7 @@ function renderKokoonpanijatBar() {
         chips.hidden = true;
         return;
     }
-    const active = getKokoonpanijat().filter((user) => user.active);
+    const active = currentRosterPeople().filter((user) => user.active);
     if (selectedKokoonpanijaId && !active.some((user) => user.id === selectedKokoonpanijaId)) {
         selectedKokoonpanijaId = null;
     }
@@ -11400,18 +11533,20 @@ function selectKokoonpanijaFilter(id) {
 
 function updateKokoonpanijaAddDisabled() {
     const btn = document.getElementById('kokoonpanijaAddBtn');
-    if (btn) btn.disabled = getKokoonpanijat().length >= KOKOONPANIJAT_MAX;
+    if (btn) btn.disabled = false;
 }
 
 function renderKokoonpanijatModalList() {
     const list = document.getElementById('kokoonpanijatList');
     if (!list) return;
-    const users = getKokoonpanijat();
+    renderKokoonpanijaOsastoSwitch();
+    const hitsaus = selectedKokoonpanijaOsasto() === 'hitsaus';
+    const users = currentRosterPeople();
     list.innerHTML = '';
     if (users.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'text-muted small mb-0';
-        empty.textContent = 'Ei kokoonpanijoita. Lisää nimi alla.';
+        empty.textContent = hitsaus ? 'Ei hitsaajia. Lisää nimi alla.' : 'Ei kokoonpanijoita. Lisää nimi alla.';
         list.appendChild(empty);
         updateKokoonpanijaAddDisabled();
         return;
@@ -11437,7 +11572,8 @@ function renderKokoonpanijatModalList() {
         check.setAttribute('aria-label', `Aktiivinen ${user.name}`);
         check.textContent = user.active ? '✓' : '';
         const toggleActive = () => {
-            toggleKokoonpanijaActive(user.id);
+            if (hitsaus) toggleHitsausActive(user.id);
+            else toggleKokoonpanijaActive(user.id);
             renderKokoonpanijatModalList();
             loadMittatView();
         };
@@ -11455,7 +11591,10 @@ function renderKokoonpanijatModalList() {
         del.type = 'button';
         del.className = 'btn btn-sm btn-outline-danger';
         del.textContent = 'Poista';
-        del.addEventListener('click', () => deleteKokoonpanijaWithConfirm(user.id, user.name));
+        del.addEventListener('click', () => {
+            if (hitsaus) deleteHitsausWorkerWithConfirm(user.id, user.name);
+            else deleteKokoonpanijaWithConfirm(user.id, user.name);
+        });
 
         row.appendChild(nameEl);
         row.appendChild(activeWrap);
@@ -11478,11 +11617,21 @@ function openKokoonpanijatModal() {
 
 function confirmAddKokoonpanija() {
     const input = document.getElementById('kokoonpanijaNameInput');
-    if (!addKokoonpanija(input ? input.value : '')) return;
+    const hitsaus = selectedKokoonpanijaOsasto() === 'hitsaus';
+    const added = hitsaus ? addHitsausWorker(input ? input.value : '') : addKokoonpanija(input ? input.value : '');
+    if (!added) return;
     if (input) input.value = '';
     renderKokoonpanijatModalList();
     loadMittatView();
-    showToast('Kokoonpanija lisätty.', 'success');
+    showToast(hitsaus ? 'Tekijä lisätty.' : 'Kokoonpanija lisätty.', 'success');
+}
+
+function deleteHitsausWorkerWithConfirm(id, name) {
+    if (!confirm(`Poistetaanko tekijä "${name}"?`)) return;
+    removeHitsausWorker(id);
+    renderKokoonpanijatModalList();
+    loadMittatView();
+    showToast(`Tekijä "${name}" poistettu.`, 'info');
 }
 
 function deleteKokoonpanijaWithConfirm(id, name) {
@@ -11498,7 +11647,7 @@ function renderValitseTekijaList() {
     if (!list || !pendingTekijaJobNumber) return;
     const assigned = new Set(getJobTekijaIds(pendingTekijaJobNumber));
     list.innerHTML = '';
-    getKokoonpanijat().forEach((user) => {
+    currentRosterPeople().forEach((user) => {
         const selected = assigned.has(user.id);
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -11519,8 +11668,8 @@ function openValitseTekijaModal(jobNumber, btn) {
     if (dropdownToggle && window.bootstrap?.Dropdown) {
         bootstrap.Dropdown.getInstance(dropdownToggle)?.hide();
     }
-    if (getKokoonpanijat().length === 0) {
-        showToast('Luo ensin kokoonpanija Kokoonpanijat-valikosta.', 'warning');
+    if (currentRosterPeople().length === 0) {
+        showToast('Luo ensin tekijä Kokoonpanijat-valikosta.', 'warning');
         return;
     }
     pendingTekijaJobNumber = jobNumber;

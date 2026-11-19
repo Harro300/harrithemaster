@@ -362,8 +362,11 @@
             if (!matched) return;
             const key = matched.toLocaleLowerCase('fi');
             if (assigned.some((person) => person.name.toLocaleLowerCase('fi') === key)) return;
-            if (linked && typeof getKokoonpanijat === 'function' && typeof toggleJobTekija === 'function') {
-                const person = getKokoonpanijat().find((user) => user.name.toLocaleLowerCase('fi') === key);
+            if (linked && typeof toggleJobTekija === 'function') {
+                const roster = department === 'hitsaus' && typeof getHitsausWorkers === 'function'
+                    ? getHitsausWorkers()
+                    : (typeof getKokoonpanijat === 'function' ? getKokoonpanijat() : []);
+                const person = roster.find((user) => user.name.toLocaleLowerCase('fi') === key);
                 if (!person) return;
                 toggleJobTekija(jobNumber, person.id);
                 assigned = assigned.concat({
@@ -382,8 +385,11 @@
         }
 
         function openEditor() {
-            const options = linked && typeof getKokoonpanijat === 'function'
-                ? getKokoonpanijat()
+            const linkedRoster = department === 'hitsaus' && typeof getHitsausWorkers === 'function'
+                ? getHitsausWorkers()
+                : (typeof getKokoonpanijat === 'function' ? getKokoonpanijat() : []);
+            const options = linked
+                ? linkedRoster
                     .map((person) => String(person.name || '').trim())
                     .filter(Boolean)
                     .sort((a, b) => a.localeCompare(b, 'fi'))
@@ -543,7 +549,14 @@
         row.appendChild(textCell(job.total, 'yt-number'));
         row.appendChild(textCell(job.units == null ? '' : job.units, 'yt-number'));
         row.appendChild(stageCell(job.stages.saha));
-        row.appendChild(staffCell(job.stages.hitsaus, job.hitsausWorkers, job.jobNumber, 'hitsaus', 'hitsaus'));
+        const hitsausPeople = typeof getHitsausTekijatForJob === 'function'
+            ? getHitsausTekijatForJob(job.jobNumber).map((person) => ({
+                id: person.id,
+                name: person.name,
+                green: typeof isTekijaGreenOnJob === 'function' && isTekijaGreenOnJob(person.id, job.jobNumber)
+            }))
+            : [];
+        row.appendChild(staffCell(job.stages.hitsaus, hitsausPeople, job.jobNumber, 'hitsaus', 'hitsaus', true));
         row.appendChild(stageCell(job.stages.maalaus, job.color));
         const listotusPeople = typeof getTekijatForJob === 'function'
             ? getTekijatForJob(job.jobNumber).map((person) => ({

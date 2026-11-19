@@ -205,6 +205,7 @@
             }).map((worker) => ({
                 id: worker.id,
                 name: worker.name.trim(),
+                active: worker.active === true,
                 weeks: normalizeWorkerWeeks(worker),
                 absence: normalizeAbsence(worker)
             }));
@@ -464,6 +465,10 @@
             persist(state);
             if (typeof updateKuormaButton === 'function') updateKuormaButton();
             if (typeof syncKoeNakymaMenu === 'function') syncKoeNakymaMenu();
+            if (typeof loadMittatView === 'function' && !isKuormaKapasiteettiView && !isYleistaulukkoView) {
+                const mittatView = document.getElementById('mittatView');
+                if (mittatView && !mittatView.classList.contains('d-none')) loadMittatView();
+            }
         });
         section.append(switchWrap, note);
         return section;
@@ -3075,6 +3080,9 @@
                 removeKokoonpanija(worker.id);
                 reloadCapacity();
                 return;
+            }
+            if (department === 'hitsaus' && typeof stripTekijaFromJobs === 'function') {
+                stripTekijaFromJobs(worker.id);
             }
             const workers = state.kapasiteetti[department].workers;
             state.kapasiteetti[department].workers = workers.filter((item) => item.id !== worker.id);
