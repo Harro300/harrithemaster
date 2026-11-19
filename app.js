@@ -1363,7 +1363,17 @@ function handleKoeJobsSnapshot(snapshot) {
         return;
     }
     applyRemoteKoePayloads(payloads, true);
-    refreshKoeSurfaces();
+    if (!koeSnapshotIsOwnUpdate(snapshot)) refreshKoeSurfaces();
+}
+
+function koeSnapshotIsOwnUpdate(snapshot) {
+    if (!snapshot || typeof snapshot.docChanges !== 'function') return false;
+    const changes = snapshot.docChanges();
+    if (changes.length === 0) return false;
+    return changes.every((change) => {
+        const data = change.doc.data() || {};
+        return data.updatedBy === currentUser?.email;
+    });
 }
 
 async function syncKoeJobToFirestore(jobNumber, capture, isStale) {
@@ -16344,7 +16354,7 @@ function renderKoeItemCheckpoints(ctx) {
             : (entry.checked ? 'preset-checkbox checked' : 'preset-checkbox');
         const title = entry.id === 'tehty' ? ` title="${doneTitle}"` : '';
         const tab = disabled ? '-1' : '0';
-        return `<span class="mitat-mini-label">${label}</span><div class="${boxClass}" role="checkbox" tabindex="${tab}" aria-checked="${entry.checked}" aria-disabled="${disabled}" aria-label="${aria}"${title} onclick="event.stopPropagation(); toggleKoeDepartmentCheck('${safeKey}', '${entry.id}')">${mark}</div>`;
+        return `<span class="mitat-mini-label">${label}</span><div class="${boxClass}" role="checkbox" tabindex="${tab}" aria-checked="${entry.checked}" aria-disabled="${disabled}" aria-label="${aria}"${title} onclick="event.stopPropagation(); toggleKoeDepartmentCheck('${safeKey}', '${entry.id}', this)">${mark}</div>`;
     };
     const materials = [
         ctx.hasLasilistat ? { label: 'lasilistat', checked: ctx.isChecked, aria: `Lasilistat tehty ${ctx.itemName}`, toggle: 'toggleMittatCheck' } : null,
@@ -16366,24 +16376,106 @@ function renderKoeItemCheckpoints(ctx) {
     return `${renderKoeStageBars(stage)}${checksHtml}`;
 }
 
-function toggleKoeDepartmentCheck(checkKey, stage) {
+function koeItemMatchesFilter(jobNumber, itemName) {
+    return itemMatchesJobViewFilter(
+        jobNumber,
+        itemName,
+        readJsonMap('packedMitat'),
+        readJsonMap('doneMitat'),
+        readJsonMap('checkedMitat'),
+        readJsonMap('checkedKulmalistat'),
+        readJsonMap('checkedPaneelit')
+    );
+}
+
+function koeFilterWouldChange(jobNumber, itemName, matchedBefore) {
+    const filter = getMitatJobViewFilter(jobNumber);
+    if (!filter.unmarked && !filter.lasilistat && !filter.done && !filter.packed) return false;
+    return matchedBefore !== koeItemMatchesFilter(jobNumber, itemName);
+}
+
+function buildKoeCheckpointCtx(jobNumber, itemName) {
+    const checkKey = `${jobNumber}-${itemName}`;
+    const item = (readJsonMap('mittatData')[jobNumber] || {})[itemName];
+    const hasLasilistat = itemHasLasilistat(item);
+    const hasKulmalistat = itemHasKulmalistat(item);
+    const hasPaneelit = itemHasPaneelit(item);
+    const isChecked = !!readJsonMap('checkedMitat')[checkKey];
+    const isKulmalistatChecked = !!readJsonMap('checkedKulmalistat')[checkKey];
+    const isPaneelitChecked = !!readJsonMap('checkedPaneelit')[checkKey];
+    const doneChecked = !!readJsonMap('doneMitat')[checkKey];
+    const lasilistatOk = !hasLasilistat || isChecked;
+    const kulmalistatOk = !hasKulmalistat || isKulmalistatChecked;
+    const paneelitOk = !hasPaneelit || isPaneelitChecked;
+    return {
+        jobNumber,
+        itemName,
+        checkKey,
+        katselu: isKatseluMode(),
+        hasLasilistat,
+        hasKulmalistat,
+        hasPaneelit,
+        isChecked,
+        isKulmalistatChecked,
+        isPaneelitChecked,
+        doneChecked,
+        checkpointsOk: lasilistatOk && kulmalistatOk && paneelitOk,
+        lasilistatOk,
+        kulmalistatOk
+    };
+}
+
+function refreshKoeItemStage(stageEl, jobNumber, itemName) {
+    if (!stageEl) {
+        loadMittatView();
+        return;
+    }
+    stageEl.innerHTML = renderKoeItemCheckpoints(buildKoeCheckpointCtx(jobNumber, itemName));
+}
+
+function refreshKoeBlockDoneCount(stageEl, jobNumber, itemName) {
+    const groupEl = stageEl && stageEl.closest('.mitat-block-group');
+    const countEl = groupEl && groupEl.querySelector('.mitat-block-done-count');
+    if (!countEl) return;
+    const itemBlocksAll = readJsonMap('itemBlocks');
+    const jobBlockList = readJsonMap('jobBlocks')[jobNumber];
+    const blocks = Array.isArray(jobBlockList) ? jobBlockList : [];
+    const blockId = itemBlocksAll[`${jobNumber}-${itemName}`];
+    const block = blocks.find((entry) => entry.id === blockId);
+    const group = block ? { id: block.id } : { id: null };
+    const itemNames = Object.keys(readJsonMap('mittatData')[jobNumber] || {});
+    const counts = countBlockDoneItems(jobNumber, group, itemNames, itemBlocksAll, readJsonMap('doneMitat'), blocks);
+    countEl.textContent = `${counts.done} / ${counts.total} tehty`;
+}
+
+function finishKoeCheckpointUi(stageEl, jobNumber, itemName, matchedBefore) {
+    if (koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
+        loadMittatView();
+        return;
+    }
+    refreshKoeItemStage(stageEl, jobNumber, itemName);
+}
+
+function toggleKoeDepartmentCheck(checkKey, stage, sourceEl) {
     const jobNumber = jobNumberFromCheckKey(checkKey);
     if (!jobNumber || !isKuormaKoeJob(jobNumber) || !KOE_CHAIN_IDS.includes(stage)) return;
     const itemName = checkKey.slice(jobNumber.length + 1);
     const current = itemDepartmentStage(jobNumber, itemName);
     const entry = koeVisibleStages(current).find((item) => item.id === stage);
     if (!entry) return;
+    const stageEl = sourceEl && sourceEl.closest ? sourceEl.closest('.koe-item-stage') : null;
+    const matchedBefore = koeItemMatchesFilter(jobNumber, itemName);
 
     if (!entry.checked) {
         if (stage === 'tehty') {
-            toggleMittatDone(checkKey, jobNumber, null);
+            toggleMittatDone(checkKey, jobNumber, null, stageEl);
             return;
         }
         const map = readJsonMap(KOE_STAGE_STORES[stage]);
         map[checkKey] = true;
         localStorage.setItem(KOE_STAGE_STORES[stage], JSON.stringify(map));
         dualWriteMitatState(jobNumber);
-        loadMittatView();
+        finishKoeCheckpointUi(stageEl, jobNumber, itemName, matchedBefore);
         return;
     }
 
@@ -16393,15 +16485,18 @@ function toggleKoeDepartmentCheck(checkKey, stage) {
         clearDepartmentStoreKey(KOE_STAGE_STORES[id], checkKey);
     });
     if (KOE_CHAIN_IDS.slice(start).includes('tehty') && current.tehty) {
-        toggleMittatDone(checkKey, jobNumber, null);
+        toggleMittatDone(checkKey, jobNumber, null, stageEl);
         return;
     }
     dualWriteMitatState(jobNumber);
-    loadMittatView();
+    finishKoeCheckpointUi(stageEl, jobNumber, itemName, matchedBefore);
 }
 
 // Toggle mitta checkbox (lasilistat)
 function toggleMittatCheck(checkKey, checkboxElement) {
+    const jobNumber = jobNumberFromCheckKey(checkKey);
+    const itemName = jobNumber ? checkKey.slice(jobNumber.length + 1) : '';
+    const matchedBefore = jobNumber && isKuormaKoeJob(jobNumber) ? koeItemMatchesFilter(jobNumber, itemName) : null;
     // Update localStorage
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const isChecked = !checkedMitat[checkKey];
@@ -16421,9 +16516,13 @@ function toggleMittatCheck(checkKey, checkboxElement) {
         }
         checkboxElement.setAttribute('aria-checked', String(isChecked));
     }
+    if (matchedBefore !== null && koeFilterWouldChange(jobNumber, itemName, matchedBefore)) loadMittatView();
 }
 
 function toggleKulmalistatCheck(checkKey, checkboxElement) {
+    const jobNumber = jobNumberFromCheckKey(checkKey);
+    const itemName = jobNumber ? checkKey.slice(jobNumber.length + 1) : '';
+    const matchedBefore = jobNumber && isKuormaKoeJob(jobNumber) ? koeItemMatchesFilter(jobNumber, itemName) : null;
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
     const isChecked = !checkedKulmalistat[checkKey];
     checkedKulmalistat[checkKey] = isChecked;
@@ -16440,9 +16539,13 @@ function toggleKulmalistatCheck(checkKey, checkboxElement) {
         }
         checkboxElement.setAttribute('aria-checked', String(isChecked));
     }
+    if (matchedBefore !== null && koeFilterWouldChange(jobNumber, itemName, matchedBefore)) loadMittatView();
 }
 
 function togglePaneelitCheck(checkKey, checkboxElement) {
+    const jobNumber = jobNumberFromCheckKey(checkKey);
+    const itemName = jobNumber ? checkKey.slice(jobNumber.length + 1) : '';
+    const matchedBefore = jobNumber && isKuormaKoeJob(jobNumber) ? koeItemMatchesFilter(jobNumber, itemName) : null;
     const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
     const isChecked = !checkedPaneelit[checkKey];
     checkedPaneelit[checkKey] = isChecked;
@@ -16459,6 +16562,7 @@ function togglePaneelitCheck(checkKey, checkboxElement) {
         }
         checkboxElement.setAttribute('aria-checked', String(isChecked));
     }
+    if (matchedBefore !== null && koeFilterWouldChange(jobNumber, itemName, matchedBefore)) loadMittatView();
 }
 
 function updateJobDoneCounter(jobNumber) {
@@ -16483,7 +16587,7 @@ function updateJobDoneCounter(jobNumber) {
 }
 
 // Toggle mitta checkbox (tehty)
-function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
+function toggleMittatDone(checkKey, jobNumber, checkboxElement, stageEl) {
     const checkedMitat = JSON.parse(localStorage.getItem('checkedMitat') || '{}');
     const checkedKulmalistat = JSON.parse(localStorage.getItem('checkedKulmalistat') || '{}');
     const checkedPaneelit = JSON.parse(localStorage.getItem('checkedPaneelit') || '{}');
@@ -16511,6 +16615,8 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
         showToast('Merkitse ensin paneelit ennen tehty-merkintää.', 'warning');
         return;
     }
+    const isKoe = isKuormaKoeJob(jobNumber);
+    const matchedBefore = isKoe ? koeItemMatchesFilter(jobNumber, itemName) : null;
     if (isDone) {
         doneMitat[checkKey] = true;
         if (!isKuormaKoeJob(jobNumber)) recordLapivientiEvent(checkKey, jobNumber, item);
@@ -16541,6 +16647,16 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement) {
     }
 
     updateJobDoneCounter(jobNumber);
+    if (isKoe) {
+        const rowStage = stageEl || (checkboxElement && checkboxElement.closest ? checkboxElement.closest('.koe-item-stage') : null);
+        if (koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
+            loadMittatView();
+            return;
+        }
+        refreshKoeItemStage(rowStage, jobNumber, itemName);
+        refreshKoeBlockDoneCount(rowStage, jobNumber, itemName);
+        return;
+    }
     loadMittatView();
 }
 
