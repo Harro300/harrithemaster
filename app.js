@@ -1531,13 +1531,22 @@ async function syncKoeKapasiteettiFromLocal() {
     if (!window.firebase || !window.firebase.db || !currentUser || !koeKapasiteettiLoaded || koeApplyingShared) return;
     const local = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
     const keepRemoteBecauseLocalEmpty = !koeKapasiteettiHasWorkers(local) && koeKapasiteettiHasWorkers(lastKoeKapasiteetti);
-    if (keepRemoteBecauseLocalEmpty && pendingKokoonpanijaDeletes.size === 0) return;
+    const onlyDeletedWereKnown = KOE_DEPARTMENTS.every((department) => {
+        const known = koeDepartmentWorkers(lastKoeKapasiteetti, department);
+        return department === 'kokoonpano'
+            ? known.every((worker) => worker && isKokoonpanijaDeletePending(worker.id))
+            : known.length === 0;
+    });
+    if (keepRemoteBecauseLocalEmpty && !onlyDeletedWereKnown) return;
     try {
         const { db, doc, serverTimestamp, runTransaction } = window.firebase;
         const ref = doc(db, 'koeTyot', 'kapasiteetti');
         const saved = await runTransaction(db, async (transaction) => {
             const snap = await transaction.get(ref);
-            const remote = snap.exists() && snap.data() ? (snap.data().kapasiteetti || {}) : {};
+            const remoteData = snap.exists() && snap.data() ? snap.data() : {};
+            const remote = remoteData.kapasiteetti || {};
+            const remoteDeleted = normalizeDeletedKokoonpanijaIds(remoteData.deletedKokoonpanoIds);
+            const deletedIds = [...new Set(remoteDeleted.concat(deletedKokoonpanijaIdList()))].sort();
             const next = {};
             KOE_DEPARTMENTS.forEach((department) => {
                 const localWorkers = koeDepartmentWorkers(local, department);
@@ -1545,11 +1554,15 @@ async function syncKoeKapasiteettiFromLocal() {
                 const remoteWorkers = koeDepartmentWorkers(remote, department);
                 let workers = sameKoeJson(localWorkers, remembered) ? remoteWorkers : localWorkers;
                 if (keepRemoteBecauseLocalEmpty) workers = remoteWorkers;
-                if (department === 'kokoonpano') workers = omitPendingKokoonpanijaWorkers(workers);
+                if (department === 'kokoonpano') {
+                    const tombstones = new Set(deletedIds);
+                    workers = workers.filter((worker) => worker && !tombstones.has(String(worker.id)));
+                }
                 next[department] = { workers };
             });
             transaction.set(ref, {
                 kapasiteetti: next,
+                deletedKokoonpanoIds: deletedIds,
                 updatedBy: currentUser.email,
                 updatedAt: serverTimestamp()
             });
@@ -1611,7 +1624,8 @@ function applyRemoteKoeAsetukset(data) {
     lastKoeAsetukset = koeAsetuksetFromStorage();
 }
 
-function applyRemoteKoeKapasiteetti(kapasiteetti) {
+function applyRemoteKoeKapasiteetti(kapasiteetti, remoteDeletedIds) {
+    mergeDeletedKokoonpanijaIds(remoteDeletedIds);
     const source = kapasiteetti && typeof kapasiteetti === 'object' ? kapasiteetti : emptyKoeKapasiteetti();
     const rawWorkers = koeDepartmentWorkers(source, 'kokoonpano');
     const cleaned = Object.assign({}, source);
@@ -1626,7 +1640,6 @@ function applyRemoteKoeKapasiteetti(kapasiteetti) {
     }
     lastKoeKapasiteetti = readKuormaKapasiteettiStorage().kapasiteetti || emptyKoeKapasiteetti();
     reconcileKokoonpanoRoster('hours');
-    acknowledgeKokoonpanijaDeletes('hours', rawWorkers.map((worker) => worker && worker.id));
 }
 
 function applyRemoteKoeAjoitus(schedule) {
@@ -2625,23 +2638,26 @@ function setupRealtimeListeners() {
             (docSnapshot) => {
                 if (!docSnapshot.exists()) {
                     kokoonpanijatLoaded = true;
-                    acknowledgeKokoonpanijaDeletes('people', []);
-                    if (getKokoonpanijat().length > 0) {
+                    if (getKokoonpanijat().length > 0 || pendingKokoonpanijaDeletes.size > 0) {
                         void syncKokoonpanijatToFirestore();
                     }
                     return;
                 }
                 const raw = normalizeKokoonpanijatState(docSnapshot.data() || {});
+                const deletedBefore = pendingKokoonpanijaDeletes.size;
+                const localHasMoreDeleted = mergeDeletedKokoonpanijaIds(raw.deletedIds);
+                const learnedDeletes = pendingKokoonpanijaDeletes.size > deletedBefore;
                 const incoming = omitPendingKokoonpanijatState(raw);
                 const rawHadPending = raw.users.some((user) => isKokoonpanijaDeletePending(user.id));
                 const same = kokoonpanijatStateEqual(incoming, buildKokoonpanijatPayload());
                 if (!same) {
                     applyKokoonpanijatPayloadToLocalStorage(incoming);
                     reconcileKokoonpanoRoster('people');
+                } else if (learnedDeletes) {
+                    reconcileKokoonpanoRoster('people');
                 }
-                acknowledgeKokoonpanijaDeletes('people', raw.users.map((user) => user.id));
                 kokoonpanijatLoaded = true;
-                if (rawHadPending) void syncKokoonpanijatToFirestore();
+                if (rawHadPending || localHasMoreDeleted) void syncKokoonpanijatToFirestore();
                 if (!same) {
                     const mittatView = document.getElementById('mittatView');
                     if (mittatView && !mittatView.classList.contains('d-none')) {
@@ -2777,18 +2793,19 @@ function setupRealtimeListeners() {
                     lastKoeKapasiteetti = emptyKoeKapasiteetti();
                     koeKapasiteettiLoaded = true;
                     const removedPendingWorker = dropPendingKokoonpanoWorkersLocally();
-                    acknowledgeKokoonpanijaDeletes('hours', []);
                     if (removedPendingWorker || koeKapasiteettiHasWorkers(readKuormaKapasiteettiStorage().kapasiteetti)) {
                         void syncKoeKapasiteettiFromLocal();
                     }
                     return;
                 }
-                const remoteKapasiteetti = (docSnapshot.data() || {}).kapasiteetti || emptyKoeKapasiteetti();
+                const remoteData = docSnapshot.data() || {};
+                const remoteKapasiteetti = remoteData.kapasiteetti || emptyKoeKapasiteetti();
+                const localHasMoreDeleted = mergeDeletedKokoonpanijaIds(remoteData.deletedKokoonpanoIds);
                 const serverHasPendingDelete = koeDepartmentWorkers(remoteKapasiteetti, 'kokoonpano')
                     .some((worker) => isKokoonpanijaDeletePending(worker && worker.id));
-                applyRemoteKoeKapasiteetti(remoteKapasiteetti);
+                applyRemoteKoeKapasiteetti(remoteKapasiteetti, remoteData.deletedKokoonpanoIds);
                 koeKapasiteettiLoaded = true;
-                if (serverHasPendingDelete) void syncKoeKapasiteettiFromLocal();
+                if (serverHasPendingDelete || localHasMoreDeleted) void syncKoeKapasiteettiFromLocal();
             },
             (error) => {
                 console.error('❌ Koetyön kapasiteetin kuunteluvirhe:', error);
@@ -10837,34 +10854,48 @@ function createKokoonpanijaId() {
     return `kp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const KOKOONPANIJA_DELETE_KEY = 'kokoonpanijaPendingDeletes';
-let pendingKokoonpanijaDeletes = loadPendingKokoonpanijaDeletes();
+// Poistettujen kokoonpanijoiden tunnukset ovat pysyviä hautakiviä. Ne tallennetaan
+// paikallisesti ja molempiin Firestore-dokumentteihin, jotta kumpikaan dokumentti
+// ei voi tuoda poistettua henkilöä takaisin ennen toista.
+const KOKOONPANIJA_DELETED_KEY = 'kokoonpanijaDeletedIds';
+let pendingKokoonpanijaDeletes = loadDeletedKokoonpanijaIds();
 
-function loadPendingKokoonpanijaDeletes() {
+function loadDeletedKokoonpanijaIds() {
     try {
-        const raw = JSON.parse(sessionStorage.getItem(KOKOONPANIJA_DELETE_KEY) || '{}');
-        const pending = new Map();
-        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return pending;
-        Object.keys(raw).forEach((id) => {
-            const item = raw[id] || {};
-            pending.set(String(id), { people: item.people === true, hours: item.hours === true });
-        });
-        return pending;
+        const raw = JSON.parse(localStorage.getItem(KOKOONPANIJA_DELETED_KEY) || '[]');
+        return new Set(Array.isArray(raw) ? raw.filter(Boolean).map(String) : []);
     } catch (error) {
-        return new Map();
+        return new Set();
     }
 }
 
-function persistPendingKokoonpanijaDeletes() {
-    const stored = {};
-    pendingKokoonpanijaDeletes.forEach((state, id) => {
-        stored[id] = { people: state.people === true, hours: state.hours === true };
-    });
+function persistDeletedKokoonpanijaIds() {
     try {
-        sessionStorage.setItem(KOKOONPANIJA_DELETE_KEY, JSON.stringify(stored));
+        localStorage.setItem(KOKOONPANIJA_DELETED_KEY, JSON.stringify([...pendingKokoonpanijaDeletes]));
     } catch (error) {
-        // The in-memory set still blocks the deleted person for this page.
+        // Muistissa oleva joukko estää poistetun henkilön tämän sivun ajan.
     }
+}
+
+function normalizeDeletedKokoonpanijaIds(ids) {
+    return Array.isArray(ids) ? ids.filter(Boolean).map(String) : [];
+}
+
+function deletedKokoonpanijaIdList() {
+    return [...pendingKokoonpanijaDeletes].sort();
+}
+
+// Yhdistää etäältä saadut tunnukset omaan joukkoon. Palauttaa true, jos omassa joukossa on tunnuksia, joita etänä ei vielä ole.
+function mergeDeletedKokoonpanijaIds(remoteIds) {
+    const remote = new Set(normalizeDeletedKokoonpanijaIds(remoteIds));
+    let added = false;
+    remote.forEach((id) => {
+        if (pendingKokoonpanijaDeletes.has(id)) return;
+        pendingKokoonpanijaDeletes.add(id);
+        added = true;
+    });
+    if (added) persistDeletedKokoonpanijaIds();
+    return [...pendingKokoonpanijaDeletes].some((id) => !remote.has(id));
 }
 
 function isKokoonpanijaDeletePending(id) {
@@ -10873,26 +10904,9 @@ function isKokoonpanijaDeletePending(id) {
 
 function markKokoonpanijaDelete(id) {
     const key = String(id || '');
-    if (!key) return;
-    pendingKokoonpanijaDeletes.set(key, { people: false, hours: false });
-    persistPendingKokoonpanijaDeletes();
-}
-
-function acknowledgeKokoonpanijaDeletes(side, presentIds) {
-    if (side !== 'people' && side !== 'hours') return;
-    const present = new Set((presentIds || []).map((id) => String(id)));
-    let changed = false;
-    pendingKokoonpanijaDeletes.forEach((state, id) => {
-        if (present.has(id) || state[side] === true) return;
-        state[side] = true;
-        changed = true;
-    });
-    [...pendingKokoonpanijaDeletes.entries()].forEach(([id, state]) => {
-        if (!state.people || !state.hours) return;
-        pendingKokoonpanijaDeletes.delete(id);
-        changed = true;
-    });
-    if (changed) persistPendingKokoonpanijaDeletes();
+    if (!key || pendingKokoonpanijaDeletes.has(key)) return;
+    pendingKokoonpanijaDeletes.add(key);
+    persistDeletedKokoonpanijaIds();
 }
 
 function omitPendingKokoonpanijaWorkers(workers) {
@@ -10915,7 +10929,8 @@ function omitPendingKokoonpanijatState(state) {
         users: users,
         assignments: assignments,
         greenJobs: greenJobs,
-        greenMarkedAt: state.greenMarkedAt || {}
+        greenMarkedAt: state.greenMarkedAt || {},
+        deletedIds: deletedKokoonpanijaIdList()
     };
 }
 
@@ -11021,7 +11036,7 @@ function normalizeKokoonpanijatState(data) {
         const ts = Number(rawMarked[jobNumber]);
         if (Number.isFinite(ts)) greenMarkedAt[String(jobNumber)] = ts;
     });
-    return { users, assignments, greenJobs, greenMarkedAt };
+    return { users, assignments, greenJobs, greenMarkedAt, deletedIds: normalizeDeletedKokoonpanijaIds(data?.deletedIds) };
 }
 
 function buildKokoonpanijatPayload() {
@@ -11029,7 +11044,8 @@ function buildKokoonpanijatPayload() {
         users: getKokoonpanijat(),
         assignments: getJobTekijatAll(),
         greenJobs: getGreenJobs(),
-        greenMarkedAt: getGreenMarkedAtAll()
+        greenMarkedAt: getGreenMarkedAtAll(),
+        deletedIds: deletedKokoonpanijaIdList()
     };
 }
 
@@ -11050,7 +11066,8 @@ function stableStringifyKokoonpanijat(state) {
     Object.keys(normalized.greenMarkedAt).sort().forEach((jobNumber) => {
         greenMarkedAt[jobNumber] = normalized.greenMarkedAt[jobNumber];
     });
-    return JSON.stringify({ users, assignments, greenJobs, greenMarkedAt });
+    const deletedIds = [...new Set(normalized.deletedIds)].sort();
+    return JSON.stringify({ users, assignments, greenJobs, greenMarkedAt, deletedIds });
 }
 
 function kokoonpanijatStateEqual(a, b) {
