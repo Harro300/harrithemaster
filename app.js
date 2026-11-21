@@ -11584,9 +11584,21 @@ function selectedKokoonpanijaOsasto() {
     return localStorage.getItem('kokoonpanijaOsasto') === 'hitsaus' ? 'hitsaus' : 'listotus';
 }
 
+function isHitsausOsastoView() {
+    return selectedKokoonpanijaOsasto() === 'hitsaus';
+}
+
+function clearPackingListMode() {
+    isPackingListMode = false;
+    selectedPackingJobNumber = null;
+    selectedPackingItems = {};
+}
+
 function setKokoonpanijaOsasto(value) {
-    localStorage.setItem('kokoonpanijaOsasto', value === 'hitsaus' ? 'hitsaus' : 'listotus');
+    const next = value === 'hitsaus' ? 'hitsaus' : 'listotus';
+    localStorage.setItem('kokoonpanijaOsasto', next);
     selectedKokoonpanijaId = null;
+    if (next === 'hitsaus') clearPackingListMode();
     renderKokoonpanijatModalList();
     loadMittatView();
 }
@@ -11927,6 +11939,9 @@ function loadMittatView() {
             }
         });
     });
+    const hitsausOsastoView = isHitsausOsastoView();
+    const checkedHitsattuAll = readJsonMap('checkedHitsattu');
+    if (hitsausOsastoView && isPackingListMode) clearPackingListMode();
     const togglePackingBtn = document.getElementById('togglePackingListBtn');
     const toggleSahauslistaBtn = document.getElementById('toggleSahauslistaBtn');
     const toggleLasilistaPdfBtn = document.getElementById('toggleLasilistaPdfBtn');
@@ -11938,6 +11953,7 @@ function loadMittatView() {
         tuotantoBackupBtn.style.display = isAdmin ? '' : 'none';
     }
     if (togglePackingBtn) {
+        togglePackingBtn.style.display = hitsausOsastoView ? 'none' : '';
         togglePackingBtn.classList.toggle('btn-primary', !isPackingListMode);
         togglePackingBtn.classList.toggle('btn-success', isPackingListMode);
         togglePackingBtn.textContent = isPackingListMode ? '✅ Pakkausluettelo-tila päällä' : '📦 Tee pakkausluettelo';
@@ -12202,7 +12218,9 @@ function loadMittatView() {
         const jobSahauslistaBtnText = isSahauslistaSelectedForJob ? '✅ Sahauslista-tila päällä' : 'Tee Sahauslista';
         if (!katselu) {
             html += `<div class="mitat-job-quick-actions d-flex flex-wrap gap-2">`;
-            html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
+            if (!hitsausOsastoView) {
+                html += `<button class="${jobPackingBtnClass}" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation(); startPackingListForJob('${sanitizeForAttribute(jobNumber)}')">${jobPackingBtnText}</button>`;
+            }
             html += `<div class="dropdown">`;
             html += `<button class="${jobSahauslistaBtnClass}" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="font-size: 0.75rem; padding: 5px 10px;" onclick="event.stopPropagation();">${jobSahauslistaBtnText}</button>`;
             html += `<ul class="dropdown-menu p-2" onclick="event.stopPropagation();">`;
@@ -12251,7 +12269,29 @@ function loadMittatView() {
                 }
                 html += `</div>`;
             }
-            group.items.forEach((itemName) => {
+            const listotusTulevat = isKuormaKoeJob(jobNumber) && !hitsausOsastoView;
+            const renderEntries = [];
+            if (listotusTulevat) {
+                const hitsatut = [];
+                const tulevat = [];
+                group.items.forEach((itemName) => {
+                    if (checkedHitsattuAll[`${jobNumber}-${itemName}`]) hitsatut.push(itemName);
+                    else tulevat.push(itemName);
+                });
+                hitsatut.forEach((itemName) => renderEntries.push({ itemName, upcoming: false }));
+                if (tulevat.length) {
+                    renderEntries.push({ heading: true });
+                    tulevat.forEach((itemName) => renderEntries.push({ itemName, upcoming: true }));
+                }
+            } else {
+                group.items.forEach((itemName) => renderEntries.push({ itemName, upcoming: false }));
+            }
+            renderEntries.forEach((entry) => {
+            if (entry.heading) {
+                html += `<div class="mitat-tulevat-heading">Tulevat</div>`;
+                return;
+            }
+            const itemName = entry.itemName;
             const item = mittatData[jobNumber][itemName];
             const addedAtLabel = formatProductionAddedLabel(item.timestamp);
             const uniqueId = `mitat-${jobNumber.replace(/[^a-zA-Z0-9]/g, '_')}-${itemName.replace(/[^a-zA-Z0-9]/g, '_')}`;
@@ -12285,7 +12325,7 @@ function loadMittatView() {
             const hasItemNote = mittatNotes[itemNoteKey] && mittatNotes[itemNoteKey].trim() !== '';
             const itemNoteClass = hasItemNote ? 'btn-note-active' : 'btn-note-empty';
             
-            html += `<div class="mitat-item-section">`;
+            html += `<div class="mitat-item-section${entry.upcoming ? ' mitat-item-section--tuleva' : ''}">`;
             html += `<div class="mitat-item-header" onclick="toggleMitatDetails('${uniqueId}')" role="button" tabindex="0" aria-expanded="false" aria-controls="${uniqueId}" aria-label="Avaa/sulje ${itemName}">`;
             html += `<div class="mitat-item-header-main">`;
             const isKoeItem = isKuormaKoeJob(jobNumber);
@@ -12295,9 +12335,17 @@ function loadMittatView() {
                 html += `<span class="koe-name-sizer" aria-hidden="true"><span class="koe-name-sizer-prefix">- </span><span class="koe-name-sizer-chars"></span></span>`;
                 html += `<div class="koe-item-lead-row">`;
             }
-            const itemTitleClass = isShowingHiddenItems && isHidden ? 'mitat-item-title mitat-item-title-hidden' : 'mitat-item-title';
+            const hitsattuMarked = isKoeItem && hitsausOsastoView && !!checkedHitsattuAll[checkKey];
+            const itemTitleClass = [
+                'mitat-item-title',
+                isShowingHiddenItems && isHidden ? 'mitat-item-title-hidden' : '',
+                hitsattuMarked ? 'mitat-item-title--hitsattu' : ''
+            ].filter(Boolean).join(' ');
             const itemTitleAttr = isKoeItem ? ` title="${escapeHtmlText(itemName)}"` : '';
             html += `<h5 class="${itemTitleClass}"${itemTitleAttr}>- ${itemName}</h5>`;
+            if (hitsattuMarked) {
+                html += `<span class="mitat-hitsattu-label">(Hitsattu)</span>`;
+            }
             const safeItemAttr = sanitizeForAttribute(itemName);
             if (!katselu) {
                 html += `<div class="dropdown mitat-item-actions">`;
@@ -12331,7 +12379,7 @@ function loadMittatView() {
             if (isKoeItem) {
                 html += `</div></div>`;
                 html += `<div class="koe-item-stage">`;
-                html += renderKoeItemCheckpoints({
+                const koeCheckpointCtx = {
                     jobNumber,
                     itemName,
                     checkKey,
@@ -12346,7 +12394,10 @@ function loadMittatView() {
                     checkpointsOk,
                     lasilistatOk,
                     kulmalistatOk
-                });
+                };
+                html += hitsausOsastoView
+                    ? renderHitsausItemCheckpoints(koeCheckpointCtx)
+                    : renderKoeItemCheckpoints(koeCheckpointCtx);
                 html += `</div>`;
             } else if (katselu) {
                 const visibleCheckpoints = [];
@@ -16822,6 +16873,38 @@ function renderKoeStageBars(stage) {
     return `<span class="koe-stage-bars" role="img" aria-label="${escapeHtmlText(summary)}">${bars}</span>`;
 }
 
+function renderHitsausStageBox(stageId, itemName, checked, safeKey, katselu, blocked) {
+    const aria = escapeHtmlText(koeStageAria(stageId, itemName));
+    const mark = checked ? '✓' : '';
+    if (katselu) {
+        const boxClass = checked ? 'preset-checkbox checked' : 'preset-checkbox';
+        return `<span class="mitat-mini-label">${stageId}</span><div class="${boxClass} mitat-checkpoint-readonly" role="img" aria-label="${aria}">${mark}</div>`;
+    }
+    const boxClass = blocked
+        ? 'preset-checkbox disabled'
+        : (checked ? 'preset-checkbox checked' : 'preset-checkbox');
+    const title = blocked ? ' title="Merkitse ensin sahattu"' : '';
+    const tab = blocked ? '-1' : '0';
+    return `<span class="mitat-mini-label">${stageId}</span><div class="${boxClass}" role="checkbox" tabindex="${tab}" aria-checked="${checked}" aria-disabled="${blocked}" aria-label="${aria}"${title} onclick="event.stopPropagation(); toggleKoeDepartmentCheck('${safeKey}', '${stageId}', this)">${mark}</div>`;
+}
+
+function renderHitsausItemCheckpoints(ctx) {
+    const stage = itemDepartmentStage(ctx.jobNumber, ctx.itemName);
+    const safeKey = sanitizeForAttribute(ctx.checkKey);
+    const pieces = [
+        renderHitsausStageBox('sahattu', ctx.itemName, stage.sahattu, safeKey, ctx.katselu, false)
+    ];
+    if (ctx.hasLasilistat) {
+        const aria = escapeHtmlText(`Lasilistat tehty ${ctx.itemName}`);
+        const mark = ctx.isChecked ? '✓' : '';
+        const boxClass = ctx.isChecked ? 'preset-checkbox checked' : 'preset-checkbox';
+        pieces.push(`<span class="mitat-mini-label">lasilistat</span><div class="${boxClass} mitat-checkpoint-readonly" role="img" aria-label="${aria}">${mark}</div>`);
+    }
+    const hitsattuBlocked = !ctx.katselu && !stage.sahattu && !stage.hitsattu;
+    pieces.push(renderHitsausStageBox('hitsattu', ctx.itemName, stage.hitsattu, safeKey, ctx.katselu, hitsattuBlocked));
+    return pieces.join('<span class="mitat-checkpoint-separator">/</span>');
+}
+
 function renderKoeItemCheckpoints(ctx) {
     const stage = itemDepartmentStage(ctx.jobNumber, ctx.itemName);
     const visible = koeVisibleStages(stage);
@@ -16920,7 +17003,10 @@ function refreshKoeItemStage(stageEl, jobNumber, itemName) {
         loadMittatView();
         return;
     }
-    stageEl.innerHTML = renderKoeItemCheckpoints(buildKoeCheckpointCtx(jobNumber, itemName));
+    const ctx = buildKoeCheckpointCtx(jobNumber, itemName);
+    stageEl.innerHTML = isHitsausOsastoView()
+        ? renderHitsausItemCheckpoints(ctx)
+        : renderKoeItemCheckpoints(ctx);
 }
 
 function refreshKoeBlockDoneCount(stageEl, jobNumber, itemName) {
@@ -16939,7 +17025,7 @@ function refreshKoeBlockDoneCount(stageEl, jobNumber, itemName) {
 }
 
 function finishKoeCheckpointUi(stageEl, jobNumber, itemName, matchedBefore) {
-    if (koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
+    if (isKuormaKoeJob(jobNumber) || koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
         loadMittatView();
         return;
     }
@@ -16951,8 +17037,15 @@ function toggleKoeDepartmentCheck(checkKey, stage, sourceEl) {
     if (!jobNumber || !isKuormaKoeJob(jobNumber) || !KOE_CHAIN_IDS.includes(stage)) return;
     const itemName = checkKey.slice(jobNumber.length + 1);
     const current = itemDepartmentStage(jobNumber, itemName);
-    const entry = koeVisibleStages(current).find((item) => item.id === stage);
+    const hitsaus = isHitsausOsastoView();
+    if (hitsaus && stage !== 'sahattu' && stage !== 'hitsattu') return;
+    const visibleEntry = koeVisibleStages(current).find((item) => item.id === stage);
+    const entry = hitsaus ? { id: stage, checked: !!current[stage] } : visibleEntry;
     if (!entry) return;
+    if (hitsaus && stage === 'hitsattu' && !entry.checked && !current.sahattu) {
+        showToast('Merkitse ensin sahattu ennen hitsattu-merkintää.', 'warning');
+        return;
+    }
     const stageEl = sourceEl && sourceEl.closest ? sourceEl.closest('.koe-item-stage') : null;
     const matchedBefore = koeItemMatchesFilter(jobNumber, itemName);
 
@@ -17139,7 +17232,7 @@ function toggleMittatDone(checkKey, jobNumber, checkboxElement, stageEl) {
     updateJobDoneCounter(jobNumber);
     if (isKoe) {
         const rowStage = stageEl || (checkboxElement && checkboxElement.closest ? checkboxElement.closest('.koe-item-stage') : null);
-        if (koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
+        if (isKuormaKoeJob(jobNumber) || koeFilterWouldChange(jobNumber, itemName, matchedBefore)) {
             loadMittatView();
             return;
         }

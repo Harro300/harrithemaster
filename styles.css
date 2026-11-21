@@ -3058,6 +3058,17 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
     box-shadow: 0 1px 4px var(--card-shadow);
 }
 
+.mitat-tulevat-heading {
+    margin: 0.45rem 0 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.mitat-item-section--tuleva {
+    opacity: 0.6;
+}
+
 .mitat-item-header {
     padding: 6px 8px;
     margin: -8px -8px 0 -8px;
@@ -3100,6 +3111,23 @@ body.dark-mode .input-group .btn-outline-secondary:hover {
 
 .mitat-item-title-hidden {
     color: #dc3545 !important;
+}
+
+.mitat-item-title--hitsattu {
+    color: #2f8f4e;
+}
+
+.mitat-hitsattu-label {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #2f8f4e;
+    white-space: nowrap;
+}
+
+body.dark-mode .mitat-item-title--hitsattu,
+body.dark-mode .mitat-hitsattu-label {
+    color: #3c9a56;
 }
 
 .mitat-item-unit {
